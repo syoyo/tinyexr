@@ -37,6 +37,10 @@ To use `tinyexr`, simply copy `tinyexr.cc` and `tinyexr.h` into your project.
 * EXR 2.0(deep image).
 * Big endian machine.
 
+## Similar projects
+
+* miniexr: https://github.com/aras-p/miniexr (Write OpenEXR)
+
 ## License
 
 3-clause BSD
