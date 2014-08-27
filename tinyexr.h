@@ -8,7 +8,8 @@ extern "C" {
 // Application must free image data as returned by `out_rgba`
 // Result image format is: float x RGBA x width x hight
 // returns error string in `err` when there's an error
-extern int LoadEXR(float** out_rgba, int* width, int* height, const char* filename, const char** err);
+extern int LoadEXR(float **out_rgba, int *width, int *height,
+                   const char *filename, const char **err);
 
 #ifdef __cplusplus
 }
