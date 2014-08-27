@@ -3,7 +3,7 @@
 ![Example](https://github.com/syoyo/tinyexr/blob/master/asakusa.png?raw=true)
 
 `tinyexr` is a small library to load OpenEXR(.exr) image.
-TO use `tinyexr`, simply copy `tinyexr.cc` and `tinyexr.h` into your project.
+To use `tinyexr`, simply copy `tinyexr.cc` and `tinyexr.h` into your project.
 
 `tinyexr` currently supports:
 
