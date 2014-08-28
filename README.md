@@ -11,7 +11,7 @@ To use `tinyexr`, simply copy `tinyexr.cc` and `tinyexr.h` into your project.
 * OpenEXR version 1.x.
 * RGB(A) channel.
 * Scanline format.
-* ZIP compression.
+* Uncompress("compress" = 0) and ZIP compression("compress" = 3).
 * Half pixel type.
 * Litte endian machine.
 * C interface

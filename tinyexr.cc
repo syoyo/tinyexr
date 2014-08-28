@@ -6525,6 +6525,8 @@ void *mz_zip_extract_archive_file_to_heap(const char *pZip_filename,
 
   For more information, please refer to <http://unlicense.org/>
 */
+
+// ---------------------- end of miniz ----------------------------------------
 }
 
 // https://gist.github.com/rygorous/2156668
@@ -6810,15 +6812,22 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
     offsets[y] = offset;
   }
 
+  if (compressionType != 0 && compressionType != 3 ) {
+    if (*err) {
+      (*err) = "Unsupported format.";
+    }
+    return -10;
+  }
+
   for (int y = 0; y < numBlocks; y++) {
     const unsigned char *dataPtr =
         reinterpret_cast<const unsigned char *>(head + offsets[y]);
     // 4 byte: scan line
     // 4 byte: data size
-    // ~     : pixel data(maybe compressed)
+    // ~     : pixel data(uncompressed or compressed)
     int lineNo = *reinterpret_cast<const int *>(dataPtr);
     int dataLen = *reinterpret_cast<const int *>(dataPtr + 4);
-    // printf("line: %d, dataLen: %d\n", lineNo, dataLen);
+    //printf("line: %d, dataLen: %d\n", lineNo, dataLen);
 
     int endLineNo = std::min(lineNo + numScanlineBlocks, dataHeight);
 
@@ -6913,9 +6922,31 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
         }
       }
 
+    } else if (compressionType == 0) { // No compression
+
+      const unsigned short* srcPtr = reinterpret_cast<const unsigned short *>(dataPtr + 8);
+
+      // scanline
+      for (int c = 0; c < numChannels; c++) {
+        for (int u = 0; u < dataWidth; u++) {
+          FP16 hf;
+
+          // Assume (A)BGR
+          hf.u = srcPtr[(numChannels - c - 1) * dataWidth + u];
+
+          FP32 f32 = half_to_float(hf);
+          // printf("i[%d] u: %d, fval: %f\n", (c * dataWidth *
+          // numScanlineBlocks) + ((v * dataWidth) + u), hf.u, f32.f);
+
+          // Assume increasing Y.
+          image[4 * ((dataHeight - y - 1) * dataWidth + u) + c] =
+              f32.f;
+        }
+      }
     } else {
-      // @todo { decode uncompressed pixel }
-      assert(0);
+      if (*err) {
+        (*err) = "Unsupported format.";
+      }   
       return -10;
     }
   }
