@@ -9,10 +9,15 @@ To use `tinyexr`, simply copy `tinyexr.cc` and `tinyexr.h` into your project.
 `tinyexr` currently supports:
 
 * OpenEXR version 1.x.
-* RGB(A) channel.
-* Scanline format.
-* Uncompress("compress" = 0) and ZIP compression("compress" = 3).
-* Half pixel type.
+* Traditional image
+  * RGB(A) channel.
+  * Scanline format.
+  * Uncompress("compress" = 0) and ZIP compression("compress" = 3).
+  * Half pixel type.
+* Deep image
+  * Scanline format.
+  * ZIPS compression("compress" = 2).
+  * Half, float pixel type.
 * Litte endian machine.
 * C interface
 
@@ -50,3 +55,7 @@ To use `tinyexr`, simply copy `tinyexr.cc` and `tinyexr.h` into your project.
 ## Author(s)
 
 Syoyo Fujita(syoyo@lighttransport.com)
+
+## Contributor(s)
+
+* Matt Ebb : deep image example.

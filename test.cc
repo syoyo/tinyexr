@@ -37,6 +37,9 @@ main(int argc, char** argv)
   float* out;
   int width;
   int height;
+  int* sample_offset;
+  const char* channels;
+  int         num_channels;
   const char* err;
 
   if (argc < 2) {
@@ -44,9 +47,9 @@ main(int argc, char** argv)
     exit(-1);
   }
   
-  int ret = LoadEXR(&out, &width, &height, argv[1], &err);
+  int ret = LoadDeepEXR(&channels, &num_channels, &out, &sample_offset, &width, &height, argv[1], &err);
   if (ret != 0) {
-    fprintf(stderr, "Load EXR err.\n");
+    fprintf(stderr, "Load EXR err: %s\n", err);
     return ret;
   }
 
