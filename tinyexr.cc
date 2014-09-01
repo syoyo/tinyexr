@@ -6669,6 +6669,8 @@ void ReadChannelInfo(std::vector<ChannelInfo>& channels, const std::vector<unsig
 
     //printf("name: %s\n", info.name.c_str());
     //printf("ptype: %d\n", info.pixelType);
+    //printf("xSamp: %d\n", info.xSampling);
+    //printf("ySamp: %d\n", info.ySampling);
 
     channels.push_back(info);
   }
@@ -6927,56 +6929,10 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
     if (compressionType == 3) { // ZIP
 
       // Allocate original data size.
-      std::vector<unsigned short> dstBuf(dataWidth * numLines * numChannels);
       std::vector<unsigned short> outBuf(dataWidth * numLines * numChannels);
 
-      miniz::mz_ulong dstLen = dstBuf.size() * sizeof(short);
-      // printf("req: %d\n", (int)dstLen);
-      int ret =
-          miniz::mz_uncompress(reinterpret_cast<unsigned char *>(&dstBuf.at(0)),
-                               &dstLen, dataPtr + 8, dataLen);
-      // printf("ret: %d\n", (int)dstLen);
-      assert(ret == miniz::MZ_OK);
-      assert(dstLen == (sizeof(short) * dataWidth * numLines * numChannels));
-
-      //
-      // Apply EXR-specific? postprocess. Grabbed from OpenEXR's
-      // ImfZipCompressor.cpp
-      //
-
-      // Predictor.
-      {
-        unsigned char *t = reinterpret_cast<unsigned char *>(&dstBuf.at(0)) + 1;
-        unsigned char *stop =
-            reinterpret_cast<unsigned char *>(&dstBuf.at(0)) + dstLen;
-
-        while (t < stop) {
-          int d = int(t[-1]) + int(t[0]) - 128;
-          t[0] = d;
-          ++t;
-        }
-      }
-
-      // Reorder the pixel data.
-      {
-        const char *t1 = reinterpret_cast<const char *>(&dstBuf.at(0));
-        const char *t2 =
-            reinterpret_cast<const char *>(&dstBuf.at(0)) + (dstLen + 1) / 2;
-        char *s = reinterpret_cast<char *>(&outBuf.at(0));
-        char *stop = s + dstLen;
-
-        while (true) {
-          if (s < stop)
-            *(s++) = *(t1++);
-          else
-            break;
-
-          if (s < stop)
-            *(s++) = *(t2++);
-          else
-            break;
-        }
-      }
+      unsigned long dstLen = outBuf.size() * sizeof(short);
+      DecompressZip(reinterpret_cast<unsigned char*>(&outBuf.at(0)), dstLen, dataPtr + 8, dataLen);
 
       // Assume numChannels <= 4
 
@@ -7055,15 +7011,10 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
 }
 
 int LoadDeepEXR(
-  const char**  out_channel_names,
-  int*          out_num_channel_names,
-  float**       out_deep_image,
-  int**         out_sample_offset,
-  int*          width,
-  int*          height,
+  DeepImage*    deepImage,
   const char*   filename,
   const char **err) {
-  if (out_channel_names == NULL || out_deep_image == NULL || out_sample_offset == NULL) {
+  if (deepImage == NULL) {
     if (err) {
       (*err) = "Invalid argument.";
     }
@@ -7112,10 +7063,6 @@ int LoadDeepEXR(
   {
     // ver 2.0, scanline, deep bit on(0x800)
     // must be [2, 0, 0, 0]
-    printf("marker[0] = %d\n", marker[0]);
-    printf("marker[1] = %d\n", marker[1]);
-    printf("marker[2] = %d\n", marker[2]);
-    printf("marker[3] = %d\n", marker[3]);
     if (marker[0] != 2 || marker[1] != 8 || marker[2] != 0 || marker[3] != 0) {
       if (err) {
         (*err) = "Unsupported version or scanline.";
@@ -7177,7 +7124,6 @@ int LoadDeepEXR(
       ReadChannelInfo(channels, data);
 
       numChannels = channels.size();
-      printf("num chan = %d\n", numChannels);
 
       if (numChannels < 1) {
         if (err) {
@@ -7193,7 +7139,7 @@ int LoadDeepEXR(
       dy = *(reinterpret_cast<int *>(&data.at(4)));
       dw = *(reinterpret_cast<int *>(&data.at(8)));
       dh = *(reinterpret_cast<int *>(&data.at(12)));
-      printf("data : %d x %d - %d x %d\n", dx, dy, dw, dh);
+      //printf("data : %d x %d - %d x %d\n", dx, dy, dw, dh);
     } else if (attrName.compare("displayWindow") == 0) {
       int x = *(reinterpret_cast<int *>(&data.at(0)));
       int y = *(reinterpret_cast<int *>(&data.at(4)));
@@ -7239,6 +7185,18 @@ int LoadDeepEXR(
     return -10;
   }
 
+  deepImage->image = (float***)malloc(sizeof(float**) * numChannels);
+  for (int c = 0; c < numChannels; c++) {
+    deepImage->image[c] = (float**)malloc(sizeof(float*) * dataHeight);
+    for (int y = 0; y < dataHeight; y++) {
+    }
+  }
+
+  deepImage->offset_table      = (int**)malloc(sizeof(int*) * dataHeight);
+  for (int y = 0; y < dataHeight; y++) {
+    deepImage->offset_table[y] = (int*)malloc(sizeof(int) * dataWidth);
+  }
+
   for (int y = 0; y < numBlocks; y++) {
     const unsigned char *dataPtr =
         reinterpret_cast<const unsigned char *>(head + offsets[y]);
@@ -7253,12 +7211,12 @@ int LoadDeepEXR(
     long long packedOffsetTableSize = *reinterpret_cast<const long long *>(dataPtr + 4);
     long long packedSampleDataSize = *reinterpret_cast<const long long *>(dataPtr + 12);
     long long unpackedSampleDataSize = *reinterpret_cast<const long long *>(dataPtr + 20);
-    printf("line: %d, %lld/%lld/%lld\n", lineNo, packedOffsetTableSize, packedSampleDataSize, unpackedSampleDataSize);
+    //printf("line: %d, %lld/%lld/%lld\n", lineNo, packedOffsetTableSize, packedSampleDataSize, unpackedSampleDataSize);
 
     int endLineNo = std::min(lineNo + numScanlineBlocks, dataHeight);
 
     int numLines = endLineNo - lineNo;
-    printf("numLines: %d\n", numLines);
+    //printf("numLines: %d\n", numLines);
 
     std::vector<int> pixelOffsetTable(dataWidth);
 
@@ -7273,7 +7231,8 @@ int LoadDeepEXR(
 //      printf("ret = %d, dstLen = %d\n", ret, (int)dstLen);
 //
       for (int i = 0; i < dataWidth; i++) {
-        printf("offt[%d] = %d\n", i, pixelOffsetTable[i]);
+        //printf("offt[%d] = %d\n", i, pixelOffsetTable[i]);
+        deepImage->offset_table[y][i] = pixelOffsetTable[i];
       }
     }
 
@@ -7282,146 +7241,93 @@ int LoadDeepEXR(
 
     // decode sample data.
     {
-      miniz::mz_ulong dstLen = unpackedSampleDataSize;
-      int ret =
-          miniz::mz_uncompress(&sampleData.at(0), &dstLen, dataPtr + 28 + packedOffsetTableSize, packedSampleDataSize);
-      printf("ret = %d, dstLen = %d\n", ret, (int)dstLen);
-
-      assert(dstLen == unpackedSampleDataSize);
+      unsigned long dstLen = unpackedSampleDataSize;
+      //printf("dstLen = %d\n", dstLen);
+      //printf("srcLen = %d\n", packedSampleDataSize);
+      DecompressZip(reinterpret_cast<unsigned char*>(&sampleData.at(0)), dstLen, dataPtr + 28 + packedOffsetTableSize, packedSampleDataSize);
+      assert(dstLen == unpackedSampleDataSize); 
     }
 
-    exit(1);
-
-#if 0 // @todo
-    if (compressionType == 2 || compressionType == 3) { // ZIPS or ZIP
-
-      // Allocate original data size.
-      std::vector<unsigned short> dstBuf(dataWidth * numLines * numChannels);
-      std::vector<unsigned short> outBuf(dataWidth * numLines * numChannels);
-
-      miniz::mz_ulong dstLen = dstBuf.size() * sizeof(short);
-      // printf("req: %d\n", (int)dstLen);
-      int ret =
-          miniz::mz_uncompress(reinterpret_cast<unsigned char *>(&dstBuf.at(0)),
-                               &dstLen, dataPtr + 8, dataLen);
-      // printf("ret: %d\n", (int)dstLen);
-      assert(ret == miniz::MZ_OK);
-      assert(dstLen == (sizeof(short) * dataWidth * numLines * numChannels));
-
-      //
-      // Apply EXR-specific? postprocess. Grabbed from OpenEXR's
-      // ImfZipCompressor.cpp
-      //
-
-      // Predictor.
-      {
-        unsigned char *t = reinterpret_cast<unsigned char *>(&dstBuf.at(0)) + 1;
-        unsigned char *stop =
-            reinterpret_cast<unsigned char *>(&dstBuf.at(0)) + dstLen;
-
-        while (t < stop) {
-          int d = int(t[-1]) + int(t[0]) - 128;
-          t[0] = d;
-          ++t;
+    // decode sample
+    int sampleSize = -1;
+    std::vector<int> channelOffsetList(numChannels);
+    {
+      int channelOffset = 0;
+      for (int i = 0; i < numChannels; i++) {
+        //printf("offt[%d] = %d\n", i, channelOffset);
+        channelOffsetList[i] = channelOffset;
+        if (channels[i].pixelType == 0) { // UINT
+          channelOffset += 4;
+        } else if (channels[i].pixelType == 1) { // half
+          channelOffset += 2;
+        } else if (channels[i].pixelType == 2) { // float
+          channelOffset += 4;
+        } else {
+          assert(0);
         }
       }
+      sampleSize = channelOffset;
+    }
+    assert(sampleSize >= 2);
 
-      // Reorder the pixel data.
-      {
-        const char *t1 = reinterpret_cast<const char *>(&dstBuf.at(0));
-        const char *t2 =
-            reinterpret_cast<const char *>(&dstBuf.at(0)) + (dstLen + 1) / 2;
-        char *s = reinterpret_cast<char *>(&outBuf.at(0));
-        char *stop = s + dstLen;
+    assert(pixelOffsetTable[dataWidth-1] * sampleSize == sampleData.size());
+    int samplesPerLine = sampleData.size() / sampleSize;
 
-        while (true) {
-          if (s < stop)
-            *(s++) = *(t1++);
-          else
-            break;
+    //
+    // Alloc memory
+    //
 
-          if (s < stop)
-            *(s++) = *(t2++);
-          else
-            break;
-        }
-      }
+    //
+    // pixel data is stored as image[channels][pixel_samples]
+    //
+    {
+      unsigned long long dataOffset = 0;
+      for (int c = 0; c < numChannels; c++) {
 
-      // Assume numChannels <= 4
+        deepImage->image[c][y] = (float*)malloc(sizeof(float) * samplesPerLine);
 
-      // For ZIP_COMPRESSION:
-      //   pixel sample data for channel 0 for scanline 0
-      //   pixel sample data for channel 1 for scanline 0
-      //   pixel sample data for channel ... for scanline 0
-      //   pixel sample data for channel n for scanline 0
-      //   pixel sample data for channel 0 for scanline 1
-      //   pixel sample data for channel 1 for scanline 1
-      //   pixel sample data for channel ... for scanline 1
-      //   pixel sample data for channel n for scanline 1
-      //   ...
-      for (int v = 0; v < numLines; v++) {
-        for (int c = 0; c < numChannels; c++) {
-          for (int u = 0; u < dataWidth; u++) {
-            FP16 hf;
-            // hf.u = outBuf[(c * dataWidth * numScanlineBlocks) + ((v *
-            // dataWidth) + u)];
+        //unsigned int channelOffset = channelOffsetList[c];
+        //unsigned int i = channelOffset;
+        //printf("channel = %d. name = %s. ty = %d\n", c, channels[c].name.c_str(), channels[c].pixelType);
 
-            // Assume (A)BGR pixel order.
-            hf.u = outBuf[v * (numChannels * dataWidth) +
-                          (((numChannels - c - 1) * dataWidth) + u)];
-
-            FP32 f32 = half_to_float(hf);
-            // printf("i[%d] u: %d, fval: %f\n", (c * dataWidth *
-            // numScanlineBlocks) + ((v * dataWidth) + u), hf.u, f32.f);
-
-            // Assume increasing Y.
-            image[4 * ((dataHeight - (lineNo + v) - 1) * dataWidth + u) + c] =
-                f32.f;
+        if (channels[c].pixelType == 0) { // UINT
+          for (int x = 0; x < samplesPerLine; x++) {
+            unsigned int ui = *reinterpret_cast<unsigned int *>(&sampleData.at(dataOffset));
+            dataOffset += sizeof(unsigned int);
+            deepImage->image[c][y][x] = (float)ui; // @fixme
+          }
+        } else if (channels[c].pixelType == 1) { // half
+          for (int x = 0; x < samplesPerLine; x++) {
+            FP16 f16;
+            f16.u = *reinterpret_cast<unsigned short *>(&sampleData.at(dataOffset));
+            FP32 f32 = half_to_float(f16);
+            deepImage->image[c][y][x] = f32.f;
+            //printf("  f(half) = %f (0x%08x)\n", f32.f, f16.u);
+            dataOffset += sizeof(unsigned short);
+          }
+        } else { // float
+          for (int x = 0; x < samplesPerLine; x++) {
+            float f = *reinterpret_cast<float *>(&sampleData.at(dataOffset));
+            //printf("  f = %f(0x%08x)\n", f, *((unsigned int *)&f));
+            deepImage->image[c][y][x] = f;
+            dataOffset += sizeof(float);
           }
         }
+        
       }
-
-    } else if (compressionType == 0) { // No compression
-
-      const unsigned short* srcPtr = reinterpret_cast<const unsigned short *>(dataPtr + 8);
-
-      // scanline
-      for (int c = 0; c < numChannels; c++) {
-        for (int u = 0; u < dataWidth; u++) {
-          FP16 hf;
-
-          // Assume (A)BGR
-          hf.u = srcPtr[(numChannels - c - 1) * dataWidth + u];
-
-          FP32 f32 = half_to_float(hf);
-          // printf("i[%d] u: %d, fval: %f\n", (c * dataWidth *
-          // numScanlineBlocks) + ((v * dataWidth) + u), hf.u, f32.f);
-
-          // Assume increasing Y.
-          image[4 * ((dataHeight - y - 1) * dataWidth + u) + c] =
-              f32.f;
-        }
-      }
-    } else {
-      if (err) {
-        (*err) = "Unsupported format.";
-      }   
-      return -10;
+      //printf("total: %d\n", dataOffset);
     }
-#endif
+
+  } // y
+
+  deepImage->width  = dataWidth;
+  deepImage->height = dataHeight;
+
+  deepImage->channel_names = (const char**)malloc(sizeof(const char*) * numChannels);
+  for (int c = 0; c < numChannels; c++) {
+    deepImage->channel_names[c] = strdup(channels[c].name.c_str());
   }
-
-#if 0 // todo
-  {
-    size_t len = sizeof(float) * 4 * dataWidth * dataHeight;
-    (*out_rgba) = (float *)malloc(len);
-
-    memcpy((*out_rgba), &image.at(0), len);
-
-    (*width) = dataWidth;
-    (*height) = dataHeight;
-  }
-#endif
+  deepImage->num_channels = numChannels;
 
   return 0; // OK
 }

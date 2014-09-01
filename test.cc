@@ -34,12 +34,6 @@ SaveAsPFM(const char* filename, int width, int height, float* data)
 int
 main(int argc, char** argv)
 {
-  float* out;
-  int width;
-  int height;
-  int* sample_offset;
-  const char* channels;
-  int         num_channels;
   const char* err;
 
   if (argc < 2) {
@@ -47,19 +41,20 @@ main(int argc, char** argv)
     exit(-1);
   }
   
-  int ret = LoadDeepEXR(&channels, &num_channels, &out, &sample_offset, &width, &height, argv[1], &err);
+  DeepImage deepImage;
+  int ret = LoadDeepEXR(&deepImage, argv[1], &err);
   if (ret != 0) {
     fprintf(stderr, "Load EXR err: %s\n", err);
     return ret;
   }
 
-  printf("EXR: %d x %d\n", width, height);
+  printf("EXR: %d x %d\n", deepImage.width, deepImage.height);
 
-  SaveAsPFM("output.pfm", width, height, out);
+  //SaveAsPFM("output.pfm", width, height, out);
 
-  printf("Saved pfm file.\n");
+  //printf("Saved pfm file.\n");
 
-  free(out);
+  //free(out);
 
   return ret;
 }
