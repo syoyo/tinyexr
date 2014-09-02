@@ -51,17 +51,27 @@ static void draw_samples() {
   // @todo { Do this only once. }
   int depthChan = 0;
   int rChan = -1;
+  int raChan = -1;
   int gChan = -1;
+  int gaChan = -1;
   int bChan = -1;
+  int baChan = -1;
+  
   for (int c = 0; c < gDeepImage.num_channels; c++) {
     if (strcmp("Z", gDeepImage.channel_names[c]) == 0) {
       depthChan = c;
     } else if (strcmp("R", gDeepImage.channel_names[c]) == 0) {
       rChan = c;
+    } else if (strcmp("RA", gDeepImage.channel_names[c]) == 0) {
+      raChan = c;
     } else if (strcmp("G", gDeepImage.channel_names[c]) == 0) {
       gChan = c;
+    } else if (strcmp("GA", gDeepImage.channel_names[c]) == 0) {
+      gaChan = c;
     } else if (strcmp("B", gDeepImage.channel_names[c]) == 0) {
       bChan = c;
+    } else if (strcmp("BA", gDeepImage.channel_names[c]) == 0) {
+      baChan = c;
     }
   }
 
@@ -82,18 +92,31 @@ static void draw_samples() {
         float red = 1.0f;
         float green = 1.0f;
         float blue = 1.0f;
+        float red_alpha = 1.0f;
+        float green_alpha = 1.0f;
+        float blue_alpha = 1.0f;
         if (rChan >= 0) {
           red = gDeepImage.image[rChan][y][s];
+        }
+        if (raChan >= 0) {
+          red_alpha = gDeepImage.image[raChan][y][s];
         }
         if (gChan >= 0) {
           green = gDeepImage.image[gChan][y][s];
         }
+        if (gaChan >= 0) {
+          green_alpha = gDeepImage.image[gaChan][y][s];
+        }
         if (bChan >= 0) {
           blue = gDeepImage.image[bChan][y][s];
         }
-        red *= color_scale;
-        green *= color_scale;
-        blue *= color_scale;
+        if (baChan >= 0) {
+          blue_alpha = gDeepImage.image[baChan][y][s];
+        }
+        // unmultiply and apply scaling
+        red *= color_scale / red_alpha;
+        green *= color_scale / green_alpha;
+        blue *= color_scale / blue_alpha;
         glColor3f(red, green, blue);
         glVertex3f(px, py, pz);
       }
