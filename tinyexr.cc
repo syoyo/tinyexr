@@ -7290,28 +7290,30 @@ int LoadDeepEXR(
         //unsigned int i = channelOffset;
         //printf("channel = %d. name = %s. ty = %d\n", c, channels[c].name.c_str(), channels[c].pixelType);
 
+        //printf("dataOffset = %d\n", (int)dataOffset);
+
         if (channels[c].pixelType == 0) { // UINT
           for (int x = 0; x < samplesPerLine; x++) {
-            unsigned int ui = *reinterpret_cast<unsigned int *>(&sampleData.at(dataOffset));
-            dataOffset += sizeof(unsigned int);
+            unsigned int ui = *reinterpret_cast<unsigned int *>(&sampleData.at(dataOffset + x * sizeof(int)));
             deepImage->image[c][y][x] = (float)ui; // @fixme
           }
+          dataOffset += sizeof(unsigned int) * samplesPerLine;
         } else if (channels[c].pixelType == 1) { // half
           for (int x = 0; x < samplesPerLine; x++) {
             FP16 f16;
-            f16.u = *reinterpret_cast<unsigned short *>(&sampleData.at(dataOffset));
+            f16.u = *reinterpret_cast<unsigned short *>(&sampleData.at(dataOffset + x * sizeof(short)));
             FP32 f32 = half_to_float(f16);
             deepImage->image[c][y][x] = f32.f;
-            //printf("  f(half) = %f (0x%08x)\n", f32.f, f16.u);
-            dataOffset += sizeof(unsigned short);
+            //printf("c[%d]  f(half) = %f (0x%08x)\n", c, f32.f, f16.u);
           }
+          dataOffset += sizeof(short) * samplesPerLine;
         } else { // float
           for (int x = 0; x < samplesPerLine; x++) {
-            float f = *reinterpret_cast<float *>(&sampleData.at(dataOffset));
+            float f = *reinterpret_cast<float *>(&sampleData.at(dataOffset + x * sizeof(float)));
             //printf("  f = %f(0x%08x)\n", f, *((unsigned int *)&f));
             deepImage->image[c][y][x] = f;
-            dataOffset += sizeof(float);
           }
+          dataOffset += sizeof(float) * samplesPerLine;
         }
         
       }

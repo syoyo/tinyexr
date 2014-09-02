@@ -21,6 +21,7 @@ static int mouse_moving;
 static int width = 512, height = 512;
 static float view_org[3], view_tgt[3];
 static float curr_quat[4], prev_quat[4];
+static float color_scale = 1.0f;
 
 DeepImage gDeepImage;
 
@@ -34,7 +35,7 @@ reshape(int w, int h)
     glViewport(0, 0, w, h);
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    gluPerspective(45.0, (float)w / (float)h, 0.1f, 1000.0f);
+    gluPerspective(5.0, (float)w / (float)h, 0.1f, 1000.0f);
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
 
@@ -50,24 +51,54 @@ draw_samples()
   glBegin(GL_POINTS);
 
   // find depth channel.
+  // @todo { Do this only once. }
   int depthChan = 0;
+  int rChan = -1;
+  int gChan = -1;
+  int bChan = -1;
   for (int c = 0; c < gDeepImage.num_channels; c++) {
-    if (strncmp("Z", gDeepImage.channel_names[c], 1) == 0) {
+    if (strcmp("Z", gDeepImage.channel_names[c]) == 0) {
       depthChan = c;
+    } else if (strcmp("R", gDeepImage.channel_names[c]) == 0) {
+      rChan = c;
+    } else if (strcmp("G", gDeepImage.channel_names[c]) == 0) {
+      gChan = c;
+    } else if (strcmp("B", gDeepImage.channel_names[c]) == 0) {
+      bChan = c;
     }
   }
 
   for (int y = 0; y < gDeepImage.height; y++) {
-    float py = 2.0f * (y / (float)gDeepImage.height) - 1.0f;
+    float py = 2.0f * ((gDeepImage.height - y - 1) / (float)gDeepImage.height) - 1.0f; // upside down?
     int sampleNum = gDeepImage.offset_table[y][gDeepImage.width-1];
     for (int x = 0; x < gDeepImage.width-1; x++) {
       float px = 2.0f * (x / (float)gDeepImage.width) - 1.0f;
-      int s = gDeepImage.offset_table[y][x+1];
-      if (s >= sampleNum) {
+      int s_start = gDeepImage.offset_table[y][x];
+      int s_end   = gDeepImage.offset_table[y][x+1];
+      if (s_start >= sampleNum || s_end >= sampleNum) {
         continue;
       }
-      float pz = gDeepImage.image[depthChan][y][s];
-      glVertex3f(px, py, pz);
+      for (int s = s_start; s < s_end; s++) {
+        float pz = gDeepImage.image[depthChan][y][s];
+
+        float red = 1.0f;
+        float green = 1.0f;
+        float blue = 1.0f;
+        if (rChan >= 0) {
+          red = gDeepImage.image[rChan][y][s];
+        }
+        if (gChan >= 0) {
+          green = gDeepImage.image[gChan][y][s];
+        }
+        if (bChan >= 0) {
+          blue = gDeepImage.image[bChan][y][s];
+        }
+        red *= color_scale;
+        green *= color_scale;
+        blue *= color_scale;
+        glColor3f(red, green, blue);
+        glVertex3f(px, py, pz);
+      }
     }
   }
 
@@ -115,6 +146,13 @@ keyboard(unsigned char key, int x, int y)
     case 27:
         exit(0);
         break; 
+    case 'c':
+        color_scale += 1.0f;
+        break;
+    case 'x':
+        color_scale -= 1.0f;
+        if (color_scale < 1.0f) color_scale = 1.0f;
+        break;
     default:
         break; 
     }
@@ -214,6 +252,13 @@ main(
       exit(-1);
     }
 
+    printf("aa %f, %f, %f, %f, %f, %f\n",
+      gDeepImage.image[6][0][0],
+      gDeepImage.image[5][0][0],
+      gDeepImage.image[4][0][0],
+      gDeepImage.image[3][0][0],
+      gDeepImage.image[2][0][0],
+      gDeepImage.image[1][0][0]);
     glutInit(&argc, argv);
     glutInitWindowSize(512, 512);
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_DEPTH | GLUT_RGBA);
