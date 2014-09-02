@@ -66,7 +66,11 @@ See `example/deepview` for actual usage.
 
 ### Example
 
-* examples/deepview deep image viewer in OpenGL.
+#### deepview 
+
+`examples/deepview` is simple deep image viewer in OpenGL.
+
+![DeepViewExample](https://github.com/syoyo/tinyexr/blob/master/examples/deepview/deepview_screencast.gif?raw=true)
 
 ## TODO
 
