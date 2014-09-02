@@ -87,7 +87,7 @@ static void draw_samples() {
         continue;
       }
       for (int s = s_start; s < s_end; s++) {
-        float pz = gDeepImage.image[depthChan][y][s];
+        float pz = -gDeepImage.image[depthChan][y][s];
 
         float red = 1.0f;
         float green = 1.0f;
