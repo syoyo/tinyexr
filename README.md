@@ -97,4 +97,4 @@ Syoyo Fujita(syoyo@lighttransport.com)
 
 ## Contributor(s)
 
-* Matt Ebb (http://mattebb.com) : deep image example.
+* Matt Ebb (http://mattebb.com) : deep image example. Thanks!
