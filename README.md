@@ -46,17 +46,17 @@ See `example/deepview` for actual usage.
   int ret = LoadDeepEXR(&deepImage, input, &err);
 
   // acccess to each sample in the deep pixel.
-  for (int y = 0; y < gDeepImage.height; y++) {
-    int sampleNum = gDeepImage.offset_table[y][gDeepImage.width-1];
-    for (int x = 0; x < gDeepImage.width-1; x++) {
-      int s_start = gDeepImage.offset_table[y][x];
-      int s_end   = gDeepImage.offset_table[y][x+1];
+  for (int y = 0; y < deepImage.height; y++) {
+    int sampleNum = deepImage.offset_table[y][deepImage.width-1];
+    for (int x = 0; x < deepImage.width-1; x++) {
+      int s_start = deepImage.offset_table[y][x];
+      int s_end   = deepImage.offset_table[y][x+1];
       if (s_start >= sampleNum) {
         continue;
       }
       s_end = (s_end < sampleNum) ? s_end : sampleNum;
       for (int s = s_start; s < s_end; s++) {
-        float val = gDeepImage.image[depthChan][y][s];
+        float val = deepImage.image[depthChan][y][s];
         ...
       }
     }
