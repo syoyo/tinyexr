@@ -23,9 +23,11 @@ To use `tinyexr`, simply copy `tinyexr.cc` and `tinyexr.h` into your project.
 
 ## Usage
 
+Reading ordinal EXR file.
+
 ```
   const char* input = "asakusa.exr";
-  float* out;
+  float* out; // width * height * RGBA
   int width;
   int height;
   const char* err;
@@ -33,13 +35,46 @@ To use `tinyexr`, simply copy `tinyexr.cc` and `tinyexr.h` into your project.
   int ret = LoadEXR(&out, &width, &height, input, &err);
 ```
 
+Reading deep image EXR file.
+See `example/deepview` for actual usage.
+
+```
+  const char* input = "deepimage.exr";
+  const char* err;
+  DeepImage deepImage;
+
+  int ret = LoadDeepEXR(&deepImage, input, &err);
+
+  // acccess to each sample in the deep pixel.
+  for (int y = 0; y < gDeepImage.height; y++) {
+    int sampleNum = gDeepImage.offset_table[y][gDeepImage.width-1];
+    for (int x = 0; x < gDeepImage.width-1; x++) {
+      int s_start = gDeepImage.offset_table[y][x];
+      int s_end   = gDeepImage.offset_table[y][x+1];
+      if (s_start >= sampleNum) {
+        continue;
+      }
+      s_end = (s_end < sampleNum) ? s_end : sampleNum;
+      for (int s = s_start; s < s_end; s++) {
+        float val = gDeepImage.image[depthChan][y][s];
+        ...
+      }
+    }
+  }
+
+```
+
+### Example
+
+* examples/deepview deep image viewer in OpenGL.
+
 ## TODO
 
 * Tile format.
 * Support for various compression type.
 * Multi-channel.
 * Pixel order.
-* EXR 2.0(deep image).
+* More EXR 2.0 features.
 * Big endian machine.
 
 ## Similar projects
@@ -58,4 +93,4 @@ Syoyo Fujita(syoyo@lighttransport.com)
 
 ## Contributor(s)
 
-* Matt Ebb : deep image example.
+* Matt Ebb (http://mattebb.com) : deep image example.

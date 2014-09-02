@@ -29,22 +29,19 @@ DeepImage gDeepImage;
 // --
 //
 
-static void
-reshape(int w, int h)
-{
-    glViewport(0, 0, w, h);
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-    gluPerspective(5.0, (float)w / (float)h, 0.1f, 1000.0f);
-    glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity();
+static void reshape(int w, int h) {
+  glViewport(0, 0, w, h);
+  glMatrixMode(GL_PROJECTION);
+  glLoadIdentity();
+  gluPerspective(5.0, (float)w / (float)h, 0.1f, 1000.0f);
+  glMatrixMode(GL_MODELVIEW);
+  glLoadIdentity();
 
-    width = w; height = h;
+  width = w;
+  height = h;
 }
 
-static void
-draw_samples()
-{
+static void draw_samples() {
   glPointSize(1.0f);
   glColor3f(1.0f, 1.0f, 1.0f);
 
@@ -69,12 +66,13 @@ draw_samples()
   }
 
   for (int y = 0; y < gDeepImage.height; y++) {
-    float py = 2.0f * ((gDeepImage.height - y - 1) / (float)gDeepImage.height) - 1.0f; // upside down?
-    int sampleNum = gDeepImage.offset_table[y][gDeepImage.width-1];
-    for (int x = 0; x < gDeepImage.width-1; x++) {
+    float py = 2.0f * ((gDeepImage.height - y - 1) / (float)gDeepImage.height) -
+               1.0f; // upside down?
+    int sampleNum = gDeepImage.offset_table[y][gDeepImage.width - 1];
+    for (int x = 0; x < gDeepImage.width - 1; x++) {
       float px = 2.0f * (x / (float)gDeepImage.width) - 1.0f;
       int s_start = gDeepImage.offset_table[y][x];
-      int s_end   = gDeepImage.offset_table[y][x+1];
+      int s_end = gDeepImage.offset_table[y][x + 1];
       if (s_start >= sampleNum || s_end >= sampleNum) {
         continue;
       }
@@ -105,174 +103,153 @@ draw_samples()
   glEnd();
 }
 
-static void
-display()
-{
-    GLfloat mat[4][4];
+static void display() {
+  GLfloat mat[4][4];
 
-    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+  glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    glEnable(GL_DEPTH_TEST);
+  glEnable(GL_DEPTH_TEST);
 
-    glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity();
+  glMatrixMode(GL_MODELVIEW);
+  glLoadIdentity();
 
-    // camera & rotate
-    gluLookAt(view_org[0], view_org[1], view_org[2],
-          view_tgt[0], view_tgt[1], view_tgt[2],
-          0.0, 1.0, 0.0);
+  // camera & rotate
+  gluLookAt(view_org[0], view_org[1], view_org[2], view_tgt[0], view_tgt[1],
+            view_tgt[2], 0.0, 1.0, 0.0);
 
-    build_rotmatrix(mat, curr_quat);
-    glMultMatrixf(&mat[0][0]);
+  build_rotmatrix(mat, curr_quat);
+  glMultMatrixf(&mat[0][0]);
 
-    draw_samples();
+  draw_samples();
 
-    //glBegin(GL_POLYGON);
-    //    glTexCoord2f(0 , 0); glVertex2f(-0.9 , -0.9);
-    //    glTexCoord2f(0 , 1); glVertex2f(-0.9 , 0.9);
-    //    glTexCoord2f(1 , 1); glVertex2f(0.9 , 0.9);
-    //    glTexCoord2f(1 , 0); glVertex2f(0.9 , -0.9);
-    //glEnd();
+  // glBegin(GL_POLYGON);
+  //    glTexCoord2f(0 , 0); glVertex2f(-0.9 , -0.9);
+  //    glTexCoord2f(0 , 1); glVertex2f(-0.9 , 0.9);
+  //    glTexCoord2f(1 , 1); glVertex2f(0.9 , 0.9);
+  //    glTexCoord2f(1 , 0); glVertex2f(0.9 , -0.9);
+  // glEnd();
 
-    glutSwapBuffers();
+  glutSwapBuffers();
 }
 
-static void
-keyboard(unsigned char key, int x, int y)
-{
-    switch (key) {
-    case 'q':
-    case 27:
-        exit(0);
-        break; 
-    case 'c':
-        color_scale += 1.0f;
-        break;
-    case 'x':
-        color_scale -= 1.0f;
-        if (color_scale < 1.0f) color_scale = 1.0f;
-        break;
-    default:
-        break; 
-    }
+static void keyboard(unsigned char key, int x, int y) {
+  switch (key) {
+  case 'q':
+  case 27:
+    exit(0);
+    break;
+  case 'c':
+    color_scale += 1.0f;
+    break;
+  case 'x':
+    color_scale -= 1.0f;
+    if (color_scale < 1.0f)
+      color_scale = 1.0f;
+    break;
+  default:
+    break;
+  }
 
-    glutPostRedisplay();
+  glutPostRedisplay();
 }
 
-static void
-mouse(int button, int state, int x, int y)
-{
-    int mod = glutGetModifiers();
+static void mouse(int button, int state, int x, int y) {
+  int mod = glutGetModifiers();
 
-    if (button == GLUT_LEFT_BUTTON && state == GLUT_DOWN) {
-        if (mod == GLUT_ACTIVE_SHIFT) {
-            mouse_m_pressed = 1;
-        } else if (mod == GLUT_ACTIVE_CTRL) {
-            mouse_r_pressed = 1;
-        } else {
-            trackball(prev_quat, 0, 0, 0, 0);
-        }
-        mouse_moving = 1;
-        mouse_x = x;
-        mouse_y = y;
-    } else if (button == GLUT_LEFT_BUTTON && state == GLUT_UP) {
-        mouse_m_pressed = 0;
-        mouse_r_pressed = 0;
-        mouse_moving = 0;
+  if (button == GLUT_LEFT_BUTTON && state == GLUT_DOWN) {
+    if (mod == GLUT_ACTIVE_SHIFT) {
+      mouse_m_pressed = 1;
+    } else if (mod == GLUT_ACTIVE_CTRL) {
+      mouse_r_pressed = 1;
+    } else {
+      trackball(prev_quat, 0, 0, 0, 0);
     }
- 
-}
-    
-static void
-motion(int x, int y)
-{
-    float w = 1.0;
-    float mw = 0.1;
-
-    if (mouse_moving) {
-        if (mouse_r_pressed) {
-            view_org[2] += mw * (mouse_y - y);
-            view_tgt[2] += mw * (mouse_y - y);
-        } else if (mouse_m_pressed) {
-            view_org[0] += mw * (mouse_x - x);
-            view_org[1] -= mw * (mouse_y - y);
-            view_tgt[0] += mw * (mouse_x - x);
-            view_tgt[1] -= mw * (mouse_y - y);
-        } else {
-            trackball(prev_quat,
-                  w * (2.0 * mouse_x - width)  / width,
-                  w * (height - 2.0 * mouse_y) / height,
-                  w * (2.0 * x - width)  / width,
-                  w * (height - 2.0 * y) / height);
-            add_quats(prev_quat, curr_quat, curr_quat);
-        }
-
-        mouse_x = x;
-        mouse_y = y;
-        
-    }
-
-    glutPostRedisplay();
+    mouse_moving = 1;
+    mouse_x = x;
+    mouse_y = y;
+  } else if (button == GLUT_LEFT_BUTTON && state == GLUT_UP) {
+    mouse_m_pressed = 0;
+    mouse_r_pressed = 0;
+    mouse_moving = 0;
+  }
 }
 
-static void
-init()
-{
-    trackball(curr_quat, 0, 0, 0, 0);
+static void motion(int x, int y) {
+  float w = 1.0;
+  float mw = 0.1;
 
-    view_org[0] = 0.0f;
-    view_org[1] = 0.0f;
-    view_org[2] = 3.0f;
+  if (mouse_moving) {
+    if (mouse_r_pressed) {
+      view_org[2] += mw * (mouse_y - y);
+      view_tgt[2] += mw * (mouse_y - y);
+    } else if (mouse_m_pressed) {
+      view_org[0] += mw * (mouse_x - x);
+      view_org[1] -= mw * (mouse_y - y);
+      view_tgt[0] += mw * (mouse_x - x);
+      view_tgt[1] -= mw * (mouse_y - y);
+    } else {
+      trackball(prev_quat, w * (2.0 * mouse_x - width) / width,
+                w * (height - 2.0 * mouse_y) / height,
+                w * (2.0 * x - width) / width, w * (height - 2.0 * y) / height);
+      add_quats(prev_quat, curr_quat, curr_quat);
+    }
 
-    view_tgt[0] = 0.0f;
-    view_tgt[1] = 0.0f;
-    view_tgt[2] = 0.0f;
+    mouse_x = x;
+    mouse_y = y;
+  }
+
+  glutPostRedisplay();
 }
 
-int
-main(
-    int argc,
-    char **argv)
-{
-    const char *input = "input.exr";
+static void init() {
+  trackball(curr_quat, 0, 0, 0, 0);
 
-    if (argc < 2) {
-        printf("Usage: deepview <input.exr>\n");
-        exit(1);
+  view_org[0] = 0.0f;
+  view_org[1] = 0.0f;
+  view_org[2] = 3.0f;
+
+  view_tgt[0] = 0.0f;
+  view_tgt[1] = 0.0f;
+  view_tgt[2] = 0.0f;
+}
+
+int main(int argc, char **argv) {
+  const char *input = "input.exr";
+
+  if (argc < 2) {
+    printf("Usage: deepview <input.exr>\n");
+    exit(1);
+  }
+
+  input = argv[1];
+  const char *err;
+  int ret = LoadDeepEXR(&gDeepImage, input, &err);
+  if (ret != 0) {
+    if (err) {
+      fprintf(stderr, "ERR: %s\n", err);
     }
+    exit(-1);
+  }
 
-    input = argv[1];
-    const char* err;
-    int ret = LoadDeepEXR(&gDeepImage, input, &err);
-    if (ret != 0) {
-      if (err) {
-        fprintf(stderr, "ERR: %s\n", err);
-      }
-      exit(-1);
-    }
+  printf("aa %f, %f, %f, %f, %f, %f\n", gDeepImage.image[6][0][0],
+         gDeepImage.image[5][0][0], gDeepImage.image[4][0][0],
+         gDeepImage.image[3][0][0], gDeepImage.image[2][0][0],
+         gDeepImage.image[1][0][0]);
+  glutInit(&argc, argv);
+  glutInitWindowSize(512, 512);
+  glutInitDisplayMode(GLUT_DOUBLE | GLUT_DEPTH | GLUT_RGBA);
 
-    printf("aa %f, %f, %f, %f, %f, %f\n",
-      gDeepImage.image[6][0][0],
-      gDeepImage.image[5][0][0],
-      gDeepImage.image[4][0][0],
-      gDeepImage.image[3][0][0],
-      gDeepImage.image[2][0][0],
-      gDeepImage.image[1][0][0]);
-    glutInit(&argc, argv);
-    glutInitWindowSize(512, 512);
-    glutInitDisplayMode(GLUT_DOUBLE | GLUT_DEPTH | GLUT_RGBA);
+  init();
 
-    init();
+  glutCreateWindow("deepimage viewer");
 
-    glutCreateWindow("deepimage viewer");
+  glutReshapeFunc(reshape);
+  glutDisplayFunc(display);
+  glutKeyboardFunc(keyboard);
+  glutMouseFunc(mouse);
+  glutMotionFunc(motion);
+  glutMainLoop();
 
-    glutReshapeFunc(reshape);
-    glutDisplayFunc(display);
-    glutKeyboardFunc(keyboard);
-    glutMouseFunc(mouse);
-    glutMotionFunc(motion);
-    glutMainLoop();
-
-    return 0;
+  return 0;
 }

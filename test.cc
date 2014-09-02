@@ -35,26 +35,28 @@ int
 main(int argc, char** argv)
 {
   const char* err;
+  float* out;
+  int width;
+  int height;
 
   if (argc < 2) {
     fprintf(stderr, "Needs input.exr.\n");
     exit(-1);
   }
   
-  DeepImage deepImage;
-  int ret = LoadDeepEXR(&deepImage, argv[1], &err);
+  int ret = LoadEXR(&out, &width, &height, argv[1], &err);
   if (ret != 0) {
     fprintf(stderr, "Load EXR err: %s\n", err);
     return ret;
   }
 
-  printf("EXR: %d x %d\n", deepImage.width, deepImage.height);
+  printf("EXR: %d x %d\n", width, height);
 
-  //SaveAsPFM("output.pfm", width, height, out);
+  SaveAsPFM("output.pfm", width, height, out);
 
-  //printf("Saved pfm file.\n");
+  printf("Saved pfm file.\n");
 
-  //free(out);
+  free(out);
 
   return ret;
 }

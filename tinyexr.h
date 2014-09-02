@@ -6,12 +6,12 @@ extern "C" {
 #endif
 
 typedef struct {
-  const char** channel_names;
-  int         num_channels;
-  float***    image;              // image[channels][scanlines][samples]
-  int**       offset_table;       // offset_table[scanline][offsets]
-  int         width;
-  int         height;
+  const char **channel_names;
+  int num_channels;
+  float ***image;     // image[channels][scanlines][samples]
+  int **offset_table; // offset_table[scanline][offsets]
+  int width;
+  int height;
 } DeepImage;
 
 // Loads single-frame OpenEXR image.
@@ -22,11 +22,9 @@ extern int LoadEXR(float **out_rgba, int *width, int *height,
                    const char *filename, const char **err);
 
 // Loads single-frame OpenEXR deep image.
-// Application must free image data as returned by `out_deep_image`
-extern int LoadDeepEXR(
-  DeepImage*    out_image,
-  const char*   filename,
-  const char**  err);
+// Application must free memory of variables in DeepImage(image, offset_table)
+extern int LoadDeepEXR(DeepImage *out_image, const char *filename,
+                       const char **err);
 
 #ifdef __cplusplus
 }
