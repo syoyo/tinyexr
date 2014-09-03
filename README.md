@@ -9,7 +9,7 @@ To use `tinyexr`, simply copy `tinyexr.cc` and `tinyexr.h` into your project.
 `tinyexr` currently supports:
 
 * OpenEXR version 1.x.
-* Traditional image
+* Normal image
   * RGB(A) channel.
   * Scanline format.
   * Uncompress("compress" = 0) and ZIP compression("compress" = 3).
