@@ -34,6 +34,7 @@ SaveAsPFM(const char* filename, int width, int height, float* data)
 int
 main(int argc, char** argv)
 {
+#if 1
   const char* err;
   float* out;
   int width;
@@ -57,6 +58,25 @@ main(int argc, char** argv)
   printf("Saved pfm file.\n");
 
   free(out);
+#else // @todo
+  const char* err;
+  float** out;
+  int num_parts;
+  int width;
+  int height;
+
+  if (argc < 2) {
+    fprintf(stderr, "Needs input.exr.\n");
+    exit(-1);
+  }
+  
+  int ret = LoadMultiPartEXR(&out, &num_parts, &width, &height, argv[1], &err);
+  if (ret != 0) {
+    fprintf(stderr, "Load EXR err: %s\n", err);
+    return ret;
+  }
+
+#endif
 
   return ret;
 }

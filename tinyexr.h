@@ -43,14 +43,40 @@ typedef struct {
 // Loads single-frame OpenEXR image.
 // Application must free image data as returned by `out_rgba`
 // Result image format is: float x RGBA x width x hight
-// returns error string in `err` when there's an error
+// Return 0 if success
+// Returns error string in `err` when there's an error
 extern int LoadEXR(float **out_rgba, int *width, int *height,
                    const char *filename, const char **err);
 
+// NOT YET IMPLEMENTED:
+// Loads multi-part OpenEXR image.
+// Application must free image data as returned by `out_rgba`
+// Result image format is: [parts][float x RGBA x width x hight]
+// Return 0 if success
+// Returns error string in `err` when there's an error
+//extern int LoadMultiPartEXR(
+//                  float ***out_rgba, int *num_parts, int *width, int *height,
+//                  const char *filename, const char **err);
+
 // Loads single-frame OpenEXR deep image.
 // Application must free memory of variables in DeepImage(image, offset_table)
+// Return 0 if success
+// Returns error string in `err` when there's an error
 extern int LoadDeepEXR(DeepImage *out_image, const char *filename,
                        const char **err);
+
+// NOT YET IMPLEMENTED:
+// Saves single-frame OpenEXR deep image.
+// Return 0 if success
+// Returns error string in `err` when there's an error
+//extern int SaveDeepEXR(const DeepImage *in_image, const char *filename,
+//                       const char **err);
+
+// NOT YET IMPLEMENTED:
+// Loads multi-part OpenEXR deep image.
+// Application must free memory of variables in DeepImage(image, offset_table)
+//extern int LoadMultiPartDeepEXR(DeepImage **out_image, int num_parts, const char *filename,
+//                       const char **err);
 
 #ifdef __cplusplus
 }
