@@ -19,7 +19,13 @@ To use `tinyexr`, simply copy `tinyexr.cc` and `tinyexr.h` into your project.
   * ZIPS compression("compress" = 2).
   * Half, float pixel type.
 * Litte endian machine.
-* C interface
+* C interface.
+  * You can easily write language bindings(e.g. golang)
+
+# Use case 
+
+* mallie https://github.com/lighttransport/mallie
+* Your project here!
 
 ## Usage
 
@@ -74,11 +80,12 @@ See `example/deepview` for actual usage.
 
 ## TODO
 
+Contribution is welcome!
+
 * Tile format.
 * Support for various compression type.
 * Multi-channel.
 * Pixel order.
-* More EXR 2.0 features.
 * Big endian machine.
 
 ## Similar projects
