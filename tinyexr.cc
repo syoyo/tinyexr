@@ -6599,6 +6599,43 @@ FP32 half_to_float(FP16 h) {
   return o;
 }
 
+FP16 float_to_half_full(FP32 f) {
+  FP16 o = {0};
+
+  // Based on ISPC reference code (with minor modifications)
+  if (f.Exponent == 0) // Signed zero/denormal (which will underflow)
+    o.Exponent = 0;
+  else if (f.Exponent == 255) // Inf or NaN (all exponent bits set)
+  {
+    o.Exponent = 31;
+    o.Mantissa = f.Mantissa ? 0x200 : 0; // NaN->qNaN and Inf->Inf
+  } else                                 // Normalized number
+  {
+    // Exponent unbias the single, then bias the halfp
+    int newexp = f.Exponent - 127 + 15;
+    if (newexp >= 31) // Overflow, return signed infinity
+      o.Exponent = 31;
+    else if (newexp <= 0) // Underflow
+    {
+      if ((14 - newexp) <= 24) // Mantissa might be non-zero
+      {
+        unsigned int mant = f.Mantissa | 0x800000; // Hidden 1 bit
+        o.Mantissa = mant >> (14 - newexp);
+        if ((mant >> (13 - newexp)) & 1) // Check for rounding
+          o.u++; // Round, might overflow into exp bit, but this is OK
+      }
+    } else {
+      o.Exponent = newexp;
+      o.Mantissa = f.Mantissa >> 13;
+      if (f.Mantissa & 0x1000) // Check for rounding
+        o.u++;                 // Round, might overflow to inf, this is OK
+    }
+  }
+
+  o.Sign = f.Sign;
+  return o;
+}
+
 // NOTE: From OpenEXR code
 // #define IMF_INCREASING_Y  0
 // #define IMF_DECREASING_Y  1
@@ -6612,25 +6649,6 @@ FP32 half_to_float(FP16 h) {
 // #define IMF_PXR24_COMPRESSION 5
 // #define IMF_B44_COMPRESSION 6
 // #define IMF_B44A_COMPRESSION  7
-
-// #define IMF_WRITE_R   0x01
-// #define IMF_WRITE_G   0x02
-// #define IMF_WRITE_B   0x04
-// #define IMF_WRITE_A   0x08
-// #define IMF_WRITE_Y   0x10
-// #define IMF_WRITE_C   0x20
-// #define IMF_WRITE_RGB   0x07
-// #define IMF_WRITE_RGBA    0x0f
-// #define IMF_WRITE_YC    0x30
-// #define IMF_WRITE_YA    0x18
-// #define IMF_WRITE_YCA   0x38
-//
-// #define IMF_ONE_LEVEL   0
-// #define IMF_MIPMAP_LEVELS 1
-// #define IMF_RIPMAP_LEVELS 2
-//
-// #define IMF_ROUND_DOWN    0
-// #define IMF_ROUND_UP    1
 
 const char *ReadString(std::string &s, const char *ptr) {
   // Read untile NULL(\0).
@@ -6666,13 +6684,16 @@ const char *ReadAttribute(std::string &name, std::string &ty,
   return p;
 }
 
-void WriteAttribute(FILE* fp, const char* name, const char* type, const unsigned char* data, int len)
-{
-  size_t n = fwrite(name, 1, strlen(name)+1, fp);
-  assert(n == strlen(name)+1);
+void WriteAttribute(FILE *fp, const char *name, const char *type,
+                    const unsigned char *data, int len) {
+  size_t n = fwrite(name, 1, strlen(name) + 1, fp);
+  assert(n == strlen(name) + 1);
 
-  n = fwrite(type, 1, strlen(type)+1, fp);
-  assert(n == strlen(type)+1);
+  n = fwrite(type, 1, strlen(type) + 1, fp);
+  assert(n == strlen(type) + 1);
+
+  n = fwrite(&len, 1, sizeof(int), fp);
+  assert(n == sizeof(int));
 
   n = fwrite(data, 1, len, fp);
   assert(n == len);
@@ -6713,6 +6734,68 @@ void ReadChannelInfo(std::vector<ChannelInfo> &channels,
 
     channels.push_back(info);
   }
+}
+
+void CompressZip(unsigned char *dst, unsigned long long &compressedSize,
+                 const unsigned char *src, unsigned long srcSize) {
+
+  std::vector<unsigned char> tmpBuf(srcSize);
+
+  //
+  // Apply EXR-specific? postprocess. Grabbed from OpenEXR's
+  // ImfZipCompressor.cpp
+  //
+
+  //
+  // Reorder the pixel data.
+  //
+
+  {
+    char *t1 = (char *)&tmpBuf.at(0);
+    char *t2 = (char *)&tmpBuf.at(0) + (srcSize + 1) / 2;
+    const char *stop = (const char *)src + srcSize;
+
+    while (true) {
+      if ((const char *)src < stop)
+        *(t1++) = *(src++);
+      else
+        break;
+
+      if ((const char *)src < stop)
+        *(t2++) = *(src++);
+      else
+        break;
+    }
+  }
+
+  //
+  // Predictor.
+  //
+
+  {
+    unsigned char *t = &tmpBuf.at(0) + 1;
+    unsigned char *stop = &tmpBuf.at(0) + srcSize;
+    int p = t[-1];
+
+    while (t < stop) {
+      int d = int(t[0]) - p + (128 + 256);
+      p = t[0];
+      t[0] = d;
+      ++t;
+    }
+  }
+
+  //
+  // Compress the data using miniz
+  //
+
+  miniz::mz_ulong outSize = miniz::mz_compressBound(srcSize);
+  int ret = miniz::mz_compress(dst, &outSize,
+                               (const unsigned char *)&tmpBuf.at(0), srcSize);
+  assert(ret == miniz::MZ_OK);
+  // printf("outSize = %d, srcS = %d\n", outSize, srcSize);
+
+  compressedSize = outSize;
 }
 
 void DecompressZip(unsigned char *dst, unsigned long &uncompressedSize,
@@ -6856,7 +6939,6 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
       }
 
       compressionType = data[0];
-      // printf("comp: %d\n", compressionType);
 
       if (compressionType == 3) { // ZIP
         numScanlineBlocks = 16;
@@ -6897,13 +6979,11 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
       dy = *(reinterpret_cast<int *>(&data.at(4)));
       dw = *(reinterpret_cast<int *>(&data.at(8)));
       dh = *(reinterpret_cast<int *>(&data.at(12)));
-      // printf("data : %d x %d - %d x %d\n", dx, dy, dw, dh);
     } else if (attrName.compare("displayWindow") == 0) {
       int x = *(reinterpret_cast<int *>(&data.at(0)));
       int y = *(reinterpret_cast<int *>(&data.at(4)));
       int w = *(reinterpret_cast<int *>(&data.at(8)));
       int h = *(reinterpret_cast<int *>(&data.at(12)));
-      // printf("data : %d x %d - %d x %d\n", x, y, w, h);
     }
 
     marker = marker_next;
@@ -6951,7 +7031,6 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
     // ~     : pixel data(uncompressed or compressed)
     int lineNo = *reinterpret_cast<const int *>(dataPtr);
     int dataLen = *reinterpret_cast<const int *>(dataPtr + 4);
-    // printf("line: %d, dataLen: %d\n", lineNo, dataLen);
 
     int endLineNo = std::min(lineNo + numScanlineBlocks, dataHeight);
 
@@ -7039,6 +7118,175 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
     (*width) = dataWidth;
     (*height) = dataHeight;
   }
+
+  return 0; // OK
+}
+
+int SaveEXR(const float *in_rgba, int width, int height, const char *filename,
+            const char **err) {
+  if (in_rgba == NULL || filename == NULL) {
+    if (err) {
+      (*err) = "Invalid argument.";
+    }
+    return -1;
+  }
+
+  FILE *fp = fopen(filename, "wb");
+  if (!fp) {
+    if (err) {
+      (*err) = "Cannot write a file.";
+    }
+    return -1;
+  }
+
+  // Header
+  {
+    const char header[] = {0x76, 0x2f, 0x31, 0x01};
+    size_t n = fwrite(header, 1, 4, fp);
+    assert(n == 4);
+  }
+
+  // Version, scanline.
+  {
+    const char marker[] = {2, 0, 0, 0};
+    size_t n = fwrite(marker, 1, 4, fp);
+    assert(n == 4);
+  }
+
+  int numScanlineBlocks = 16; // 16 for ZIP compression.
+
+  // Write attributes.
+  {
+    unsigned char data[] = {
+        'A', 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0,   0,   'B',
+        0,   1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0,   'G', 0,
+        1,   0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 'R', 0,   1,
+        0,   0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0}; // last 0 =
+                                                           // terminator.
+
+    WriteAttribute(fp, "channels", "chlist", data, 18 * 4 + 1); // +1 = null
+  }
+
+  {
+    int compressionType = 3; // ZIP compression
+    WriteAttribute(fp, "compression", "compression",
+                   reinterpret_cast<const unsigned char *>(&compressionType),
+                   1);
+  }
+
+  {
+    int data[4] = {0, 0, width - 1, height - 1};
+    WriteAttribute(fp, "dataWindow", "box2i",
+                   reinterpret_cast<const unsigned char *>(data),
+                   sizeof(int) * 4);
+    WriteAttribute(fp, "displayWindow", "box2i",
+                   reinterpret_cast<const unsigned char *>(data),
+                   sizeof(int) * 4);
+  }
+
+  {
+    unsigned char lineOrder = 0; // increasingY
+    WriteAttribute(fp, "lineOrder", "lineOrder", &lineOrder, 1);
+  }
+
+  {
+    float aspectRatio = 1.0f;
+    WriteAttribute(fp, "pixelAspectRatio", "float",
+                   reinterpret_cast<const unsigned char *>(&aspectRatio),
+                   sizeof(float));
+  }
+
+  {
+    float center[2] = {0.0f, 0.0f};
+    WriteAttribute(fp, "screenWindowCenter", "v2f",
+                   reinterpret_cast<const unsigned char *>(center),
+                   2 * sizeof(float));
+  }
+
+  {
+    float w = (float)width;
+    WriteAttribute(fp, "screenWindowWidth", "float",
+                   reinterpret_cast<const unsigned char *>(&w), sizeof(float));
+  }
+
+  { // end of header
+    unsigned char e = 0;
+    fwrite(&e, 1, 1, fp);
+  }
+
+  int numBlocks = height / numScanlineBlocks;
+  if (numBlocks * numScanlineBlocks < height) {
+    numBlocks++;
+  }
+
+  std::vector<long long> offsets(numBlocks);
+
+  size_t headerSize = ftell(fp); // sizeof(header)
+  long long offset =
+      headerSize +
+      numBlocks * sizeof(long long); // sizeof(header) + sizeof(offsetTable)
+
+  std::vector<unsigned char> data;
+
+  for (int i = 0; i < numBlocks; i++) {
+    int startY = numScanlineBlocks * i;
+    int endY = std::min(numScanlineBlocks * (i + 1), height);
+    int h = endY - startY;
+
+    std::vector<unsigned short> buf(4 * width * h);
+
+    for (int y = 0; y < h; y++) {
+      for (int x = 0; x < width; x++) {
+        FP32 r, g, b, a;
+        FP32 fone;
+        r.f = in_rgba[4 * ((height - 1 - (y + startY)) * width + x) + 0];
+        g.f = in_rgba[4 * ((height - 1 - (y + startY)) * width + x) + 1];
+        b.f = in_rgba[4 * ((height - 1 - (y + startY)) * width + x) + 2];
+        a.f = in_rgba[4 * ((height - 1 - (y + startY)) * width + x) + 3];
+
+        FP16 hr, hg, hb, ha;
+        hr = float_to_half_full(r);
+        hg = float_to_half_full(g);
+        hb = float_to_half_full(b);
+        ha = float_to_half_full(a);
+
+        buf[4 * y * width + 3 * width + x] = hr.u;
+        buf[4 * y * width + 2 * width + x] = hg.u;
+        buf[4 * y * width + 1 * width + x] = hb.u;
+        buf[4 * y * width + 0 * width + x] = ha.u;
+      }
+    }
+
+    int bound = miniz::mz_compressBound(buf.size() * sizeof(unsigned short));
+
+    std::vector<unsigned char> block(
+        miniz::mz_compressBound(buf.size() * sizeof(unsigned short)));
+    unsigned long long outSize = block.size();
+
+    CompressZip(&block.at(0), outSize,
+                reinterpret_cast<const unsigned char *>(&buf.at(0)),
+                buf.size() * sizeof(unsigned short));
+
+    // 4 byte: scan line
+    // 4 byte: data size
+    // ~     : pixel data(compressed)
+    std::vector<unsigned char> header(8);
+    unsigned int dataLen = outSize; // truncate
+    memcpy(&header.at(0), &startY, sizeof(int));
+    memcpy(&header.at(4), &dataLen, sizeof(unsigned int));
+
+    data.insert(data.end(), header.begin(), header.end());
+    data.insert(data.end(), block.begin(), block.begin() + dataLen);
+
+    offsets[i] = offset;
+    offset += dataLen + 8; // 8 = sizeof(blockHeader)
+  }
+
+  fwrite(&offsets.at(0), 1, sizeof(unsigned long long) * numBlocks, fp);
+
+  fwrite(&data.at(0), 1, data.size(), fp);
+
+  fclose(fp);
 
   return 0; // OK
 }
@@ -7230,7 +7478,7 @@ int LoadMultiPartEXR(float ***out_rgba, int *num_parts, int *width, int *height,
     // ~     : pixel data(uncompressed or compressed)
     int lineNo = *reinterpret_cast<const int *>(dataPtr);
     int dataLen = *reinterpret_cast<const int *>(dataPtr + 4);
-    // printf("line: %d, dataLen: %d\n", lineNo, dataLen);
+    //printf("line: %d, dataLen: %d\n", lineNo, dataLen);
 
     int endLineNo = std::min(lineNo + numScanlineBlocks, dataHeight);
 
@@ -7657,8 +7905,8 @@ int LoadDeepEXR(DeepImage *deepImage, const char *filename, const char **err) {
   return 0; // OK
 }
 
-#if 0 // @todo
-int SaveDeepEXR(const DeepImage *deepImage, const char *filename, const char **err) {
+int SaveDeepEXR(const DeepImage *deepImage, const char *filename,
+                const char **err) {
   if (deepImage == NULL || filename == NULL) {
     if (err) {
       (*err) = "Invalid argument.";
@@ -7677,7 +7925,7 @@ int SaveDeepEXR(const DeepImage *deepImage, const char *filename, const char **e
   // Write header check.
   {
     const char header[] = {0x76, 0x2f, 0x31, 0x01};
-    size_t n = fwrite(header, 1, 4, fp); 
+    size_t n = fwrite(header, 1, 4, fp);
     if (n != 4) {
       if (err) {
         (*err) = "Header write failed.";
@@ -7691,7 +7939,7 @@ int SaveDeepEXR(const DeepImage *deepImage, const char *filename, const char **e
   {
     // ver 2.0, scanline, deep bit on(0x800)
     const char data[] = {2, 8, 0, 0};
-    size_t n = fwrite(data, 1, 4, fp); 
+    size_t n = fwrite(data, 1, 4, fp);
     if (n != 4) {
       if (err) {
         (*err) = "Flag write failed.";
@@ -7704,49 +7952,61 @@ int SaveDeepEXR(const DeepImage *deepImage, const char *filename, const char **e
   // Write attributes.
   {
     int data = 2; // ZIPS
-    WriteAttribute(fp, "compression", "compression", reinterpret_cast<const unsigned char*>(&data), sizeof(int));
+    WriteAttribute(fp, "compression", "compression",
+                   reinterpret_cast<const unsigned char *>(&data), sizeof(int));
   }
 
   {
-    int data[4] = {0, 0, deepImage->width-1, deepImage->height-1};
-    WriteAttribute(fp, "dataWindow", "box2i", reinterpret_cast<const unsigned char*>(data), sizeof(int) * 4);
-    WriteAttribute(fp, "displayWindow", "box2i", reinterpret_cast<const unsigned char*>(data), sizeof(int) * 4);
+    int data[4] = {0, 0, deepImage->width - 1, deepImage->height - 1};
+    WriteAttribute(fp, "dataWindow", "box2i",
+                   reinterpret_cast<const unsigned char *>(data),
+                   sizeof(int) * 4);
+    WriteAttribute(fp, "displayWindow", "box2i",
+                   reinterpret_cast<const unsigned char *>(data),
+                   sizeof(int) * 4);
   }
 
-  
+  int numScanlineBlocks = 1;
   // Write offset tables.
-  int numBlocks = dataHeight / numScanlineBlocks;
-  if (numBlocks * numScanlineBlocks < dataHeight) {
+  int numBlocks = deepImage->height / numScanlineBlocks;
+  if (numBlocks * numScanlineBlocks < deepImage->height) {
     numBlocks++;
   }
 
+#if 0 // @todo
   std::vector<long long> offsets(numBlocks);
 
+  //std::vector<int> pixelOffsetTable(dataWidth);
+
+  // compress pixel offset table.
+  {
+      unsigned long dstLen = pixelOffsetTable.size() * sizeof(int);
+      Compresses(reinterpret_cast<unsigned char *>(&pixelOffsetTable.at(0)),
+                    dstLen, dataPtr + 28, packedOffsetTableSize);
+
+      assert(dstLen == pixelOffsetTable.size() * sizeof(int));
+      //      int ret =
+      //          miniz::mz_uncompress(reinterpret_cast<unsigned char
+      //          *>(&pixelOffsetTable.at(0)), &dstLen, dataPtr + 28,
+      //          packedOffsetTableSize);
+      //      printf("ret = %d, dstLen = %d\n", ret, (int)dstLen);
+      //
+      for (int i = 0; i < dataWidth; i++) {
+        // printf("offt[%d] = %d\n", i, pixelOffsetTable[i]);
+        deepImage->offset_table[y][i] = pixelOffsetTable[i];
+      }
+    }
+
+
   for (int y = 0; y < numBlocks; y++) {
-    long long offset = *(reinterpret_cast<const long long *>(marker));
+    //long long offset = *(reinterpret_cast<const long long *>(marker));
     // printf("offset[%d] = %lld\n", y, offset);
-    marker += sizeof(long long); // = 8
+    //marker += sizeof(long long); // = 8
     offsets[y] = offset;
   }
 
-  if (compressionType != 0 && compressionType != 2 && compressionType != 3) {
-    if (err) {
-      (*err) = "Unsupported format.";
-    }
-    return -10;
-  }
-
-  deepImage->image = (float ***)malloc(sizeof(float **) * numChannels);
-  for (int c = 0; c < numChannels; c++) {
-    deepImage->image[c] = (float **)malloc(sizeof(float *) * dataHeight);
-    for (int y = 0; y < dataHeight; y++) {
-    }
-  }
-
-  deepImage->offset_table = (int **)malloc(sizeof(int *) * dataHeight);
-  for (int y = 0; y < dataHeight; y++) {
-    deepImage->offset_table[y] = (int *)malloc(sizeof(int) * dataWidth);
-  }
+  // Write offset table.
+  fwrite(&offsets.at(0), sizeof(long long), numBlocks, fp);
 
   for (int y = 0; y < numBlocks; y++) {
     const unsigned char *dataPtr =
@@ -7884,17 +8144,7 @@ int SaveDeepEXR(const DeepImage *deepImage, const char *filename, const char **e
     }
 
   } // y
-
-  deepImage->width = dataWidth;
-  deepImage->height = dataHeight;
-
-  deepImage->channel_names =
-      (const char **)malloc(sizeof(const char *) * numChannels);
-  for (int c = 0; c < numChannels; c++) {
-    deepImage->channel_names[c] = strdup(channels[c].name.c_str());
-  }
-  deepImage->num_channels = numChannels;
+#endif
 
   return 0; // OK
 }
-#endif

@@ -48,6 +48,13 @@ typedef struct {
 extern int LoadEXR(float **out_rgba, int *width, int *height,
                    const char *filename, const char **err);
 
+// Saves floating point RGBA image as OpenEXR.
+// Image is compressed with ZIP.
+// Return 0 if success
+// Returns error string in `err` when there's an error
+extern int SaveEXR(const float *in_rgba, int width, int height, const char *filename,
+            const char **err);
+
 // NOT YET IMPLEMENTED:
 // Loads multi-part OpenEXR image.
 // Application must free image data as returned by `out_rgba`

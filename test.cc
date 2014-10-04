@@ -57,7 +57,16 @@ main(int argc, char** argv)
 
   printf("Saved pfm file.\n");
 
+  ret = SaveEXR(out, width, height, "output_test.exr", &err);
+  if (ret != 0) {
+    fprintf(stderr, "Save EXR err: %s\n", err);
+    return ret;
+  }
+
+  printf("Saved exr file.\n");
+
   free(out);
+
 #else // @todo
   const char* err;
   float** out;
