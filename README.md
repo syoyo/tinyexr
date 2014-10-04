@@ -3,7 +3,7 @@
 ![Example](https://github.com/syoyo/tinyexr/blob/master/asakusa.png?raw=true)
 
 `tinyexr` is a small library to load OpenEXR(.exr) image.
-`tinyexr` is written in portable C++(no library dependency except for STL), thus `tinyext` is good to embed into your application.
+`tinyexr` is written in portable C++(no library dependency except for STL), thus `tinyexr` is good to embed into your application.
 To use `tinyexr`, simply copy `tinyexr.cc` and `tinyexr.h` into your project.
 
 `tinyexr` currently supports:
