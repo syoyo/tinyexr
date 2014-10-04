@@ -21,6 +21,8 @@ To use `tinyexr`, simply copy `tinyexr.cc` and `tinyexr.h` into your project.
 * Litte endian machine.
 * C interface.
   * You can easily write language bindings(e.g. golang)
+* EXR saving
+  * with ZIP compression.
 
 # Use case 
 
@@ -87,6 +89,9 @@ Contribution is welcome!
 * Multi-channel.
 * Pixel order.
 * Big endian machine.
+* Optimization
+  * ISPC?
+  * multi-threading.
 
 ## Similar projects
 
