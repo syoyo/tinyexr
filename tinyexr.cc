@@ -7898,7 +7898,11 @@ int LoadDeepEXR(DeepImage *deepImage, const char *filename, const char **err) {
   deepImage->channel_names =
       (const char **)malloc(sizeof(const char *) * numChannels);
   for (int c = 0; c < numChannels; c++) {
+#ifdef _WIN32
+	  deepImage->channel_names[c] = _strdup(channels[c].name.c_str());
+#else
     deepImage->channel_names[c] = strdup(channels[c].name.c_str());
+#endif
   }
   deepImage->num_channels = numChannels;
 
