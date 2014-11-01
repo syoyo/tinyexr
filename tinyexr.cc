@@ -7074,8 +7074,10 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
             // numScanlineBlocks) + ((v * dataWidth) + u), hf.u, f32.f);
 
             // Assume increasing Y.
-            image[4 * ((dataHeight - (lineNo + v) - 1) * dataWidth + u) + c] =
+            image[4 * ((lineNo + v) * dataWidth + u) + c] =
                 f32.f;
+            //image[4 * ((dataHeight - (lineNo + v) - 1) * dataWidth + u) + c] =
+            //    f32.f;
           }
         }
       }
@@ -7098,7 +7100,10 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
           // numScanlineBlocks) + ((v * dataWidth) + u), hf.u, f32.f);
 
           // Assume increasing Y.
-          image[4 * ((dataHeight - y - 1) * dataWidth + u) + c] = f32.f;
+          image[4 * (y * dataWidth + u) + c] = f32.f;
+
+          // decreasingY
+          //image[4 * ((dataHeight - y - 1) * dataWidth + u) + c] = f32.f;
         }
       }
     } else {
