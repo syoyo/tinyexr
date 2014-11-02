@@ -103,7 +103,7 @@ int main(int argc, char *argv[]) {
   int ow, oh;
   float *orgb = OpenExrLoad(argv[1], &ow, &oh);
 
-  SaveAsPFM("out.pfm", ow, oh, orgb);
+  //SaveAsPFM("out.pfm", ow, oh, orgb);
  
   int tw, th;
   float *trgb;
