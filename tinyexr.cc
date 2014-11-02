@@ -7000,6 +7000,10 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
   int dataHeight = dh - dy + 1;
 
   std::vector<float> image(dataWidth * dataHeight * 4); // 4 = RGBA
+  // Set default alpha value to 1.0
+  for (size_t i = 0; i < dataWidth * dataHeight; i++) {
+    image[4*i+3] = 1.0f;
+  }
 
   // Read offset tables.
   int numBlocks = dataHeight / numScanlineBlocks;
