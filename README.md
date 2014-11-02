@@ -110,3 +110,4 @@ Syoyo Fujita(syoyo@lighttransport.com)
 ## Contributor(s)
 
 * Matt Ebb (http://mattebb.com) : deep image example. Thanks!
+* Matt Pharr (http://pharr.org/matt/) : Testing tinyexr with OpenEXR(IlmImf). Thanks! 
