@@ -7248,10 +7248,10 @@ int SaveEXR(const float *in_rgba, int width, int height, const char *filename,
       for (int x = 0; x < width; x++) {
         FP32 r, g, b, a;
         FP32 fone;
-        r.f = in_rgba[4 * ((height - 1 - (y + startY)) * width + x) + 0];
-        g.f = in_rgba[4 * ((height - 1 - (y + startY)) * width + x) + 1];
-        b.f = in_rgba[4 * ((height - 1 - (y + startY)) * width + x) + 2];
-        a.f = in_rgba[4 * ((height - 1 - (y + startY)) * width + x) + 3];
+        r.f = in_rgba[4 * ((y + startY) * width + x) + 0];
+        g.f = in_rgba[4 * ((y + startY) * width + x) + 1];
+        b.f = in_rgba[4 * ((y + startY) * width + x) + 2];
+        a.f = in_rgba[4 * ((y + startY) * width + x) + 3];
 
         FP16 hr, hg, hb, ha;
         hr = float_to_half_full(r);
@@ -7259,6 +7259,7 @@ int SaveEXR(const float *in_rgba, int width, int height, const char *filename,
         hb = float_to_half_full(b);
         ha = float_to_half_full(a);
 
+        // Assume increasing Y
         buf[4 * y * width + 3 * width + x] = hr.u;
         buf[4 * y * width + 2 * width + x] = hg.u;
         buf[4 * y * width + 1 * width + x] = hb.u;
