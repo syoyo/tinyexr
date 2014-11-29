@@ -32,15 +32,23 @@ extern "C" {
 #endif
 
 typedef struct {
-  const char **channel_names;
   int num_channels;
+  const char **channel_names;
+  float **image; // image[channels][pixels]
+  int width;
+  int height;
+} EXRImage;
+
+typedef struct {
+  int num_channels;
+  const char **channel_names;
   float ***image;     // image[channels][scanlines][samples]
   int **offset_table; // offset_table[scanline][offsets]
   int width;
   int height;
 } DeepImage;
 
-// Loads single-frame OpenEXR image.
+// Loads single-frame OpenEXR image. Assume EXR image contains RGB(A) channels.
 // Application must free image data as returned by `out_rgba`
 // Result image format is: float x RGBA x width x hight
 // Return 0 if success
@@ -48,22 +56,26 @@ typedef struct {
 extern int LoadEXR(float **out_rgba, int *width, int *height,
                    const char *filename, const char **err);
 
+// Loads multi-channel, single-frame OpenEXR image.
+// Application must free EXRImage
+// Return 0 if success
+// Returns error string in `err` when there's an error
+extern int LoadMultiChannelEXR(EXRImage *image, const char *filename,
+                               const char **err);
+
 // Saves floating point RGBA image as OpenEXR.
 // Image is compressed with ZIP.
 // Return 0 if success
 // Returns error string in `err` when there's an error
-extern int SaveEXR(const float *in_rgba, int width, int height, const char *filename,
-            const char **err);
+extern int SaveEXR(const float *in_rgba, int width, int height,
+                   const char *filename, const char **err);
 
-// NOT YET IMPLEMENTED:
-// Loads multi-part OpenEXR image.
-// Application must free image data as returned by `out_rgba`
-// Result image format is: [parts][float x RGBA x width x hight]
+// Saves multi-channel, single-frame OpenEXR image.
+// Application must free EXRImage
 // Return 0 if success
 // Returns error string in `err` when there's an error
-//extern int LoadMultiPartEXR(
-//                  float ***out_rgba, int *num_parts, int *width, int *height,
-//                  const char *filename, const char **err);
+extern int SaveMultiChannelEXR(const EXRImage *image, const char *filename,
+                               const char **err);
 
 // Loads single-frame OpenEXR deep image.
 // Application must free memory of variables in DeepImage(image, offset_table)
@@ -76,13 +88,14 @@ extern int LoadDeepEXR(DeepImage *out_image, const char *filename,
 // Saves single-frame OpenEXR deep image.
 // Return 0 if success
 // Returns error string in `err` when there's an error
-//extern int SaveDeepEXR(const DeepImage *in_image, const char *filename,
+// extern int SaveDeepEXR(const DeepImage *in_image, const char *filename,
 //                       const char **err);
 
 // NOT YET IMPLEMENTED:
 // Loads multi-part OpenEXR deep image.
 // Application must free memory of variables in DeepImage(image, offset_table)
-//extern int LoadMultiPartDeepEXR(DeepImage **out_image, int num_parts, const char *filename,
+// extern int LoadMultiPartDeepEXR(DeepImage **out_image, int num_parts, const
+// char *filename,
 //                       const char **err);
 
 #ifdef __cplusplus

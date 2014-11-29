@@ -84,14 +84,15 @@ See `example/deepview` for actual usage.
 
 Contribution is welcome!
 
-* Tile format.
-* Support for various compression type.
-* Multi-channel.
-* Pixel order.
-* Big endian machine.
-* Optimization
-  * ISPC?
-  * multi-threading.
+- [ ] Tile format.
+- [ ] Support for various compression type.
+- [X] Multi-channel.
+- [ ] Multi-part(EXR2.0)
+- [ ] Pixel order.
+- [ ] Big endian machine.
+- [ ] Optimization
+  - [ ] ISPC?
+  - [ ] multi-threading.
 
 ## Similar projects
 

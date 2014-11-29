@@ -34,9 +34,8 @@ SaveAsPFM(const char* filename, int width, int height, float* data)
 int
 main(int argc, char** argv)
 {
-#if 1
   const char* err;
-  float* out;
+  EXRImage exrImage;
   int width;
   int height;
 
@@ -45,47 +44,28 @@ main(int argc, char** argv)
     exit(-1);
   }
   
-  int ret = LoadEXR(&out, &width, &height, argv[1], &err);
+  int ret = LoadMultiChannelEXR(&exrImage, argv[1], &err);
   if (ret != 0) {
     fprintf(stderr, "Load EXR err: %s\n", err);
     return ret;
   }
 
-  printf("EXR: %d x %d\n", width, height);
+  printf("EXR: %d x %d\n", exrImage.width, exrImage.height);
 
-  SaveAsPFM("output.pfm", width, height, out);
+  for (int i = 0; i < exrImage.num_channels; i++) {
+    printf("chan[%d] = %s\n", i, exrImage.channel_names[i]);
+  }
 
-  printf("Saved pfm file.\n");
+  //SaveAsPFM("output.pfm", exrImage.width, exrImage.height, out);
+  // printf("Saved pfm file.\n");
 
-  ret = SaveEXR(out, width, height, "output_test.exr", &err);
+  ret = SaveMultiChannelEXR(&exrImage, "output_test.exr", &err);
   if (ret != 0) {
     fprintf(stderr, "Save EXR err: %s\n", err);
     return ret;
   }
 
   printf("Saved exr file.\n");
-
-  free(out);
-
-#else // @todo
-  const char* err;
-  float** out;
-  int num_parts;
-  int width;
-  int height;
-
-  if (argc < 2) {
-    fprintf(stderr, "Needs input.exr.\n");
-    exit(-1);
-  }
-  
-  int ret = LoadMultiPartEXR(&out, &num_parts, &width, &height, argv[1], &err);
-  if (ret != 0) {
-    fprintf(stderr, "Load EXR err: %s\n", err);
-    return ret;
-  }
-
-#endif
 
   return ret;
 }
