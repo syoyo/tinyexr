@@ -1,8 +1,8 @@
-# Tiny OpenEXR image loader.
+# Tiny OpenEXR image library.
 
 ![Example](https://github.com/syoyo/tinyexr/blob/master/asakusa.png?raw=true)
 
-`tinyexr` is a small library to load OpenEXR(.exr) image.
+`tinyexr` is a small library to load and save OpenEXR(.exr) images.
 `tinyexr` is written in portable C++(no library dependency except for STL), thus `tinyexr` is good to embed into your application.
 To use `tinyexr`, simply copy `tinyexr.cc` and `tinyexr.h` into your project.
 
@@ -10,7 +10,6 @@ To use `tinyexr`, simply copy `tinyexr.cc` and `tinyexr.h` into your project.
 
 * OpenEXR version 1.x.
 * Normal image
-  * RGB(A) channel.
   * Scanline format.
   * Uncompress("compress" = 0) and ZIP compression("compress" = 3).
   * Half pixel type.
@@ -89,6 +88,7 @@ Contribution is welcome!
 - [X] Multi-channel.
 - [ ] Multi-part(EXR2.0)
 - [ ] Pixel order.
+- [ ] Pixel format(UINT, FLOAT).
 - [ ] Big endian machine.
 - [ ] Optimization
   - [ ] ISPC?
