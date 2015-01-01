@@ -6556,6 +6556,64 @@ void *mz_zip_extract_archive_file_to_heap(const char *pZip_filename,
 // ---------------------- end of miniz ----------------------------------------
 }
 
+bool IsBigEndian(void)
+{
+    union {
+        unsigned int i;
+        char c[4];
+    } bint = {0x01020304};
+
+    return bint.c[0] == 1;
+}
+
+void
+swap2(unsigned short* val)
+{
+  unsigned short tmp = *val;
+  unsigned char *dst = (unsigned char*)val;
+  unsigned char *src = (unsigned char*)&tmp;
+
+  dst[0] = src[1];
+  dst[1] = src[0];
+}
+
+void
+swap4(unsigned int* val)
+{
+  unsigned int tmp = *val;
+  unsigned char *dst = (unsigned char*)val;
+  unsigned char *src = (unsigned char*)&tmp;
+
+  dst[0] = src[3];
+  dst[1] = src[2];
+  dst[2] = src[1];
+  dst[3] = src[0];
+}
+
+void
+swap8(unsigned long long* val)
+{
+  unsigned char tmp[8];
+  tmp[0] = val[0];
+  tmp[1] = val[1];
+  tmp[2] = val[2];
+  tmp[3] = val[3];
+  tmp[4] = val[4];
+  tmp[5] = val[5];
+  tmp[6] = val[6];
+  tmp[7] = val[7];
+  unsigned char *dst = (unsigned char*)val;
+
+  dst[0] = tmp[7];
+  dst[1] = tmp[6];
+  dst[2] = tmp[5];
+  dst[3] = tmp[4];
+  dst[4] = tmp[3];
+  dst[5] = tmp[2];
+  dst[6] = tmp[1];
+  dst[7] = tmp[0];
+}
+
 // https://gist.github.com/rygorous/2156668
 union FP32 {
   unsigned int u;
@@ -6677,6 +6735,10 @@ const char *ReadAttribute(std::string &name, std::string &ty,
   int dataLen = *(reinterpret_cast<const int *>(p));
   p += 4;
 
+  if (IsBigEndian()) {
+    swap4(reinterpret_cast<unsigned int*>(&dataLen));
+  }
+
   data.resize(dataLen);
   memcpy(&data.at(0), p, dataLen);
   p += dataLen;
@@ -6692,6 +6754,9 @@ void WriteAttribute(FILE *fp, const char *name, const char *type,
   n = fwrite(type, 1, strlen(type) + 1, fp);
   assert(n == strlen(type) + 1);
 
+  if (IsBigEndian()) {
+    swap4(reinterpret_cast<unsigned int*>(&len));
+  }
   n = fwrite(&len, 1, sizeof(int), fp);
   assert(n == sizeof(int));
 
@@ -6727,6 +6792,12 @@ void ReadChannelInfo(std::vector<ChannelInfo> &channels,
     info.ySampling = *reinterpret_cast<const int *>(p); // int
     p += 4;
 
+    if (IsBigEndian()) {
+      swap4(reinterpret_cast<unsigned int*>(&info.pixelType));
+      swap4(reinterpret_cast<unsigned int*>(&info.xSampling));
+      swap4(reinterpret_cast<unsigned int*>(&info.ySampling));
+    }
+
     // printf("name: %s\n", info.name.c_str());
     // printf("ptype: %d\n", info.pixelType);
     // printf("xSamp: %d\n", info.xSampling);
@@ -6760,15 +6831,24 @@ void WriteChannelInfo(std::vector<unsigned char> &data,
     p++;
 
     (*reinterpret_cast<int *>(p)) = channels[c].pixelType;
+    if (IsBigEndian()) {
+      swap4(reinterpret_cast<unsigned int*>(p));
+    }
     p += sizeof(int);
 
     (*p) = channels[c].pLinear;
     p += 4;
 
     (*reinterpret_cast<int *>(p)) = channels[c].xSampling;
+    if (IsBigEndian()) {
+      swap4(reinterpret_cast<unsigned int*>(p));
+    }
     p += sizeof(int);
 
     (*reinterpret_cast<int *>(p)) = channels[c].ySampling;
+    if (IsBigEndian()) {
+      swap4(reinterpret_cast<unsigned int*>(p));
+    }
     p += sizeof(int);
   }
 
@@ -7006,6 +7086,9 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
 
       // assume data[1] == '\0'
       pixelType = *(reinterpret_cast<int *>(&data.at(2)));
+      if (IsBigEndian()) {
+        swap4(reinterpret_cast<unsigned int*>(&pixelType));
+      }
       if (pixelType >= 3) {
         if (err) {
           (*err) = "Unsupported pixel type.";
@@ -7018,11 +7101,23 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
       dy = *(reinterpret_cast<int *>(&data.at(4)));
       dw = *(reinterpret_cast<int *>(&data.at(8)));
       dh = *(reinterpret_cast<int *>(&data.at(12)));
+      if (IsBigEndian()) {
+        swap4(reinterpret_cast<unsigned int*>(&dx));
+        swap4(reinterpret_cast<unsigned int*>(&dy));
+        swap4(reinterpret_cast<unsigned int*>(&dw));
+        swap4(reinterpret_cast<unsigned int*>(&dh));
+      }
     } else if (attrName.compare("displayWindow") == 0) {
       int x = *(reinterpret_cast<int *>(&data.at(0)));
       int y = *(reinterpret_cast<int *>(&data.at(4)));
       int w = *(reinterpret_cast<int *>(&data.at(8)));
       int h = *(reinterpret_cast<int *>(&data.at(12)));
+      if (IsBigEndian()) {
+        swap4(reinterpret_cast<unsigned int*>(&x));
+        swap4(reinterpret_cast<unsigned int*>(&y));
+        swap4(reinterpret_cast<unsigned int*>(&w));
+        swap4(reinterpret_cast<unsigned int*>(&h));
+      }
     }
 
     marker = marker_next;
@@ -7054,6 +7149,9 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
 
   for (int y = 0; y < numBlocks; y++) {
     long long offset = *(reinterpret_cast<const long long *>(marker));
+    if (IsBigEndian()) {
+      swap8(reinterpret_cast<unsigned long long*>(&offset));
+    }
     // printf("offset[%d] = %lld\n", y, offset);
     marker += sizeof(long long); // = 8
     offsets[y] = offset;
@@ -7074,6 +7172,11 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
     // ~     : pixel data(uncompressed or compressed)
     int lineNo = *reinterpret_cast<const int *>(dataPtr);
     int dataLen = *reinterpret_cast<const int *>(dataPtr + 4);
+
+    if (IsBigEndian()) {
+      swap4(reinterpret_cast<unsigned int*>(&lineNo));
+      swap4(reinterpret_cast<unsigned int*>(&dataLen));
+    }
 
     int endLineNo = std::min(lineNo + numScanlineBlocks, dataHeight);
 
