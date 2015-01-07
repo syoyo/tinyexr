@@ -36,8 +36,6 @@ main(int argc, char** argv)
 {
   const char* err;
   EXRImage exrImage;
-  int width;
-  int height;
 
   if (argc < 2) {
     fprintf(stderr, "Needs input.exr.\n");
@@ -55,9 +53,6 @@ main(int argc, char** argv)
   for (int i = 0; i < exrImage.num_channels; i++) {
     printf("chan[%d] = %s\n", i, exrImage.channel_names[i]);
   }
-
-  //SaveAsPFM("output.pfm", exrImage.width, exrImage.height, out);
-  // printf("Saved pfm file.\n");
 
   ret = SaveMultiChannelEXR(&exrImage, "output_test.exr", &err);
   if (ret != 0) {

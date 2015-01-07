@@ -34,7 +34,7 @@ extern "C" {
 typedef struct {
   int num_channels;
   const char **channel_names;
-  float **image; // image[channels][pixels]
+  float **images; // image[channels][pixels]
   int width;
   int height;
 } EXRImage;
@@ -67,8 +67,8 @@ extern int LoadMultiChannelEXR(EXRImage *image, const char *filename,
 // Image is compressed with ZIP.
 // Return 0 if success
 // Returns error string in `err` when there's an error
-extern int SaveEXR(const float *in_rgba, int width, int height,
-                   const char *filename, const char **err);
+//extern int SaveEXR(const float *in_rgba, int width, int height,
+//                   const char *filename, const char **err);
 
 // Saves multi-channel, single-frame OpenEXR image.
 // Application must free EXRImage
