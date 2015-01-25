@@ -18,6 +18,8 @@ To use `tinyexr`, simply copy `tinyexr.cc` and `tinyexr.h` into your project.
   * ZIPS compression("compress" = 2).
   * Half, float pixel type.
 * Litte endian machine.
+* Limited support for big endian machine.
+  * read/write normal image.
 * C interface.
   * You can easily write language bindings(e.g. golang)
 * EXR saving
@@ -89,7 +91,7 @@ Contribution is welcome!
 - [ ] Multi-part(EXR2.0)
 - [ ] Pixel order.
 - [ ] Pixel format(UINT, FLOAT).
-- [ ] Big endian machine.
+- [ ] Full support for big endian machine.
   - [x] Loading multi channel EXR
   - [x] Saving multi channel EXR
   - [ ] Loading deep image
