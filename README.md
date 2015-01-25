@@ -90,6 +90,10 @@ Contribution is welcome!
 - [ ] Pixel order.
 - [ ] Pixel format(UINT, FLOAT).
 - [ ] Big endian machine.
+  - [x] Loading multi channel EXR
+  - [x] Saving multi channel EXR
+  - [ ] Loading deep image
+  - [ ] Saving deep image
 - [ ] Optimization
   - [ ] ISPC?
   - [ ] multi-threading.

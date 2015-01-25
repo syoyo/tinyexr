@@ -6556,24 +6556,88 @@ void *mz_zip_extract_archive_file_to_heap(const char *pZip_filename,
 // ---------------------- end of miniz ----------------------------------------
 }
 
+bool IsBigEndian(void)
+{
+    union {
+        unsigned int i;
+        char c[4];
+    } bint = {0x01020304};
+
+    return bint.c[0] == 1;
+}
+
+void
+swap2(unsigned short* val)
+{
+  unsigned short tmp = *val;
+  unsigned char *dst = (unsigned char*)val;
+  unsigned char *src = (unsigned char*)&tmp;
+
+  dst[0] = src[1];
+  dst[1] = src[0];
+}
+
+void
+swap4(unsigned int* val)
+{
+  unsigned int tmp = *val;
+  unsigned char *dst = (unsigned char*)val;
+  unsigned char *src = (unsigned char*)&tmp;
+
+  dst[0] = src[3];
+  dst[1] = src[2];
+  dst[2] = src[1];
+  dst[3] = src[0];
+}
+
+void
+swap8(unsigned long long* val)
+{
+  unsigned long long tmp = (*val);
+  unsigned char *dst = (unsigned char*)val;
+  unsigned char *src = (unsigned char*)&tmp;
+
+  dst[0] = src[7];
+  dst[1] = src[6];
+  dst[2] = src[5];
+  dst[3] = src[4];
+  dst[4] = src[3];
+  dst[5] = src[2];
+  dst[6] = src[1];
+  dst[7] = src[0];
+}
+
 // https://gist.github.com/rygorous/2156668
+// Reuse MINIZ_LITTLE_ENDIAN flag from miniz.
 union FP32 {
   unsigned int u;
   float f;
   struct {
+#if MINIZ_LITTLE_ENDIAN
     unsigned int Mantissa : 23;
     unsigned int Exponent : 8;
     unsigned int Sign : 1;
-  };
+#else
+    unsigned int Sign : 1;
+    unsigned int Exponent : 8;
+    unsigned int Mantissa : 23;
+#endif
+  } s;
 };
 
 union FP16 {
   unsigned short u;
   struct {
+#if MINIZ_LITTLE_ENDIAN
     unsigned int Mantissa : 10;
     unsigned int Exponent : 5;
     unsigned int Sign : 1;
-  };
+#else
+    unsigned int Sign : 1;
+    unsigned int Exponent : 5;
+    unsigned int Mantissa : 10;
+#endif
+  } s;
 };
 
 FP32 half_to_float(FP16 h) {
@@ -6603,36 +6667,36 @@ FP16 float_to_half_full(FP32 f) {
   FP16 o = {0};
 
   // Based on ISPC reference code (with minor modifications)
-  if (f.Exponent == 0) // Signed zero/denormal (which will underflow)
-    o.Exponent = 0;
-  else if (f.Exponent == 255) // Inf or NaN (all exponent bits set)
+  if (f.s.Exponent == 0) // Signed zero/denormal (which will underflow)
+    o.s.Exponent = 0;
+  else if (f.s.Exponent == 255) // Inf or NaN (all exponent bits set)
   {
-    o.Exponent = 31;
-    o.Mantissa = f.Mantissa ? 0x200 : 0; // NaN->qNaN and Inf->Inf
+    o.s.Exponent = 31;
+    o.s.Mantissa = f.s.Mantissa ? 0x200 : 0; // NaN->qNaN and Inf->Inf
   } else                                 // Normalized number
   {
     // Exponent unbias the single, then bias the halfp
-    int newexp = f.Exponent - 127 + 15;
+    int newexp = f.s.Exponent - 127 + 15;
     if (newexp >= 31) // Overflow, return signed infinity
-      o.Exponent = 31;
+      o.s.Exponent = 31;
     else if (newexp <= 0) // Underflow
     {
       if ((14 - newexp) <= 24) // Mantissa might be non-zero
       {
-        unsigned int mant = f.Mantissa | 0x800000; // Hidden 1 bit
-        o.Mantissa = mant >> (14 - newexp);
+        unsigned int mant = f.s.Mantissa | 0x800000; // Hidden 1 bit
+        o.s.Mantissa = mant >> (14 - newexp);
         if ((mant >> (13 - newexp)) & 1) // Check for rounding
           o.u++; // Round, might overflow into exp bit, but this is OK
       }
     } else {
-      o.Exponent = newexp;
-      o.Mantissa = f.Mantissa >> 13;
-      if (f.Mantissa & 0x1000) // Check for rounding
+      o.s.Exponent = newexp;
+      o.s.Mantissa = f.s.Mantissa >> 13;
+      if (f.s.Mantissa & 0x1000) // Check for rounding
         o.u++;                 // Round, might overflow to inf, this is OK
     }
   }
 
-  o.Sign = f.Sign;
+  o.s.Sign = f.s.Sign;
   return o;
 }
 
@@ -6674,8 +6738,13 @@ const char *ReadAttribute(std::string &name, std::string &ty,
 
   p = ReadString(ty, p);
 
-  int dataLen = *(reinterpret_cast<const int *>(p));
+  int dataLen;
+  memcpy(&dataLen, p, sizeof(int));
   p += 4;
+
+  if (IsBigEndian()) {
+    swap4(reinterpret_cast<unsigned int*>(&dataLen));
+  }
 
   data.resize(dataLen);
   memcpy(&data.at(0), p, dataLen);
@@ -6692,7 +6761,11 @@ void WriteAttribute(FILE *fp, const char *name, const char *type,
   n = fwrite(type, 1, strlen(type) + 1, fp);
   assert(n == strlen(type) + 1);
 
-  n = fwrite(&len, 1, sizeof(int), fp);
+  int outLen = len;
+  if (IsBigEndian()) {
+    swap4(reinterpret_cast<unsigned int*>(&outLen));
+  }
+  n = fwrite(&outLen, 1, sizeof(int), fp);
   assert(n == sizeof(int));
 
   n = fwrite(data, 1, len, fp);
@@ -6718,19 +6791,20 @@ void ReadChannelInfo(std::vector<ChannelInfo> &channels,
     ChannelInfo info;
     p = ReadString(info.name, p);
 
-    info.pixelType = *reinterpret_cast<const int *>(p); // int
+    memcpy(&info.pixelType, p, sizeof(int));
     p += 4;
     info.pLinear = p[0];                                // uchar
     p += 1 + 3;                                         // reserved: uchar[3]
-    info.xSampling = *reinterpret_cast<const int *>(p); // int
+    memcpy(&info.xSampling, p, sizeof(int)); // int
     p += 4;
-    info.ySampling = *reinterpret_cast<const int *>(p); // int
+    memcpy(&info.ySampling, p, sizeof(int)); // int
     p += 4;
 
-    // printf("name: %s\n", info.name.c_str());
-    // printf("ptype: %d\n", info.pixelType);
-    // printf("xSamp: %d\n", info.xSampling);
-    // printf("ySamp: %d\n", info.ySampling);
+    if (IsBigEndian()) {
+      swap4(reinterpret_cast<unsigned int*>(&info.pixelType));
+      swap4(reinterpret_cast<unsigned int*>(&info.xSampling));
+      swap4(reinterpret_cast<unsigned int*>(&info.ySampling));
+    }
 
     channels.push_back(info);
   }
@@ -6738,7 +6812,6 @@ void ReadChannelInfo(std::vector<ChannelInfo> &channels,
 
 void WriteChannelInfo(std::vector<unsigned char> &data,
                       const std::vector<ChannelInfo> &channels) {
-  // const char *p = reinterpret_cast<const char *>(&data.at(0));
 
   size_t sz = 0;
 
@@ -6747,8 +6820,6 @@ void WriteChannelInfo(std::vector<unsigned char> &data,
     sz += strlen(channels[c].name.c_str()) + 1; // +1 for \0
     sz += 16;                                   // 4 * int
   }
-  printf("dbg: %d\n", (int)sz);
-
   data.resize(sz + 1);
 
   unsigned char *p = &data.at(0);
@@ -6759,16 +6830,25 @@ void WriteChannelInfo(std::vector<unsigned char> &data,
     (*p) = '\0';
     p++;
 
-    (*reinterpret_cast<int *>(p)) = channels[c].pixelType;
+    int pixelType = channels[c].pixelType;
+    int xSampling = channels[c].xSampling;
+    int ySampling = channels[c].ySampling;
+    if (IsBigEndian()) {
+      swap4(reinterpret_cast<unsigned int*>(&pixelType));
+      swap4(reinterpret_cast<unsigned int*>(&xSampling));
+      swap4(reinterpret_cast<unsigned int*>(&ySampling));
+    }
+
+    memcpy(p, &pixelType, sizeof(int));
     p += sizeof(int);
 
     (*p) = channels[c].pLinear;
     p += 4;
 
-    (*reinterpret_cast<int *>(p)) = channels[c].xSampling;
+    memcpy(p, &xSampling, sizeof(int));
     p += sizeof(int);
 
-    (*reinterpret_cast<int *>(p)) = channels[c].ySampling;
+    memcpy(p, &ySampling, sizeof(int));
     p += sizeof(int);
   }
 
@@ -6832,7 +6912,6 @@ void CompressZip(unsigned char *dst, unsigned long long &compressedSize,
   int ret = miniz::mz_compress(dst, &outSize,
                                (const unsigned char *)&tmpBuf.at(0), srcSize);
   assert(ret == miniz::MZ_OK);
-  // printf("outSize = %d, srcS = %d\n", outSize, srcSize);
 
   compressedSize = outSize;
 }
@@ -6888,286 +6967,84 @@ void DecompressZip(unsigned char *dst, unsigned long &uncompressedSize,
 
 int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
             const char **err) {
+
   if (out_rgba == NULL) {
-    if (err) {
-      (*err) = "Invalid argument.";
+    if (*err) {
+      (*err) = "Invalid argument.\n";
     }
     return -1;
   }
 
-  FILE *fp = fopen(filename, "rb");
-  if (!fp) {
-    if (err) {
-      (*err) = "Cannot read file.";
+  EXRImage exrImage;
+  int ret = LoadMultiChannelEXR(&exrImage, filename, err);
+  if (ret != 0) {
+    return ret;
+  }
+
+  // RGBA
+  int idxR = -1;
+  int idxG = -1;
+  int idxB = -1;
+  int idxA = -1;
+  for (int c = 0; c < exrImage.num_channels; c++) {
+    if (strcmp(exrImage.channel_names[c], "R") == 0) {
+      idxR = c;
+    } else if (strcmp(exrImage.channel_names[c], "G") == 0) {
+      idxG = c;
+    } else if (strcmp(exrImage.channel_names[c], "B") == 0) {
+      idxB = c;
+    } else if (strcmp(exrImage.channel_names[c], "A") == 0) {
+      idxA = c;
     }
+  }
+
+  if (idxR == -1) {
+    if (*err) {
+      (*err) = "R channel not found\n";
+    }
+
+    // @todo { free exrImage }
     return -1;
   }
 
-  size_t filesize;
-  // Compute size
-  fseek(fp, 0, SEEK_END);
-  filesize = ftell(fp);
-  fseek(fp, 0, SEEK_SET);
-
-  std::vector<char> buf(filesize); // @todo { use mmap }
-  {
-    size_t ret;
-    ret = fread(&buf[0], 1, filesize, fp);
-    assert(ret == filesize);
-    fclose(fp);
-  }
-
-  const char *head = &buf[0];
-  const char *marker = &buf[0];
-
-  // Header check.
-  {
-    const char header[] = {0x76, 0x2f, 0x31, 0x01};
-
-    if (memcmp(marker, header, 4) != 0) {
-      if (err) {
-        (*err) = "Header mismatch.";
-      }
-      return -3;
+  if (idxG == -1) {
+    if (*err) {
+      (*err) = "G channel not found\n";
     }
-    marker += 4;
+    // @todo { free exrImage }
+    return -1;
   }
 
-  // Version, scanline.
-  {
-    // must be [2, 0, 0, 0]
-    if (marker[0] != 2 || marker[1] != 0 || marker[2] != 0 || marker[3] != 0) {
-      if (err) {
-        (*err) = "Unsupported version or scanline.";
-      }
-      return -4;
+  if (idxB == -1) {
+    if (*err) {
+      (*err) = "B channel not found\n";
     }
-
-    marker += 4;
+    // @todo { free exrImage }
+    return -1;
   }
 
-  int pixelType = -1;
-  int dx = -1;
-  int dy = -1;
-  int dw = -1;
-  int dh = -1;
-  int numScanlineBlocks = 1; // 16 for ZIP compression.
-  int compressionType = -1;
-  int numChannels = -1;
-
-  // Read attributes
-  for (;;) {
-    std::string attrName;
-    std::string attrType;
-    std::vector<unsigned char> data;
-    const char *marker_next = ReadAttribute(attrName, attrType, data, marker);
-    if (marker_next == NULL) {
-      marker++; // skip '\0'
-      break;
+  if (idxA == -1) {
+    if (*err) {
+      (*err) = "A channel not found\n";
     }
-
-    // printf("attrName: %s\n", attrName.c_str());
-
-    if (attrName.compare("compression") == 0) {
-      // must be 0:No compression, 1: RLE or 3: ZIP
-      if (data[0] != 0 && data[0] != 1 && data[0] != 3) {
-        if (err) {
-          (*err) = "Unsupported compression type.";
-        }
-        return -5;
-      }
-
-      compressionType = data[0];
-
-      if (compressionType == 3) { // ZIP
-        numScanlineBlocks = 16;
-      }
-
-    } else if (attrName.compare("channels") == 0) {
-
-      // name: zero-terminated string, from 1 to 255 bytes long
-      // pixel type: int, possible values are: UINT = 0 HALF = 1 FLOAT = 2
-      // pLinear: unsigned char, possible values are 0 and 1
-      // reserved: three chars, should be zero
-      // xSampling: int
-      // ySampling: int
-
-      // Assume 18 bytes per channel description.
-      int channelDataLen = data.size() - 1; // The last char is '\0'
-      if (channelDataLen % 18 != 0) {
-        if (err) {
-          (*err) = "Unsupported channel description.";
-        }
-        return -5;
-      }
-
-      numChannels = channelDataLen / 18;
-      // printf("numChan: %d\n", numChannels);
-
-      // assume data[1] == '\0'
-      pixelType = *(reinterpret_cast<int *>(&data.at(2)));
-      if (pixelType >= 3) {
-        if (err) {
-          (*err) = "Unsupported pixel type.";
-        }
-        return -5;
-      }
-
-    } else if (attrName.compare("dataWindow") == 0) {
-      dx = *(reinterpret_cast<int *>(&data.at(0)));
-      dy = *(reinterpret_cast<int *>(&data.at(4)));
-      dw = *(reinterpret_cast<int *>(&data.at(8)));
-      dh = *(reinterpret_cast<int *>(&data.at(12)));
-    } else if (attrName.compare("displayWindow") == 0) {
-      int x = *(reinterpret_cast<int *>(&data.at(0)));
-      int y = *(reinterpret_cast<int *>(&data.at(4)));
-      int w = *(reinterpret_cast<int *>(&data.at(8)));
-      int h = *(reinterpret_cast<int *>(&data.at(12)));
-    }
-
-    marker = marker_next;
+    // @todo { free exrImage }
+    return -1;
   }
 
-  assert(pixelType >= 0);
-  assert(dx >= 0);
-  assert(dy >= 0);
-  assert(dw >= 0);
-  assert(dh >= 0);
-  assert(numChannels >= 1);
-
-  int dataWidth = dw - dx + 1;
-  int dataHeight = dh - dy + 1;
-
-  std::vector<float> image(dataWidth * dataHeight * 4); // 4 = RGBA
-  // Set default alpha value to 1.0
-  for (size_t i = 0; i < dataWidth * dataHeight; i++) {
-    image[4 * i + 3] = 1.0f;
+  (*out_rgba) = (float*)malloc(sizeof(float) * exrImage.width * exrImage.height);
+  for (size_t i = 0; i < exrImage.width * exrImage.height; i++) {
+    (*out_rgba)[4 * i + 0] = exrImage.images[idxR][i];
+    (*out_rgba)[4 * i + 1] = exrImage.images[idxG][i];
+    (*out_rgba)[4 * i + 2] = exrImage.images[idxB][i];
+    (*out_rgba)[4 * i + 3] = exrImage.images[idxA][i];
   }
 
-  // Read offset tables.
-  int numBlocks = dataHeight / numScanlineBlocks;
-  if (numBlocks * numScanlineBlocks < dataHeight) {
-    numBlocks++;
-  }
+  (*width) = exrImage.width;
+  (*height) = exrImage.height;
 
-  std::vector<long long> offsets(numBlocks);
+  // @todo { free exrImage }
+  return 0;
 
-  for (int y = 0; y < numBlocks; y++) {
-    long long offset = *(reinterpret_cast<const long long *>(marker));
-    // printf("offset[%d] = %lld\n", y, offset);
-    marker += sizeof(long long); // = 8
-    offsets[y] = offset;
-  }
-
-  if (compressionType != 0 && compressionType != 3) {
-    if (err) {
-      (*err) = "Unsupported format.";
-    }
-    return -10;
-  }
-
-  for (int y = 0; y < numBlocks; y++) {
-    const unsigned char *dataPtr =
-        reinterpret_cast<const unsigned char *>(head + offsets[y]);
-    // 4 byte: scan line
-    // 4 byte: data size
-    // ~     : pixel data(uncompressed or compressed)
-    int lineNo = *reinterpret_cast<const int *>(dataPtr);
-    int dataLen = *reinterpret_cast<const int *>(dataPtr + 4);
-
-    int endLineNo = std::min(lineNo + numScanlineBlocks, dataHeight);
-
-    int numLines = endLineNo - lineNo;
-    // printf("numLines: %d\n", numLines);
-
-    if (compressionType == 3) { // ZIP
-
-      // Allocate original data size.
-      std::vector<unsigned short> outBuf(dataWidth * numLines * numChannels);
-
-      unsigned long dstLen = outBuf.size() * sizeof(short);
-      DecompressZip(reinterpret_cast<unsigned char *>(&outBuf.at(0)), dstLen,
-                    dataPtr + 8, dataLen);
-
-      // Assume numChannels <= 4
-
-      // For ZIP_COMPRESSION:
-      //   pixel sample data for channel 0 for scanline 0
-      //   pixel sample data for channel 1 for scanline 0
-      //   pixel sample data for channel ... for scanline 0
-      //   pixel sample data for channel n for scanline 0
-      //   pixel sample data for channel 0 for scanline 1
-      //   pixel sample data for channel 1 for scanline 1
-      //   pixel sample data for channel ... for scanline 1
-      //   pixel sample data for channel n for scanline 1
-      //   ...
-      for (int v = 0; v < numLines; v++) {
-        for (int c = 0; c < numChannels; c++) {
-          for (int u = 0; u < dataWidth; u++) {
-            FP16 hf;
-            // hf.u = outBuf[(c * dataWidth * numScanlineBlocks) + ((v *
-            // dataWidth) + u)];
-
-            // Assume (A)BGR pixel order.
-            hf.u = outBuf[v * (numChannels * dataWidth) +
-                          (((numChannels - c - 1) * dataWidth) + u)];
-
-            FP32 f32 = half_to_float(hf);
-            // printf("i[%d] u: %d, fval: %f\n", (c * dataWidth *
-            // numScanlineBlocks) + ((v * dataWidth) + u), hf.u, f32.f);
-
-            // Assume increasing Y.
-            image[4 * ((lineNo + v) * dataWidth + u) + c] = f32.f;
-            // image[4 * ((dataHeight - (lineNo + v) - 1) * dataWidth + u) + c]
-            // =
-            //    f32.f;
-          }
-        }
-      }
-
-    } else if (compressionType == 0) { // No compression
-
-      const unsigned short *srcPtr =
-          reinterpret_cast<const unsigned short *>(dataPtr + 8);
-
-      // scanline
-      for (int c = 0; c < numChannels; c++) {
-        for (int u = 0; u < dataWidth; u++) {
-          FP16 hf;
-
-          // Assume (A)BGR
-          hf.u = srcPtr[(numChannels - c - 1) * dataWidth + u];
-
-          FP32 f32 = half_to_float(hf);
-          // printf("i[%d] u: %d, fval: %f\n", (c * dataWidth *
-          // numScanlineBlocks) + ((v * dataWidth) + u), hf.u, f32.f);
-
-          // Assume increasing Y.
-          image[4 * (y * dataWidth + u) + c] = f32.f;
-
-          // decreasingY
-          // image[4 * ((dataHeight - y - 1) * dataWidth + u) + c] = f32.f;
-        }
-      }
-    } else {
-      if (err) {
-        (*err) = "Unsupported format.";
-      }
-      return -10;
-    }
-  }
-
-  {
-    size_t len = sizeof(float) * 4 * dataWidth * dataHeight;
-    (*out_rgba) = (float *)malloc(len);
-
-    memcpy((*out_rgba), &image.at(0), len);
-
-    (*width) = dataWidth;
-    (*height) = dataHeight;
-  }
-
-  return 0; // OK
 }
 
 int LoadMultiChannelEXR(EXRImage *exrImage, const char *filename,
@@ -7251,8 +7128,6 @@ int LoadMultiChannelEXR(EXRImage *exrImage, const char *filename,
       break;
     }
 
-    // printf("attrName: %s\n", attrName.c_str());
-
     if (attrName.compare("compression") == 0) {
       // must be 0:No compression, 1: RLE or 3: ZIP
       if (data[0] != 0 && data[0] != 1 && data[0] != 3) {
@@ -7291,15 +7166,28 @@ int LoadMultiChannelEXR(EXRImage *exrImage, const char *filename,
       pixelType = channels[0].pixelType; // fixme
 
     } else if (attrName.compare("dataWindow") == 0) {
-      dx = *(reinterpret_cast<int *>(&data.at(0)));
-      dy = *(reinterpret_cast<int *>(&data.at(4)));
-      dw = *(reinterpret_cast<int *>(&data.at(8)));
-      dh = *(reinterpret_cast<int *>(&data.at(12)));
+      memcpy(&dx, &data.at(0), sizeof(int));
+      memcpy(&dy, &data.at(4), sizeof(int));
+      memcpy(&dw, &data.at(8), sizeof(int));
+      memcpy(&dh, &data.at(12), sizeof(int));
+      if (IsBigEndian()) {
+        swap4(reinterpret_cast<unsigned int*>(&dx));
+        swap4(reinterpret_cast<unsigned int*>(&dy));
+        swap4(reinterpret_cast<unsigned int*>(&dw));
+        swap4(reinterpret_cast<unsigned int*>(&dh));
+      }
     } else if (attrName.compare("displayWindow") == 0) {
-      int x = *(reinterpret_cast<int *>(&data.at(0)));
-      int y = *(reinterpret_cast<int *>(&data.at(4)));
-      int w = *(reinterpret_cast<int *>(&data.at(8)));
-      int h = *(reinterpret_cast<int *>(&data.at(12)));
+      int x, y, w, h;
+      memcpy(&x, &data.at(0), sizeof(int));
+      memcpy(&y, &data.at(4), sizeof(int));
+      memcpy(&w, &data.at(8), sizeof(int));
+      memcpy(&h, &data.at(12), sizeof(int));
+      if (IsBigEndian()) {
+        swap4(reinterpret_cast<unsigned int*>(&x));
+        swap4(reinterpret_cast<unsigned int*>(&y));
+        swap4(reinterpret_cast<unsigned int*>(&w));
+        swap4(reinterpret_cast<unsigned int*>(&h));
+      }
     }
 
     marker = marker_next;
@@ -7330,8 +7218,11 @@ int LoadMultiChannelEXR(EXRImage *exrImage, const char *filename,
   std::vector<long long> offsets(numBlocks);
 
   for (int y = 0; y < numBlocks; y++) {
-    long long offset = *(reinterpret_cast<const long long *>(marker));
-    // printf("offset[%d] = %lld\n", y, offset);
+    long long offset;
+    memcpy(&offset, marker, sizeof(long long));
+    if (IsBigEndian()) {
+      swap8(reinterpret_cast<unsigned long long*>(&offset));
+    }
     marker += sizeof(long long); // = 8
     offsets[y] = offset;
   }
@@ -7343,9 +7234,9 @@ int LoadMultiChannelEXR(EXRImage *exrImage, const char *filename,
     return -10;
   }
 
-  exrImage->image = (float **)malloc(sizeof(float *) * numChannels);
+  exrImage->images = (float **)malloc(sizeof(float *) * numChannels);
   for (int c = 0; c < numChannels; c++) {
-    exrImage->image[c] =
+    exrImage->images[c] =
         (float *)malloc(sizeof(float) * dataWidth * dataHeight);
   }
 
@@ -7355,13 +7246,18 @@ int LoadMultiChannelEXR(EXRImage *exrImage, const char *filename,
     // 4 byte: scan line
     // 4 byte: data size
     // ~     : pixel data(uncompressed or compressed)
-    int lineNo = *reinterpret_cast<const int *>(dataPtr);
-    int dataLen = *reinterpret_cast<const int *>(dataPtr + 4);
+    int lineNo;
+    memcpy(&lineNo, dataPtr, sizeof(int));
+    int dataLen;
+    memcpy(&dataLen, dataPtr + 4, sizeof(int));
+    if (IsBigEndian()) {
+      swap4(reinterpret_cast<unsigned int*>(&lineNo));
+      swap4(reinterpret_cast<unsigned int*>(&dataLen));
+    }
 
     int endLineNo = std::min(lineNo + numScanlineBlocks, dataHeight);
 
     int numLines = endLineNo - lineNo;
-    // printf("numLines: %d\n", numLines);
 
     if (compressionType == 3) { // ZIP
 
@@ -7371,6 +7267,8 @@ int LoadMultiChannelEXR(EXRImage *exrImage, const char *filename,
       unsigned long dstLen = outBuf.size() * sizeof(short);
       DecompressZip(reinterpret_cast<unsigned char *>(&outBuf.at(0)), dstLen,
                     dataPtr + 8, dataLen);
+
+      bool isBigEndian = IsBigEndian();
 
       // For ZIP_COMPRESSION:
       //   pixel sample data for channel 0 for scanline 0
@@ -7386,26 +7284,27 @@ int LoadMultiChannelEXR(EXRImage *exrImage, const char *filename,
         for (int c = 0; c < numChannels; c++) {
           for (int u = 0; u < dataWidth; u++) {
             FP16 hf;
-            // hf.u = outBuf[(c * dataWidth * numScanlineBlocks) + ((v *
-            // dataWidth) + u)];
 
             hf.u = outBuf[v * (numChannels * dataWidth) + (c * dataWidth) + u];
 
+            if (isBigEndian) {
+              swap2(reinterpret_cast<unsigned short*>(&hf.u));
+            }
+
             FP32 f32 = half_to_float(hf);
-            // printf("i[%d] u: %d, fval: %f\n", (c * dataWidth *
-            // numScanlineBlocks) + ((v * dataWidth) + u), hf.u, f32.f);
 
             // Assume increasing Y.
-            exrImage->image[c][(lineNo + v) * dataWidth + u] = f32.f;
-            // image[4 * ((lineNo + v) * dataWidth + u) + c] = f32.f;
+            exrImage->images[c][(lineNo + v) * dataWidth + u] = f32.f;
           }
         }
       }
 
     } else if (compressionType == 0) { // No compression
 
-      const unsigned short *srcPtr =
-          reinterpret_cast<const unsigned short *>(dataPtr + 8);
+      std::vector<unsigned short> srcBuf(numChannels * dataWidth);
+      memcpy(&srcBuf.at(0), dataPtr + 8, numChannels * dataWidth * sizeof(unsigned short)); 
+
+      bool isBigEndian = IsBigEndian();
 
       // scanline
       for (int c = 0; c < numChannels; c++) {
@@ -7413,18 +7312,17 @@ int LoadMultiChannelEXR(EXRImage *exrImage, const char *filename,
           FP16 hf;
 
           // Assume (A)BGR
-          hf.u = srcPtr[c * dataWidth + u];
+          hf.u = srcBuf[c * dataWidth + u];
+
+          if (isBigEndian) {
+            swap2(reinterpret_cast<unsigned short*>(&hf.u));
+          }
 
           FP32 f32 = half_to_float(hf);
-          // printf("i[%d] u: %d, fval: %f\n", (c * dataWidth *
-          // numScanlineBlocks) + ((v * dataWidth) + u), hf.u, f32.f);
 
           // Assume increasing Y.
-          // image[4 * (y * dataWidth + u) + c] = f32.f;
-          exrImage->image[c][y * dataWidth + u] = f32.f;
+          exrImage->images[c][y * dataWidth + u] = f32.f;
 
-          // decreasingY
-          // image[4 * ((dataHeight - y - 1) * dataWidth + u) + c] = f32.f;
         }
       }
     } else {
@@ -7454,6 +7352,8 @@ int LoadMultiChannelEXR(EXRImage *exrImage, const char *filename,
   return 0; // OK
 }
 
+// @deprecated 
+#if 0
 int SaveEXR(const float *in_rgba, int width, int height, const char *filename,
             const char **err) {
   if (in_rgba == NULL || filename == NULL) {
@@ -7570,7 +7470,6 @@ int SaveEXR(const float *in_rgba, int width, int height, const char *filename,
     for (int y = 0; y < h; y++) {
       for (int x = 0; x < width; x++) {
         FP32 r, g, b, a;
-        FP32 fone;
         r.f = in_rgba[4 * ((y + startY) * width + x) + 0];
         g.f = in_rgba[4 * ((y + startY) * width + x) + 1];
         b.f = in_rgba[4 * ((y + startY) * width + x) + 2];
@@ -7623,6 +7522,7 @@ int SaveEXR(const float *in_rgba, int width, int height, const char *filename,
 
   return 0; // OK
 }
+#endif
 
 int SaveMultiChannelEXR(const EXRImage *exrImage, const char *filename,
                         const char **err) {
@@ -7680,6 +7580,9 @@ int SaveMultiChannelEXR(const EXRImage *exrImage, const char *filename,
 
   {
     int compressionType = 3; // ZIP compression
+    if (IsBigEndian()) {
+      swap4(reinterpret_cast<unsigned int*>(&compressionType));
+    }
     WriteAttribute(fp, "compression", "compression",
                    reinterpret_cast<const unsigned char *>(&compressionType),
                    1);
@@ -7687,6 +7590,12 @@ int SaveMultiChannelEXR(const EXRImage *exrImage, const char *filename,
 
   {
     int data[4] = {0, 0, exrImage->width - 1, exrImage->height - 1};
+    if (IsBigEndian()) {
+      swap4(reinterpret_cast<unsigned int*>(&data[0]));
+      swap4(reinterpret_cast<unsigned int*>(&data[1]));
+      swap4(reinterpret_cast<unsigned int*>(&data[2]));
+      swap4(reinterpret_cast<unsigned int*>(&data[3]));
+    }
     WriteAttribute(fp, "dataWindow", "box2i",
                    reinterpret_cast<const unsigned char *>(data),
                    sizeof(int) * 4);
@@ -7702,6 +7611,9 @@ int SaveMultiChannelEXR(const EXRImage *exrImage, const char *filename,
 
   {
     float aspectRatio = 1.0f;
+    if (IsBigEndian()) {
+      swap4(reinterpret_cast<unsigned int*>(&aspectRatio));
+    }
     WriteAttribute(fp, "pixelAspectRatio", "float",
                    reinterpret_cast<const unsigned char *>(&aspectRatio),
                    sizeof(float));
@@ -7709,6 +7621,10 @@ int SaveMultiChannelEXR(const EXRImage *exrImage, const char *filename,
 
   {
     float center[2] = {0.0f, 0.0f};
+    if (IsBigEndian()) {
+      swap4(reinterpret_cast<unsigned int*>(&center[0]));
+      swap4(reinterpret_cast<unsigned int*>(&center[1]));
+    }
     WriteAttribute(fp, "screenWindowCenter", "v2f",
                    reinterpret_cast<const unsigned char *>(center),
                    2 * sizeof(float));
@@ -7716,6 +7632,9 @@ int SaveMultiChannelEXR(const EXRImage *exrImage, const char *filename,
 
   {
     float w = (float)exrImage->width;
+    if (IsBigEndian()) {
+      swap4(reinterpret_cast<unsigned int*>(&w));
+    }
     WriteAttribute(fp, "screenWindowWidth", "float",
                    reinterpret_cast<const unsigned char *>(&w), sizeof(float));
   }
@@ -7739,6 +7658,9 @@ int SaveMultiChannelEXR(const EXRImage *exrImage, const char *filename,
 
   std::vector<unsigned char> data;
 
+
+  bool isBigEndian = IsBigEndian();
+
   for (int i = 0; i < numBlocks; i++) {
     int startY = numScanlineBlocks * i;
     int endY = std::min(numScanlineBlocks * (i + 1), exrImage->height);
@@ -7751,10 +7673,14 @@ int SaveMultiChannelEXR(const EXRImage *exrImage, const char *filename,
       for (int c = 0; c < exrImage->num_channels; c++) {
         for (int x = 0; x < exrImage->width; x++) {
           FP32 f32;
-          f32.f = exrImage->image[c][(y + startY) * exrImage->width + x];
+          f32.f = exrImage->images[c][(y + startY) * exrImage->width + x];
 
           FP16 h16;
           h16 = float_to_half_full(f32);
+
+          if (isBigEndian) {
+            swap2(reinterpret_cast<unsigned short*>(&h16.u));
+          }
 
           // Assume increasing Y
           buf[exrImage->num_channels * y * exrImage->width +
@@ -7781,16 +7707,30 @@ int SaveMultiChannelEXR(const EXRImage *exrImage, const char *filename,
     memcpy(&header.at(0), &startY, sizeof(int));
     memcpy(&header.at(4), &dataLen, sizeof(unsigned int));
 
+    if (IsBigEndian()) {
+      swap4(reinterpret_cast<unsigned int*>(&header.at(0)));
+      swap4(reinterpret_cast<unsigned int*>(&header.at(4)));
+    }
+
     data.insert(data.end(), header.begin(), header.end());
     data.insert(data.end(), block.begin(), block.begin() + dataLen);
 
     offsets[i] = offset;
+    if (IsBigEndian()) {
+      swap8(reinterpret_cast<unsigned long long*>(&offsets[i]));
+    }
     offset += dataLen + 8; // 8 = sizeof(blockHeader)
   }
 
-  fwrite(&offsets.at(0), 1, sizeof(unsigned long long) * numBlocks, fp);
+  {
+    size_t n = fwrite(&offsets.at(0), 1, sizeof(unsigned long long) * numBlocks, fp);
+    assert(n == sizeof(unsigned long long) * numBlocks);
+  }
 
-  fwrite(&data.at(0), 1, data.size(), fp);
+  {
+    size_t n = fwrite(&data.at(0), 1, data.size(), fp);
+    assert(n == data.size());
+  }
 
   fclose(fp);
 
@@ -7878,8 +7818,6 @@ int LoadDeepEXR(DeepImage *deepImage, const char *filename, const char **err) {
       break;
     }
 
-    // printf("attrName: %s\n", attrName.c_str());
-
     if (attrName.compare("compression") == 0) {
       // must be 0:No compression, 1: RLE, 2: ZIPs or 3: ZIP
       if (data[0] > 3) {
@@ -7890,7 +7828,6 @@ int LoadDeepEXR(DeepImage *deepImage, const char *filename, const char **err) {
       }
 
       compressionType = data[0];
-      // printf("comp: %d\n", compressionType);
 
       if (compressionType == 3) { // ZIP
         numScanlineBlocks = 16;
@@ -7919,17 +7856,32 @@ int LoadDeepEXR(DeepImage *deepImage, const char *filename, const char **err) {
       pixelType = channels[0].pixelType; // fixme
 
     } else if (attrName.compare("dataWindow") == 0) {
-      dx = *(reinterpret_cast<int *>(&data.at(0)));
-      dy = *(reinterpret_cast<int *>(&data.at(4)));
-      dw = *(reinterpret_cast<int *>(&data.at(8)));
-      dh = *(reinterpret_cast<int *>(&data.at(12)));
-      // printf("data : %d x %d - %d x %d\n", dx, dy, dw, dh);
+      memcpy(&dx, &data.at(0), sizeof(int));
+      memcpy(&dy, &data.at(4), sizeof(int));
+      memcpy(&dw, &data.at(8), sizeof(int));
+      memcpy(&dh, &data.at(12), sizeof(int));
+      if (IsBigEndian()) {
+        swap4(reinterpret_cast<unsigned int*>(&dx));
+        swap4(reinterpret_cast<unsigned int*>(&dy));
+        swap4(reinterpret_cast<unsigned int*>(&dw));
+        swap4(reinterpret_cast<unsigned int*>(&dh));
+      }
+
     } else if (attrName.compare("displayWindow") == 0) {
-      int x = *(reinterpret_cast<int *>(&data.at(0)));
-      int y = *(reinterpret_cast<int *>(&data.at(4)));
-      int w = *(reinterpret_cast<int *>(&data.at(8)));
-      int h = *(reinterpret_cast<int *>(&data.at(12)));
-      // printf("data : %d x %d - %d x %d\n", x, y, w, h);
+      int x; 
+      int y;
+      int w;
+      int h;
+      memcpy(&x, &data.at(0), sizeof(int));
+      memcpy(&y, &data.at(4), sizeof(int));
+      memcpy(&w, &data.at(8), sizeof(int));
+      memcpy(&h, &data.at(12), sizeof(int));
+      if (IsBigEndian()) {
+        swap4(reinterpret_cast<unsigned int*>(&x));
+        swap4(reinterpret_cast<unsigned int*>(&y));
+        swap4(reinterpret_cast<unsigned int*>(&w));
+        swap4(reinterpret_cast<unsigned int*>(&h));
+      }
     }
 
     marker = marker_next;
@@ -7956,8 +7908,11 @@ int LoadDeepEXR(DeepImage *deepImage, const char *filename, const char **err) {
   std::vector<long long> offsets(numBlocks);
 
   for (int y = 0; y < numBlocks; y++) {
-    long long offset = *(reinterpret_cast<const long long *>(marker));
-    // printf("offset[%d] = %lld\n", y, offset);
+    long long offset;
+    memcpy(&offset, marker, sizeof(long long));
+    if (IsBigEndian()) {
+      swap8(reinterpret_cast<unsigned long long*>(&offset));
+    }
     marker += sizeof(long long); // = 8
     offsets[y] = offset;
   }
@@ -7991,20 +7946,23 @@ int LoadDeepEXR(DeepImage *deepImage, const char *filename, const char **err) {
     // int64: unpacked size of sample data
     // compressed pixel offset table
     // compressed sample data
-    int lineNo = *reinterpret_cast<const int *>(dataPtr);
-    long long packedOffsetTableSize =
-        *reinterpret_cast<const long long *>(dataPtr + 4);
-    long long packedSampleDataSize =
-        *reinterpret_cast<const long long *>(dataPtr + 12);
-    long long unpackedSampleDataSize =
-        *reinterpret_cast<const long long *>(dataPtr + 20);
-    // printf("line: %d, %lld/%lld/%lld\n", lineNo, packedOffsetTableSize,
-    // packedSampleDataSize, unpackedSampleDataSize);
+    int lineNo;
+    long long packedOffsetTableSize;
+    long long packedSampleDataSize;
+    long long unpackedSampleDataSize;
+    memcpy(&lineNo, dataPtr, sizeof(int));
+    memcpy(&packedOffsetTableSize, dataPtr + 4, sizeof(long long));
+    memcpy(&packedSampleDataSize, dataPtr + 12, sizeof(long long));
+    memcpy(&unpackedSampleDataSize, dataPtr + 20, sizeof(long long));
+
+    if (IsBigEndian()) {
+      swap4(reinterpret_cast<unsigned int*>(&lineNo));
+      swap8(reinterpret_cast<unsigned long long*>(&packedOffsetTableSize));
+      swap8(reinterpret_cast<unsigned long long*>(&packedSampleDataSize));
+      swap8(reinterpret_cast<unsigned long long*>(&unpackedSampleDataSize));
+    }
 
     int endLineNo = std::min(lineNo + numScanlineBlocks, dataHeight);
-
-    int numLines = endLineNo - lineNo;
-    // printf("numLines: %d\n", numLines);
 
     std::vector<int> pixelOffsetTable(dataWidth);
 
@@ -8015,14 +7973,7 @@ int LoadDeepEXR(DeepImage *deepImage, const char *filename, const char **err) {
                     dstLen, dataPtr + 28, packedOffsetTableSize);
 
       assert(dstLen == pixelOffsetTable.size() * sizeof(int));
-      //      int ret =
-      //          miniz::mz_uncompress(reinterpret_cast<unsigned char
-      //          *>(&pixelOffsetTable.at(0)), &dstLen, dataPtr + 28,
-      //          packedOffsetTableSize);
-      //      printf("ret = %d, dstLen = %d\n", ret, (int)dstLen);
-      //
       for (int i = 0; i < dataWidth; i++) {
-        // printf("offt[%d] = %d\n", i, pixelOffsetTable[i]);
         deepImage->offset_table[y][i] = pixelOffsetTable[i];
       }
     }
@@ -8032,8 +7983,6 @@ int LoadDeepEXR(DeepImage *deepImage, const char *filename, const char **err) {
     // decode sample data.
     {
       unsigned long dstLen = unpackedSampleDataSize;
-      // printf("dstLen = %d\n", dstLen);
-      // printf("srcLen = %d\n", packedSampleDataSize);
       DecompressZip(reinterpret_cast<unsigned char *>(&sampleData.at(0)),
                     dstLen, dataPtr + 28 + packedOffsetTableSize,
                     packedSampleDataSize);
@@ -8046,7 +7995,6 @@ int LoadDeepEXR(DeepImage *deepImage, const char *filename, const char **err) {
     {
       int channelOffset = 0;
       for (int i = 0; i < numChannels; i++) {
-        // printf("offt[%d] = %d\n", i, channelOffset);
         channelOffsetList[i] = channelOffset;
         if (channels[i].pixelType == 0) { // UINT
           channelOffset += 4;
@@ -8079,13 +8027,6 @@ int LoadDeepEXR(DeepImage *deepImage, const char *filename, const char **err) {
         deepImage->image[c][y] =
             (float *)malloc(sizeof(float) * samplesPerLine);
 
-        // unsigned int channelOffset = channelOffsetList[c];
-        // unsigned int i = channelOffset;
-        // printf("channel = %d. name = %s. ty = %d\n", c,
-        // channels[c].name.c_str(), channels[c].pixelType);
-
-        // printf("dataOffset = %d\n", (int)dataOffset);
-
         if (channels[c].pixelType == 0) { // UINT
           for (int x = 0; x < samplesPerLine; x++) {
             unsigned int ui = *reinterpret_cast<unsigned int *>(
@@ -8100,20 +8041,17 @@ int LoadDeepEXR(DeepImage *deepImage, const char *filename, const char **err) {
                         &sampleData.at(dataOffset + x * sizeof(short)));
             FP32 f32 = half_to_float(f16);
             deepImage->image[c][y][x] = f32.f;
-            // printf("c[%d]  f(half) = %f (0x%08x)\n", c, f32.f, f16.u);
           }
           dataOffset += sizeof(short) * samplesPerLine;
         } else { // float
           for (int x = 0; x < samplesPerLine; x++) {
             float f = *reinterpret_cast<float *>(
                           &sampleData.at(dataOffset + x * sizeof(float)));
-            // printf("  f = %f(0x%08x)\n", f, *((unsigned int *)&f));
             deepImage->image[c][y][x] = f;
           }
           dataOffset += sizeof(float) * samplesPerLine;
         }
       }
-      // printf("total: %d\n", dataOffset);
     }
 
   } // y
