@@ -7031,7 +7031,7 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
     return -1;
   }
 
-  (*out_rgba) = (float*)malloc(sizeof(float) * exrImage.width * exrImage.height);
+  (*out_rgba) = (float*)malloc(4 * sizeof(float) * exrImage.width * exrImage.height);
   for (size_t i = 0; i < exrImage.width * exrImage.height; i++) {
     (*out_rgba)[4 * i + 0] = exrImage.images[idxR][i];
     (*out_rgba)[4 * i + 1] = exrImage.images[idxG][i];
