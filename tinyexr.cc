@@ -7023,20 +7023,24 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
     return -1;
   }
 
-  if (idxA == -1) {
-    if (*err) {
-      (*err) = "A channel not found\n";
-    }
-    // @todo { free exrImage }
-    return -1;
-  }
+  //if (idxA == -1) {
+  //  if (*err) {
+  //    (*err) = "A channel not found\n";
+  //  }
+  //  // @todo { free exrImage }
+  //  return -1;
+  //}
 
   (*out_rgba) = (float*)malloc(4 * sizeof(float) * exrImage.width * exrImage.height);
   for (size_t i = 0; i < exrImage.width * exrImage.height; i++) {
     (*out_rgba)[4 * i + 0] = exrImage.images[idxR][i];
     (*out_rgba)[4 * i + 1] = exrImage.images[idxG][i];
     (*out_rgba)[4 * i + 2] = exrImage.images[idxB][i];
-    (*out_rgba)[4 * i + 3] = exrImage.images[idxA][i];
+    if (idxA > 0) {
+      (*out_rgba)[4 * i + 3] = exrImage.images[idxA][i];
+    } else {
+      (*out_rgba)[4 * i + 3] = 1.0;
+    }
   }
 
   (*width) = exrImage.width;
