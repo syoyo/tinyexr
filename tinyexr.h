@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2014, Syoyo Fujita
+Copyright (c) 2014 - 2015, Syoyo Fujita
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -31,10 +31,15 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 extern "C" {
 #endif
 
+#define TINYEXR_PIXELTYPE_HALF    (0)
+#define TINYEXR_PIXELTYPE_UINT    (1)
+#define TINYEXR_PIXELTYPE_FLOAT   (2)
+
 typedef struct {
   int num_channels;
   const char **channel_names;
-  float **images; // image[channels][pixels]
+  unsigned char **images; // image[channels][pixels]
+  int pixel_type;  // TINYEXR_PIXELTYPE_*
   int width;
   int height;
 } EXRImage;
@@ -48,6 +53,7 @@ typedef struct {
   int height;
 } DeepImage;
 
+// @deprecated { to be removed. }
 // Loads single-frame OpenEXR image. Assume EXR image contains RGB(A) channels.
 // Application must free image data as returned by `out_rgba`
 // Result image format is: float x RGBA x width x hight

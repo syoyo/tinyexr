@@ -85,12 +85,17 @@ See `example/deepview` for actual usage.
 
 Contribution is welcome!
 
+- [ ] Write to memory buffer.
 - [ ] Tile format.
 - [ ] Support for various compression type.
 - [X] Multi-channel.
 - [ ] Multi-part(EXR2.0)
 - [ ] Pixel order.
 - [ ] Pixel format(UINT, FLOAT).
+  - [ ] UINT, FLOAT(load)
+  - [ ] UINT, FLOAT(deep load)
+  - [ ] UINT, FLOAT(save)
+  - [ ] UINT, FLOAT(deep save)
 - [ ] Full support for big endian machine.
   - [x] Loading multi channel EXR
   - [x] Saving multi channel EXR
@@ -98,7 +103,7 @@ Contribution is welcome!
   - [ ] Saving deep image
 - [ ] Optimization
   - [ ] ISPC?
-  - [ ] multi-threading.
+  - [x] OpenMP multi-threading in EXR loading.
 
 ## Similar projects
 

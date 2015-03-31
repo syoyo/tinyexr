@@ -35,6 +35,10 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "tinyexr.h"
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 namespace {
 
 namespace miniz {
@@ -7033,11 +7037,11 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
 
   (*out_rgba) = (float*)malloc(4 * sizeof(float) * exrImage.width * exrImage.height);
   for (size_t i = 0; i < exrImage.width * exrImage.height; i++) {
-    (*out_rgba)[4 * i + 0] = exrImage.images[idxR][i];
-    (*out_rgba)[4 * i + 1] = exrImage.images[idxG][i];
-    (*out_rgba)[4 * i + 2] = exrImage.images[idxB][i];
+    (*out_rgba)[4 * i + 0] = reinterpret_cast<float**>(exrImage.images)[idxR][i];
+    (*out_rgba)[4 * i + 1] = reinterpret_cast<float**>(exrImage.images)[idxG][i];
+    (*out_rgba)[4 * i + 2] = reinterpret_cast<float**>(exrImage.images)[idxB][i];
     if (idxA > 0) {
-      (*out_rgba)[4 * i + 3] = exrImage.images[idxA][i];
+      (*out_rgba)[4 * i + 3] = reinterpret_cast<float**>(exrImage.images)[idxA][i];
     } else {
       (*out_rgba)[4 * i + 3] = 1.0;
     }
@@ -7238,12 +7242,15 @@ int LoadMultiChannelEXR(EXRImage *exrImage, const char *filename,
     return -10;
   }
 
-  exrImage->images = (float **)malloc(sizeof(float *) * numChannels);
+  exrImage->images = reinterpret_cast<unsigned char**>((float **)malloc(sizeof(float *) * numChannels));
   for (int c = 0; c < numChannels; c++) {
     exrImage->images[c] =
-        (float *)malloc(sizeof(float) * dataWidth * dataHeight);
+        reinterpret_cast<unsigned char*>((float *)malloc(sizeof(float) * dataWidth * dataHeight));
   }
 
+  #ifdef _OPENMP
+  #pragma omp parallel for
+  #endif
   for (int y = 0; y < numBlocks; y++) {
     const unsigned char *dataPtr =
         reinterpret_cast<const unsigned char *>(head + offsets[y]);
@@ -7298,7 +7305,8 @@ int LoadMultiChannelEXR(EXRImage *exrImage, const char *filename,
             FP32 f32 = half_to_float(hf);
 
             // Assume increasing Y.
-            exrImage->images[c][(lineNo + v) * dataWidth + u] = f32.f;
+            float* image = reinterpret_cast<float**>(exrImage->images)[c];
+            image[(lineNo + v) * dataWidth + u] = f32.f;
           }
         }
       }
@@ -7325,15 +7333,11 @@ int LoadMultiChannelEXR(EXRImage *exrImage, const char *filename,
           FP32 f32 = half_to_float(hf);
 
           // Assume increasing Y.
-          exrImage->images[c][y * dataWidth + u] = f32.f;
+          float* image = reinterpret_cast<float**>(exrImage->images)[c];
+          image[y * dataWidth + u] = f32.f;
 
         }
       }
-    } else {
-      if (err) {
-        (*err) = "Unsupported format.";
-      }
-      return -10;
     }
   }
 
@@ -7677,7 +7681,7 @@ int SaveMultiChannelEXR(const EXRImage *exrImage, const char *filename,
       for (int c = 0; c < exrImage->num_channels; c++) {
         for (int x = 0; x < exrImage->width; x++) {
           FP32 f32;
-          f32.f = exrImage->images[c][(y + startY) * exrImage->width + x];
+          f32.f = reinterpret_cast<float**>(exrImage->images)[c][(y + startY) * exrImage->width + x];
 
           FP16 h16;
           h16 = float_to_half_full(f32);
