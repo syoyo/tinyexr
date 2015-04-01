@@ -54,13 +54,14 @@ main(int argc, char** argv)
     printf("chan[%d] = %s\n", i, exrImage.channel_names[i]);
   }
 
-  ret = SaveMultiChannelEXR(&exrImage, "output_test.exr", &err);
+
+  const char* outfilename = "output_test.exr";
+  ret = SaveMultiChannelEXRToFile(&exrImage, outfilename, &err);
   if (ret != 0) {
     fprintf(stderr, "Save EXR err: %s\n", err);
     return ret;
   }
-
-  printf("Saved exr file.\n");
+  printf("Saved exr file. [ %s ] \n", outfilename);
 
   return ret;
 }

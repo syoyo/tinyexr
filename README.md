@@ -86,9 +86,12 @@ See `example/deepview` for actual usage.
 Contribution is welcome!
 
 - [ ] Write to memory buffer.
+  - [x] SaveMultiChannelEXR
+  - [ ] LoadMultiChannelEXR
+  - [ ] Deep image save/load
 - [ ] Tile format.
 - [ ] Support for various compression type.
-- [X] Multi-channel.
+- [x] Multi-channel.
 - [ ] Multi-part(EXR2.0)
 - [ ] Pixel order.
 - [ ] Pixel format(UINT, FLOAT).

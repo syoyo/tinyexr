@@ -76,11 +76,19 @@ extern int LoadMultiChannelEXR(EXRImage *image, const char *filename,
 //extern int SaveEXR(const float *in_rgba, int width, int height,
 //                   const char *filename, const char **err);
 
-// Saves multi-channel, single-frame OpenEXR image.
+// Saves multi-channel, single-frame OpenEXR image to a file.
 // Application must free EXRImage
 // Return 0 if success
 // Returns error string in `err` when there's an error
-extern int SaveMultiChannelEXR(const EXRImage *image, const char *filename,
+extern int SaveMultiChannelEXRToFile(const EXRImage *image, const char *filename,
+                               const char **err);
+
+// Saves multi-channel, single-frame OpenEXR image to a memory.
+// Application must free EXRImage
+// Return the number of bytes if succes.
+// Retrun zero or negative  number when failed.
+// Returns error string in `err` when there's an error
+extern size_t SaveMultiChannelEXRToMemory(const EXRImage *image,  unsigned char **memory,
                                const char **err);
 
 // Loads single-frame OpenEXR deep image.

@@ -6776,6 +6776,19 @@ void WriteAttribute(FILE *fp, const char *name, const char *type,
   assert(n == len);
 }
 
+void WriteAttributeToMemory(std::vector<unsigned char>& out, const char *name, const char *type,
+                    const unsigned char *data, int len) {
+  out.insert(out.end(), name, name + strlen(name) + 1);
+  out.insert(out.end(), type, type + strlen(type) + 1);
+
+  int outLen = len;
+  if (IsBigEndian()) {
+    swap4(reinterpret_cast<unsigned int*>(&outLen));
+  }
+  out.insert(out.end(), reinterpret_cast<unsigned char*>(&outLen), reinterpret_cast<unsigned char*>(&outLen) + sizeof(int));
+  out.insert(out.end(), data, data + len);
+}
+
 typedef struct {
   std::string name; // less than 255 bytes long
   int pixelType;
@@ -7532,35 +7545,27 @@ int SaveEXR(const float *in_rgba, int width, int height, const char *filename,
 }
 #endif
 
-int SaveMultiChannelEXR(const EXRImage *exrImage, const char *filename,
+size_t SaveMultiChannelEXRToMemory(const EXRImage *exrImage, unsigned char **memory_out,
                         const char **err) {
-  if (exrImage == NULL || filename == NULL) {
+  if (exrImage == NULL || memory_out == NULL) {
     if (err) {
       (*err) = "Invalid argument.";
     }
     return -1;
   }
 
-  FILE *fp = fopen(filename, "wb");
-  if (!fp) {
-    if (err) {
-      (*err) = "Cannot write a file.";
-    }
-    return -1;
-  }
+  std::vector<unsigned char> memory;
 
   // Header
   {
     const char header[] = {0x76, 0x2f, 0x31, 0x01};
-    size_t n = fwrite(header, 1, 4, fp);
-    assert(n == 4);
+    memory.insert(memory.end(), header, header + 4);
   }
 
   // Version, scanline.
   {
     const char marker[] = {2, 0, 0, 0};
-    size_t n = fwrite(marker, 1, 4, fp);
-    assert(n == 4);
+    memory.insert(memory.end(), marker, marker + 4);
   }
 
   int numScanlineBlocks = 16; // 16 for ZIP compression.
@@ -7582,7 +7587,7 @@ int SaveMultiChannelEXR(const EXRImage *exrImage, const char *filename,
 
     WriteChannelInfo(data, channels);
 
-    WriteAttribute(fp, "channels", "chlist", &data.at(0),
+    WriteAttributeToMemory(memory, "channels", "chlist", &data.at(0),
                    data.size()); // +1 = null
   }
 
@@ -7591,7 +7596,7 @@ int SaveMultiChannelEXR(const EXRImage *exrImage, const char *filename,
     if (IsBigEndian()) {
       swap4(reinterpret_cast<unsigned int*>(&compressionType));
     }
-    WriteAttribute(fp, "compression", "compression",
+    WriteAttributeToMemory(memory, "compression", "compression",
                    reinterpret_cast<const unsigned char *>(&compressionType),
                    1);
   }
@@ -7604,17 +7609,17 @@ int SaveMultiChannelEXR(const EXRImage *exrImage, const char *filename,
       swap4(reinterpret_cast<unsigned int*>(&data[2]));
       swap4(reinterpret_cast<unsigned int*>(&data[3]));
     }
-    WriteAttribute(fp, "dataWindow", "box2i",
+    WriteAttributeToMemory(memory, "dataWindow", "box2i",
                    reinterpret_cast<const unsigned char *>(data),
                    sizeof(int) * 4);
-    WriteAttribute(fp, "displayWindow", "box2i",
+    WriteAttributeToMemory(memory, "displayWindow", "box2i",
                    reinterpret_cast<const unsigned char *>(data),
                    sizeof(int) * 4);
   }
 
   {
     unsigned char lineOrder = 0; // increasingY
-    WriteAttribute(fp, "lineOrder", "lineOrder", &lineOrder, 1);
+    WriteAttributeToMemory(memory, "lineOrder", "lineOrder", &lineOrder, 1);
   }
 
   {
@@ -7622,7 +7627,7 @@ int SaveMultiChannelEXR(const EXRImage *exrImage, const char *filename,
     if (IsBigEndian()) {
       swap4(reinterpret_cast<unsigned int*>(&aspectRatio));
     }
-    WriteAttribute(fp, "pixelAspectRatio", "float",
+    WriteAttributeToMemory(memory, "pixelAspectRatio", "float",
                    reinterpret_cast<const unsigned char *>(&aspectRatio),
                    sizeof(float));
   }
@@ -7633,7 +7638,7 @@ int SaveMultiChannelEXR(const EXRImage *exrImage, const char *filename,
       swap4(reinterpret_cast<unsigned int*>(&center[0]));
       swap4(reinterpret_cast<unsigned int*>(&center[1]));
     }
-    WriteAttribute(fp, "screenWindowCenter", "v2f",
+    WriteAttributeToMemory(memory, "screenWindowCenter", "v2f",
                    reinterpret_cast<const unsigned char *>(center),
                    2 * sizeof(float));
   }
@@ -7643,13 +7648,13 @@ int SaveMultiChannelEXR(const EXRImage *exrImage, const char *filename,
     if (IsBigEndian()) {
       swap4(reinterpret_cast<unsigned int*>(&w));
     }
-    WriteAttribute(fp, "screenWindowWidth", "float",
+    WriteAttributeToMemory(memory, "screenWindowWidth", "float",
                    reinterpret_cast<const unsigned char *>(&w), sizeof(float));
   }
 
   { // end of header
     unsigned char e = 0;
-    fwrite(&e, 1, 1, fp);
+    memory.push_back(e);
   }
 
   int numBlocks = exrImage->height / numScanlineBlocks;
@@ -7659,13 +7664,12 @@ int SaveMultiChannelEXR(const EXRImage *exrImage, const char *filename,
 
   std::vector<long long> offsets(numBlocks);
 
-  size_t headerSize = ftell(fp); // sizeof(header)
+  size_t headerSize = memory.size();
   long long offset =
       headerSize +
       numBlocks * sizeof(long long); // sizeof(header) + sizeof(offsetTable)
 
   std::vector<unsigned char> data;
-
 
   bool isBigEndian = IsBigEndian();
 
@@ -7731,13 +7735,46 @@ int SaveMultiChannelEXR(const EXRImage *exrImage, const char *filename,
   }
 
   {
-    size_t n = fwrite(&offsets.at(0), 1, sizeof(unsigned long long) * numBlocks, fp);
-    assert(n == sizeof(unsigned long long) * numBlocks);
+    memory.insert(memory.end(), &offsets.at(0), &offsets.at(0) + sizeof(unsigned long long) * numBlocks);
   }
 
   {
-    size_t n = fwrite(&data.at(0), 1, data.size(), fp);
-    assert(n == data.size());
+    memory.insert(memory.end(), data.begin(), data.end());
+  }
+
+  assert(memory.size() > 0);
+
+  (*memory_out) = (unsigned char*)malloc(memory.size());
+  memcpy((*memory_out), &memory.at(0), memory.size());
+
+  return memory.size(); // OK
+}
+
+int SaveMultiChannelEXRToFile(const EXRImage *exrImage, const char *filename,
+                        const char **err) {
+  if (exrImage == NULL || filename == NULL) {
+    if (err) {
+      (*err) = "Invalid argument.";
+    }
+    return -1;
+  }
+
+  FILE *fp = fopen(filename, "wb");
+  if (!fp) {
+    if (err) {
+      (*err) = "Cannot write a file.";
+    }
+    return -1;
+  }
+  
+  unsigned char* mem = NULL;
+  size_t mem_size = SaveMultiChannelEXRToMemory(exrImage, &mem, err);
+
+  if (mem_size > 0) {
+
+    fwrite(mem, 1, mem_size, fp);
+
+    free(mem);
   }
 
   fclose(fp);
