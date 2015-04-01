@@ -7735,7 +7735,7 @@ size_t SaveMultiChannelEXRToMemory(const EXRImage *exrImage, unsigned char **mem
   }
 
   {
-    memory.insert(memory.end(), &offsets.at(0), &offsets.at(0) + sizeof(unsigned long long) * numBlocks);
+    memory.insert(memory.end(), reinterpret_cast<unsigned char*>(&offsets.at(0)), reinterpret_cast<unsigned char*>(&offsets.at(0)) + sizeof(unsigned long long) * numBlocks);
   }
 
   {
