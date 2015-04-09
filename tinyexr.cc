@@ -7352,7 +7352,7 @@ int LoadMultiChannelEXR(EXRImage *exrImage, const char *filename,
         }
       }
     }
-  }
+  } // omp parallel
 
   {
     exrImage->channel_names =
@@ -7368,6 +7368,7 @@ int LoadMultiChannelEXR(EXRImage *exrImage, const char *filename,
 
     exrImage->width = dataWidth;
     exrImage->height = dataHeight;
+    exrImage->pixel_type = pixelType;
   }
 
   return 0; // OK
@@ -7578,7 +7579,7 @@ size_t SaveMultiChannelEXRToMemory(const EXRImage *exrImage, unsigned char **mem
     for (int c = 0; c < exrImage->num_channels; c++) {
       ChannelInfo info;
       info.pLinear = 0;
-      info.pixelType = 1; // Assume HALF
+      info.pixelType = exrImage->pixel_type;
       info.xSampling = 1;
       info.ySampling = 1;
       info.name = std::string(exrImage->channel_names[c]);
@@ -7672,44 +7673,99 @@ size_t SaveMultiChannelEXRToMemory(const EXRImage *exrImage, unsigned char **mem
   std::vector<unsigned char> data;
 
   bool isBigEndian = IsBigEndian();
+  int pixelDataSize = -1;
+  if (exrImage->pixel_type == TINYEXR_PIXELTYPE_FLOAT) {
+    pixelDataSize = sizeof(float);
+  } else if (exrImage->pixel_type == TINYEXR_PIXELTYPE_UINT) {
+    pixelDataSize = sizeof(unsigned int);
+  } else if (exrImage->pixel_type == TINYEXR_PIXELTYPE_HALF) {
+    pixelDataSize = sizeof(unsigned short);
+  } else {
+    assert(0);
+  }
 
+  std::vector<std::vector<unsigned char> > dataList(numBlocks);
+
+  #ifdef _OPENMP
+  #pragma omp parallel for
+  #endif
   for (int i = 0; i < numBlocks; i++) {
     int startY = numScanlineBlocks * i;
     int endY = (std::min)(numScanlineBlocks * (i + 1), exrImage->height);
     int h = endY - startY;
 
-    std::vector<unsigned short> buf(exrImage->num_channels * exrImage->width *
-                                    h);
+    std::vector<unsigned char> buf(exrImage->num_channels * exrImage->width * h * pixelDataSize);
 
-    for (int y = 0; y < h; y++) {
-      for (int c = 0; c < exrImage->num_channels; c++) {
-        for (int x = 0; x < exrImage->width; x++) {
-          FP32 f32;
-          f32.f = reinterpret_cast<float**>(exrImage->images)[c][(y + startY) * exrImage->width + x];
+    if (exrImage->pixel_type == TINYEXR_PIXELTYPE_HALF) {
 
-          FP16 h16;
-          h16 = float_to_half_full(f32);
+      for (int y = 0; y < h; y++) {
+        for (int c = 0; c < exrImage->num_channels; c++) {
+          for (int x = 0; x < exrImage->width; x++) {
+            FP32 f32;
+            f32.f = reinterpret_cast<float**>(exrImage->images)[c][(y + startY) * exrImage->width + x];
 
-          if (isBigEndian) {
-            swap2(reinterpret_cast<unsigned short*>(&h16.u));
+            FP16 h16;
+            h16 = float_to_half_full(f32);
+
+            if (isBigEndian) {
+              swap2(reinterpret_cast<unsigned short*>(&h16.u));
+            }
+
+            // Assume increasing Y
+            (reinterpret_cast<unsigned short*>(&buf.at(0)))[exrImage->num_channels * y * exrImage->width +
+                c * exrImage->width + x] = h16.u;
           }
-
-          // Assume increasing Y
-          buf[exrImage->num_channels * y * exrImage->width +
-              c * exrImage->width + x] = h16.u;
         }
       }
+
+    } else if (exrImage->pixel_type == TINYEXR_PIXELTYPE_FLOAT) {
+
+      for (int y = 0; y < h; y++) {
+        for (int c = 0; c < exrImage->num_channels; c++) {
+          for (int x = 0; x < exrImage->width; x++) {
+            float val = reinterpret_cast<float**>(exrImage->images)[c][(y + startY) * exrImage->width + x];
+
+            if (isBigEndian) {
+              swap4(reinterpret_cast<unsigned int*>(&val));
+            }
+
+            // Assume increasing Y
+            (reinterpret_cast<float*>(&buf.at(0)))[exrImage->num_channels * y * exrImage->width +
+                c * exrImage->width + x] = val;
+          }
+        }
+      }
+
+    } else if (exrImage->pixel_type == TINYEXR_PIXELTYPE_UINT) {
+
+      for (int y = 0; y < h; y++) {
+        for (int c = 0; c < exrImage->num_channels; c++) {
+          for (int x = 0; x < exrImage->width; x++) {
+            unsigned int val = reinterpret_cast<unsigned int**>(exrImage->images)[c][(y + startY) * exrImage->width + x];
+
+            if (isBigEndian) {
+              swap4(&val);
+            }
+
+            // Assume increasing Y
+            (reinterpret_cast<unsigned int*>(&buf.at(0)))[exrImage->num_channels * y * exrImage->width +
+                c * exrImage->width + x] = val;
+          }
+        }
+      }
+
     }
 
-    int bound = miniz::mz_compressBound(buf.size() * sizeof(unsigned short));
+
+    int bound = miniz::mz_compressBound(buf.size());
 
     std::vector<unsigned char> block(
-        miniz::mz_compressBound(buf.size() * sizeof(unsigned short)));
+        miniz::mz_compressBound(buf.size()));
     unsigned long long outSize = block.size();
 
     CompressZip(&block.at(0), outSize,
                 reinterpret_cast<const unsigned char *>(&buf.at(0)),
-                buf.size() * sizeof(unsigned short));
+                buf.size());
 
     // 4 byte: scan line
     // 4 byte: data size
@@ -7724,14 +7780,29 @@ size_t SaveMultiChannelEXRToMemory(const EXRImage *exrImage, unsigned char **mem
       swap4(reinterpret_cast<unsigned int*>(&header.at(4)));
     }
 
-    data.insert(data.end(), header.begin(), header.end());
-    data.insert(data.end(), block.begin(), block.begin() + dataLen);
+    dataList[i].insert(dataList[i].end(), header.begin(), header.end());
+    dataList[i].insert(dataList[i].end(), block.begin(), block.begin() + dataLen);
+
+    //data.insert(data.end(), header.begin(), header.end());
+    //data.insert(data.end(), block.begin(), block.begin() + dataLen);
+
+    //offsets[i] = offset;
+    //if (IsBigEndian()) {
+    //  swap8(reinterpret_cast<unsigned long long*>(&offsets[i]));
+    //}
+    //offset += dataLen + 8; // 8 = sizeof(blockHeader)
+  } // omp parallel
+
+  
+  for (int i = 0; i < numBlocks; i++) {
+
+    data.insert(data.end(), dataList[i].begin(), dataList[i].end());
 
     offsets[i] = offset;
     if (IsBigEndian()) {
       swap8(reinterpret_cast<unsigned long long*>(&offsets[i]));
     }
-    offset += dataLen + 8; // 8 = sizeof(blockHeader)
+    offset += dataList[i].size();
   }
 
   {
@@ -8041,11 +8112,11 @@ int LoadDeepEXR(DeepImage *deepImage, const char *filename, const char **err) {
       int channelOffset = 0;
       for (int i = 0; i < numChannels; i++) {
         channelOffsetList[i] = channelOffset;
-        if (channels[i].pixelType == 0) { // UINT
+        if (channels[i].pixelType == TINYEXR_PIXELTYPE_UINT) { // UINT
           channelOffset += 4;
-        } else if (channels[i].pixelType == 1) { // half
+        } else if (channels[i].pixelType == TINYEXR_PIXELTYPE_HALF) { // half
           channelOffset += 2;
-        } else if (channels[i].pixelType == 2) { // float
+        } else if (channels[i].pixelType == TINYEXR_PIXELTYPE_FLOAT) { // float
           channelOffset += 4;
         } else {
           assert(0);

@@ -97,7 +97,7 @@ Contribution is welcome!
 - [ ] Pixel format(UINT, FLOAT).
   - [ ] UINT, FLOAT(load)
   - [ ] UINT, FLOAT(deep load)
-  - [ ] UINT, FLOAT(save)
+  - [x] UINT, FLOAT(save)
   - [ ] UINT, FLOAT(deep save)
 - [ ] Full support for big endian machine.
   - [x] Loading multi channel EXR
@@ -107,6 +107,9 @@ Contribution is welcome!
 - [ ] Optimization
   - [ ] ISPC?
   - [x] OpenMP multi-threading in EXR loading.
+  - [x] OpenMP multi-threading in EXR saving.
+  - [ ] OpenMP multi-threading in deep image loading.
+  - [ ] OpenMP multi-threading in deep image saving.
 
 ## Similar projects
 

@@ -31,8 +31,9 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 extern "C" {
 #endif
 
-#define TINYEXR_PIXELTYPE_HALF    (0)
-#define TINYEXR_PIXELTYPE_UINT    (1)
+// pixel type: possible values are: UINT = 0 HALF = 1 FLOAT = 2
+#define TINYEXR_PIXELTYPE_UINT    (0)
+#define TINYEXR_PIXELTYPE_HALF    (1)
 #define TINYEXR_PIXELTYPE_FLOAT   (2)
 
 typedef struct {

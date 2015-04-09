@@ -49,11 +49,14 @@ main(int argc, char** argv)
   }
 
   printf("EXR: %d x %d\n", exrImage.width, exrImage.height);
+  printf("EXR: pixelType: %d\n", exrImage.pixel_type);
 
   for (int i = 0; i < exrImage.num_channels; i++) {
     printf("chan[%d] = %s\n", i, exrImage.channel_names[i]);
   }
 
+  // Uncomment to save image as float pixel type.
+  //exrImage.pixel_type = TINYEXR_PIXELTYPE_FLOAT;
 
   const char* outfilename = "output_test.exr";
   ret = SaveMultiChannelEXRToFile(&exrImage, outfilename, &err);
