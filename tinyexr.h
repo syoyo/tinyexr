@@ -32,15 +32,15 @@ extern "C" {
 #endif
 
 // pixel type: possible values are: UINT = 0 HALF = 1 FLOAT = 2
-#define TINYEXR_PIXELTYPE_UINT    (0)
-#define TINYEXR_PIXELTYPE_HALF    (1)
-#define TINYEXR_PIXELTYPE_FLOAT   (2)
+#define TINYEXR_PIXELTYPE_UINT (0)
+#define TINYEXR_PIXELTYPE_HALF (1)
+#define TINYEXR_PIXELTYPE_FLOAT (2)
 
 typedef struct {
   int num_channels;
   const char **channel_names;
   unsigned char **images; // image[channels][pixels]
-  int pixel_type;  // TINYEXR_PIXELTYPE_*
+  int *pixel_types;       // pixel type(TINYEXR_PIXELTYPE_*) for each channel
   int width;
   int height;
 } EXRImage;
@@ -74,23 +74,24 @@ extern int LoadMultiChannelEXR(EXRImage *image, const char *filename,
 // Image is compressed with ZIP.
 // Return 0 if success
 // Returns error string in `err` when there's an error
-//extern int SaveEXR(const float *in_rgba, int width, int height,
+// extern int SaveEXR(const float *in_rgba, int width, int height,
 //                   const char *filename, const char **err);
 
 // Saves multi-channel, single-frame OpenEXR image to a file.
 // Application must free EXRImage
 // Return 0 if success
 // Returns error string in `err` when there's an error
-extern int SaveMultiChannelEXRToFile(const EXRImage *image, const char *filename,
-                               const char **err);
+extern int SaveMultiChannelEXRToFile(const EXRImage *image,
+                                     const char *filename, const char **err);
 
 // Saves multi-channel, single-frame OpenEXR image to a memory.
 // Application must free EXRImage
 // Return the number of bytes if succes.
 // Retrun zero or negative  number when failed.
 // Returns error string in `err` when there's an error
-extern size_t SaveMultiChannelEXRToMemory(const EXRImage *image,  unsigned char **memory,
-                               const char **err);
+extern size_t SaveMultiChannelEXRToMemory(const EXRImage *image,
+                                          unsigned char **memory,
+                                          const char **err);
 
 // Loads single-frame OpenEXR deep image.
 // Application must free memory of variables in DeepImage(image, offset_table)

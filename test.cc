@@ -34,6 +34,7 @@ SaveAsPFM(const char* filename, int width, int height, float* data)
 int
 main(int argc, char** argv)
 {
+  const char* outfilename = "output_test.exr";
   const char* err;
   EXRImage exrImage;
 
@@ -41,7 +42,24 @@ main(int argc, char** argv)
     fprintf(stderr, "Needs input.exr.\n");
     exit(-1);
   }
+
+  if (argc > 2) {
+    outfilename = argv[2];
+  }
+    
+
   
+  //float *rgba = NULL;
+  //int width, height;
+  //int ret = LoadEXR(&rgba, &width, &height, argv[1], &err);
+  //if (ret != 0) {
+  //  fprintf(stderr, "Load EXR err: %s\n", err);
+  //  return ret;
+  //}
+
+  //SaveAsPFM("out.pfm", width, height, rgba);
+
+#if 1
   int ret = LoadMultiChannelEXR(&exrImage, argv[1], &err);
   if (ret != 0) {
     fprintf(stderr, "Load EXR err: %s\n", err);
@@ -49,22 +67,24 @@ main(int argc, char** argv)
   }
 
   printf("EXR: %d x %d\n", exrImage.width, exrImage.height);
-  printf("EXR: pixelType: %d\n", exrImage.pixel_type);
 
   for (int i = 0; i < exrImage.num_channels; i++) {
+    printf("pixelType[%d]: %d\n", i, exrImage.pixel_types[i]);
     printf("chan[%d] = %s\n", i, exrImage.channel_names[i]);
   }
 
   // Uncomment to save image as float pixel type.
-  //exrImage.pixel_type = TINYEXR_PIXELTYPE_FLOAT;
+  for (int i = 0; i < exrImage.num_channels; i++) {
+    exrImage.pixel_types[i] = TINYEXR_PIXELTYPE_FLOAT;
+  }
 
-  const char* outfilename = "output_test.exr";
   ret = SaveMultiChannelEXRToFile(&exrImage, outfilename, &err);
   if (ret != 0) {
     fprintf(stderr, "Save EXR err: %s\n", err);
     return ret;
   }
   printf("Saved exr file. [ %s ] \n", outfilename);
+#endif
 
   return ret;
 }

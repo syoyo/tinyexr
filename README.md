@@ -95,8 +95,8 @@ Contribution is welcome!
 - [ ] Multi-part(EXR2.0)
 - [ ] Pixel order.
 - [ ] Pixel format(UINT, FLOAT).
-  - [ ] UINT, FLOAT(load)
-  - [ ] UINT, FLOAT(deep load)
+  - [x] UINT, FLOAT(load)
+  - [x] UINT, FLOAT(deep load)
   - [x] UINT, FLOAT(save)
   - [ ] UINT, FLOAT(deep save)
 - [ ] Full support for big endian machine.
