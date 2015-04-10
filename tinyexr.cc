@@ -7747,7 +7747,7 @@ size_t SaveMultiChannelEXRToMemory(const EXRImage *exrImage,
 
   bool isBigEndian = IsBigEndian();
 
-  std::vector<std::vector<unsigned char>> dataList(numBlocks);
+  std::vector<std::vector<unsigned char> > dataList(numBlocks);
   std::vector<size_t> channelOffsetList(exrImage->num_channels);
 
   int pixelDataSize = 0;
