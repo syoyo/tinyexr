@@ -12,7 +12,7 @@ To use `tinyexr`, simply copy `tinyexr.cc` and `tinyexr.h` into your project.
 * Normal image
   * Scanline format.
   * Uncompress("compress" = 0) and ZIP compression("compress" = 3).
-  * Half pixel type.
+  * Half/Uint/Float pixel type.
 * Deep image
   * Scanline format.
   * ZIPS compression("compress" = 2).
@@ -85,9 +85,9 @@ See `example/deepview` for actual usage.
 
 Contribution is welcome!
 
-- [ ] Write to memory buffer.
+- [ ] Write from/to memory buffer.
   - [x] SaveMultiChannelEXR
-  - [ ] LoadMultiChannelEXR
+  - [x] LoadMultiChannelEXR
   - [ ] Deep image save/load
 - [ ] Tile format.
 - [ ] Support for various compression type.

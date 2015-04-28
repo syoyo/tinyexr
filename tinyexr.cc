@@ -6994,7 +6994,7 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
   }
 
   EXRImage exrImage;
-  int ret = LoadMultiChannelEXR(&exrImage, filename, err);
+  int ret = LoadMultiChannelEXRFromFile(&exrImage, filename, err);
   if (ret != 0) {
     return ret;
   }
@@ -7073,7 +7073,7 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
   return 0;
 }
 
-int LoadMultiChannelEXR(EXRImage *exrImage, const char *filename,
+int LoadMultiChannelEXRFromFile(EXRImage *exrImage, const char *filename,
                         const char **err) {
   if (exrImage == NULL) {
     if (err) {
@@ -7096,13 +7096,28 @@ int LoadMultiChannelEXR(EXRImage *exrImage, const char *filename,
   filesize = ftell(fp);
   fseek(fp, 0, SEEK_SET);
 
-  std::vector<char> buf(filesize); // @todo { use mmap }
+  std::vector<unsigned char> buf(filesize); // @todo { use mmap }
   {
     size_t ret;
     ret = fread(&buf[0], 1, filesize, fp);
     assert(ret == filesize);
     fclose(fp);
   }
+
+  return LoadMultiChannelEXRFromMemory(exrImage, &buf.at(0), err);
+
+}
+
+int LoadMultiChannelEXRFromMemory(EXRImage *exrImage, const unsigned char *memory,
+                        const char **err) {
+  if (exrImage == NULL || memory == NULL) {
+    if (err) {
+      (*err) = "Invalid argument.";
+    }
+    return -1;
+  }
+
+  const char* buf = reinterpret_cast<const char*>(memory);
 
   const char *head = &buf[0];
   const char *marker = &buf[0];

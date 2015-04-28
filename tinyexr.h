@@ -63,11 +63,18 @@ typedef struct {
 extern int LoadEXR(float **out_rgba, int *width, int *height,
                    const char *filename, const char **err);
 
-// Loads multi-channel, single-frame OpenEXR image.
+// Loads multi-channel, single-frame OpenEXR image from a file.
 // Application must free EXRImage
 // Return 0 if success
 // Returns error string in `err` when there's an error
-extern int LoadMultiChannelEXR(EXRImage *image, const char *filename,
+extern int LoadMultiChannelEXRFromFile(EXRImage *image, const char *filename,
+                               const char **err);
+
+// Loads multi-channel, single-frame OpenEXR image from a memory.
+// Application must free EXRImage
+// Return 0 if success
+// Returns error string in `err` when there's an error
+extern int LoadMultiChannelEXRFromMemory(EXRImage *image, const unsigned char *memory,
                                const char **err);
 
 // Saves floating point RGBA image as OpenEXR.

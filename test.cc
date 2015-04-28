@@ -60,7 +60,7 @@ main(int argc, char** argv)
   //SaveAsPFM("out.pfm", width, height, rgba);
 
 #if 1
-  int ret = LoadMultiChannelEXR(&exrImage, argv[1], &err);
+  int ret = LoadMultiChannelEXRFromFile(&exrImage, argv[1], &err);
   if (ret != 0) {
     fprintf(stderr, "Load EXR err: %s\n", err);
     return ret;
