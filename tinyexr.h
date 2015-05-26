@@ -63,6 +63,19 @@ typedef struct {
 extern int LoadEXR(float **out_rgba, int *width, int *height,
                    const char *filename, const char **err);
 
+// For emscripten.
+// Parse single-frame OpenEXR header from memory.
+// Return 0 if success
+// Returns error string in `err` when there's an error
+extern int ParseEXRHeaderFromMemory(int *width, int *height, const unsigned char *memory);
+
+// For emscripten.
+// Loads single-frame OpenEXR image from memory. Assume EXR image contains RGB(A) channels.
+// `out_rgba` must have enough memory(at least sizeof(float) x 4(RGBA) x width x hight)
+// Return 0 if success
+// Returns error string in `err` when there's an error
+extern int LoadEXRFromMemory(float *out_rgba, const unsigned char *memory, const char **err);
+
 // Loads multi-channel, single-frame OpenEXR image from a file.
 // Application must free EXRImage
 // Return 0 if success

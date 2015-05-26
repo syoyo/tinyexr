@@ -7073,6 +7073,226 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
   return 0;
 }
 
+int ParseEXRHeaderFromMemory(int *width, int *height, const unsigned char *memory) {
+
+  if (memory == NULL) {
+    // Invalid argument
+    return -1;
+  }
+
+  const char* buf = reinterpret_cast<const char*>(memory);
+
+  const char *head = &buf[0];
+  const char *marker = &buf[0];
+
+  // Header check.
+  {
+    const char header[] = {0x76, 0x2f, 0x31, 0x01};
+
+    if (memcmp(marker, header, 4) != 0) {
+      //if (err) {
+      //  (*err) = "Header mismatch.";
+      //}
+      return -3;
+    }
+    marker += 4;
+  }
+
+  // Version, scanline.
+  {
+    // must be [2, 0, 0, 0]
+    if (marker[0] != 2 || marker[1] != 0 || marker[2] != 0 || marker[3] != 0) {
+      //if (err) {
+      //  (*err) = "Unsupported version or scanline.";
+      //}
+      return -4;
+    }
+
+    marker += 4;
+  }
+
+  int dx = -1;
+  int dy = -1;
+  int dw = -1;
+  int dh = -1;
+  int numScanlineBlocks = 1; // 16 for ZIP compression.
+  int compressionType = -1;
+  int numChannels = -1;
+  std::vector<ChannelInfo> channels;
+
+  // Read attributes
+  for (;;) {
+    std::string attrName;
+    std::string attrType;
+    std::vector<unsigned char> data;
+    const char *marker_next = ReadAttribute(attrName, attrType, data, marker);
+    if (marker_next == NULL) {
+      marker++; // skip '\0'
+      break;
+    }
+
+    if (attrName.compare("compression") == 0) {
+      // must be 0:No compression, 1: RLE or 3: ZIP
+      if (data[0] != 0 && data[0] != 1 && data[0] != 3) {
+        //if (err) {
+        //  (*err) = "Unsupported compression type.";
+        //}
+        return -5;
+      }
+
+      compressionType = data[0];
+
+      if (compressionType == 3) { // ZIP
+        numScanlineBlocks = 16;
+      }
+
+    } else if (attrName.compare("channels") == 0) {
+
+      // name: zero-terminated string, from 1 to 255 bytes long
+      // pixel type: int, possible values are: UINT = 0 HALF = 1 FLOAT = 2
+      // pLinear: unsigned char, possible values are 0 and 1
+      // reserved: three chars, should be zero
+      // xSampling: int
+      // ySampling: int
+
+      ReadChannelInfo(channels, data);
+
+      numChannels = channels.size();
+
+      if (numChannels < 1) {
+        //if (err) {
+        //  (*err) = "Invalid channels format.";
+        //}
+        return -6;
+      }
+
+    } else if (attrName.compare("dataWindow") == 0) {
+      memcpy(&dx, &data.at(0), sizeof(int));
+      memcpy(&dy, &data.at(4), sizeof(int));
+      memcpy(&dw, &data.at(8), sizeof(int));
+      memcpy(&dh, &data.at(12), sizeof(int));
+      if (IsBigEndian()) {
+        swap4(reinterpret_cast<unsigned int *>(&dx));
+        swap4(reinterpret_cast<unsigned int *>(&dy));
+        swap4(reinterpret_cast<unsigned int *>(&dw));
+        swap4(reinterpret_cast<unsigned int *>(&dh));
+      }
+    } else if (attrName.compare("displayWindow") == 0) {
+      int x, y, w, h;
+      memcpy(&x, &data.at(0), sizeof(int));
+      memcpy(&y, &data.at(4), sizeof(int));
+      memcpy(&w, &data.at(8), sizeof(int));
+      memcpy(&h, &data.at(12), sizeof(int));
+      if (IsBigEndian()) {
+        swap4(reinterpret_cast<unsigned int *>(&x));
+        swap4(reinterpret_cast<unsigned int *>(&y));
+        swap4(reinterpret_cast<unsigned int *>(&w));
+        swap4(reinterpret_cast<unsigned int *>(&h));
+      }
+    }
+
+    marker = marker_next;
+  }
+
+  assert(dx >= 0);
+  assert(dy >= 0);
+  assert(dw >= 0);
+  assert(dh >= 0);
+  assert(numChannels >= 1);
+
+  int dataWidth = dw - dx + 1;
+  int dataHeight = dh - dy + 1;
+
+  (*width)  = dataWidth;
+  (*height) = dataHeight;
+
+  return 0;
+}
+
+int LoadEXRFromMemory(float *out_rgba, const unsigned char *memory, const char **err) {
+
+  if (out_rgba == NULL || memory == NULL) {
+    if (*err) {
+      (*err) = "Invalid argument.\n";
+    }
+    return -1;
+  }
+
+  EXRImage exrImage;
+  int ret = LoadMultiChannelEXRFromMemory(&exrImage, memory, err);
+  if (ret != 0) {
+    return ret;
+  }
+
+  // RGBA
+  int idxR = -1;
+  int idxG = -1;
+  int idxB = -1;
+  int idxA = -1;
+  for (int c = 0; c < exrImage.num_channels; c++) {
+    if (strcmp(exrImage.channel_names[c], "R") == 0) {
+      idxR = c;
+    } else if (strcmp(exrImage.channel_names[c], "G") == 0) {
+      idxG = c;
+    } else if (strcmp(exrImage.channel_names[c], "B") == 0) {
+      idxB = c;
+    } else if (strcmp(exrImage.channel_names[c], "A") == 0) {
+      idxA = c;
+    }
+  }
+
+  if (idxR == -1) {
+    if (*err) {
+      (*err) = "R channel not found\n";
+    }
+
+    // @todo { free exrImage }
+    return -1;
+  }
+
+  if (idxG == -1) {
+    if (*err) {
+      (*err) = "G channel not found\n";
+    }
+    // @todo { free exrImage }
+    return -1;
+  }
+
+  if (idxB == -1) {
+    if (*err) {
+      (*err) = "B channel not found\n";
+    }
+    // @todo { free exrImage }
+    return -1;
+  }
+
+  // if (idxA == -1) {
+  //  if (*err) {
+  //    (*err) = "A channel not found\n";
+  //  }
+  //  // @todo { free exrImage }
+  //  return -1;
+  //}
+
+  // Assume `out_rgba` have enough memory allocated. 
+  for (size_t i = 0; i < exrImage.width * exrImage.height; i++) {
+    out_rgba[4 * i + 0] =
+        reinterpret_cast<float **>(exrImage.images)[idxR][i];
+    out_rgba[4 * i + 1] =
+        reinterpret_cast<float **>(exrImage.images)[idxG][i];
+    out_rgba[4 * i + 2] =
+        reinterpret_cast<float **>(exrImage.images)[idxB][i];
+    if (idxA > 0) {
+      out_rgba[4 * i + 3] =
+          reinterpret_cast<float **>(exrImage.images)[idxA][i];
+    } else {
+      out_rgba[4 * i + 3] = 1.0;
+    }
+  }
+
+  return 0;
+}
+
 int LoadMultiChannelEXRFromFile(EXRImage *exrImage, const char *filename,
                         const char **err) {
   if (exrImage == NULL) {

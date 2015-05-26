@@ -24,6 +24,8 @@ To use `tinyexr`, simply copy `tinyexr.cc` and `tinyexr.h` into your project.
   * You can easily write language bindings(e.g. golang)
 * EXR saving
   * with ZIP compression.
+* JavaScript library
+  * Through emscripten.
 
 # Use case 
 
@@ -85,6 +87,10 @@ See `example/deepview` for actual usage.
 
 Contribution is welcome!
 
+- [ ] JavaScript library
+  - [x] LoadEXRFromMemory
+  - [ ] SaveMultiChannelEXR
+  - [ ] Deep image save/load
 - [ ] Write from/to memory buffer.
   - [x] SaveMultiChannelEXR
   - [x] LoadMultiChannelEXR
