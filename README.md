@@ -91,6 +91,7 @@ Saving EXR file.
       return ret;
     }
     printf("Saved exr file. [ %s ] \n", outfilename);
+    return ret;
 
   }
 ```
