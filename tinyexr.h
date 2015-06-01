@@ -36,7 +36,7 @@ extern "C" {
 #define TINYEXR_PIXELTYPE_HALF (1)
 #define TINYEXR_PIXELTYPE_FLOAT (2)
 
-typedef struct {
+typedef struct _EXRImage {
   int num_channels;
   const char **channel_names;
   unsigned char **images; // image[channels][pixels]
@@ -45,7 +45,7 @@ typedef struct {
   int height;
 } EXRImage;
 
-typedef struct {
+typedef struct _DeepImage {
   int num_channels;
   const char **channel_names;
   float ***image;     // image[channels][scanlines][samples]
