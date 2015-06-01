@@ -46,6 +46,56 @@ Reading ordinal EXR file.
   int ret = LoadEXR(&out, &width, &height, input, &err);
 ```
 
+Saving EXR file.
+
+```
+  bool SaveEXR(const float* rgb, int width, int height, const char* outfilename) {
+
+    float* channels[3];
+
+    EXRImage image;
+
+    image.num_channels = 3;
+
+    // Must be BGR(A) order, since most of EXR viewers expect this channel order.
+    const char* channel_names[] = {"B", "G", "R"}; // "B", "G", "R", "A" for RGBA image
+
+    std::vector<float> images[3];
+    images[0].resize(width * height);
+    images[1].resize(width * height);
+    images[2].resize(width * height);
+
+    for (int i = 0; i < width * height; i++) {
+      images[0][i] = rgb[3*i+0];
+      images[1][i] = rgb[3*i+1];
+      images[2][i] = rgb[3*i+2];
+    }
+
+    float* image_ptr[3];
+    image_ptr[0] = &(images[2].at(0)); // B
+    image_ptr[1] = &(images[1].at(0)); // G
+    image_ptr[2] = &(images[0].at(0)); // R
+
+    image.channel_names = channel_names;
+    image.images = image_ptr;
+    image.width = gWidth;
+    image.height = gHeight;
+
+    for (int i = 0; i < image.num_channels; i++) {
+      image.pixel_types[i] = TINYEXR_PIXELTYPE_FLOAT;
+    }
+
+    ret = SaveMultiChannelEXRToFile(&image, outfilename, &err);
+    if (ret != 0) {
+      fprintf(stderr, "Save EXR err: %s\n", err);
+      return ret;
+    }
+    printf("Saved exr file. [ %s ] \n", outfilename);
+
+  }
+```
+
+
 Reading deep image EXR file.
 See `example/deepview` for actual usage.
 
