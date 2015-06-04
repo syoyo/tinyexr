@@ -7375,6 +7375,7 @@ int LoadMultiChannelEXRFromMemory(EXRImage *exrImage, const unsigned char *memor
   int numScanlineBlocks = 1; // 16 for ZIP compression.
   int compressionType = -1;
   int numChannels = -1;
+  unsigned char lineOrder = 1; // 1 -> increasing y; 0 -> decreasing
   std::vector<ChannelInfo> channels;
 
   // Read attributes
@@ -7446,6 +7447,9 @@ int LoadMultiChannelEXRFromMemory(EXRImage *exrImage, const unsigned char *memor
         swap4(reinterpret_cast<unsigned int *>(&w));
         swap4(reinterpret_cast<unsigned int *>(&h));
       }
+    } else if (attrName.compare("lineOrder") == 0) {
+      memcpy(&lineOrder, &data.at(0), sizeof(lineOrder));
+      fprintf(stderr, "lineorder %d\n", (int)lineOrder);
     }
 
     marker = marker_next;
@@ -7579,9 +7583,13 @@ int LoadMultiChannelEXRFromMemory(EXRImage *exrImage, const unsigned char *memor
 
               FP32 f32 = half_to_float(hf);
 
-              // Assume increasing Y.
               float *image = reinterpret_cast<float **>(exrImage->images)[c];
-              image[(lineNo + v) * dataWidth + u] = f32.f;
+              if (lineOrder == 1) {
+                image += (lineNo + v) * dataWidth + u;
+              } else {
+                image += (dataHeight - 1 - (lineNo + v)) * dataWidth + u;
+              }
+              *image = f32.f;
             }
           }
         } else if (channels[c].pixelType == TINYEXR_PIXELTYPE_UINT) {
@@ -7597,10 +7605,14 @@ int LoadMultiChannelEXRFromMemory(EXRImage *exrImage, const unsigned char *memor
                 swap4(&val);
               }
 
-              // Assume increasing Y.
               unsigned int *image =
                   reinterpret_cast<unsigned int **>(exrImage->images)[c];
-              image[(lineNo + v) * dataWidth + u] = val;
+              if (lineOrder == 1) {
+                image += (lineNo + v) * dataWidth + u;
+              } else {
+                image += (dataHeight - 1 - (lineNo + v)) * dataWidth + u;
+              }
+              *image = val;
             }
           }
         } else if (channels[c].pixelType == TINYEXR_PIXELTYPE_FLOAT) {
@@ -7616,9 +7628,13 @@ int LoadMultiChannelEXRFromMemory(EXRImage *exrImage, const unsigned char *memor
                 swap4(reinterpret_cast<unsigned int *>(&val));
               }
 
-              // Assume increasing Y.
               float *image = reinterpret_cast<float **>(exrImage->images)[c];
-              image[(lineNo + v) * dataWidth + u] = val;
+              if (lineOrder == 1) {
+                image += (lineNo + v) * dataWidth + u;
+              } else {
+                image += (dataHeight - 1 - (lineNo + v)) * dataWidth + u;
+              }
+              *image = val;
             }
           }
         } else {
@@ -7648,9 +7664,13 @@ int LoadMultiChannelEXRFromMemory(EXRImage *exrImage, const unsigned char *memor
 
           FP32 f32 = half_to_float(hf);
 
-          // Assume increasing Y.
           float *image = reinterpret_cast<float **>(exrImage->images)[c];
-          image[y * dataWidth + u] = f32.f;
+          if (lineOrder == 1) {
+            image += y * dataWidth + u;
+          } else {
+            image += (dataHeight - 1 - y) * dataWidth + u;
+          }
+          *image = f32.f;
         }
       }
     }
