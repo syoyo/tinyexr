@@ -7,8 +7,7 @@ before_build:
   - echo running cmake...
   - cd test
   - cmake -G "Visual Studio 12 Win64" -Bbuild -H.
-  - cd build
 
 build:
   parallel: true
-  project: tinyexr.sln
+  project: test\\build\\tinyexr.sln
