@@ -11,4 +11,4 @@ before_build:
 
 build:
   parallel: true
-  project: TinyObjLoaderSolution.sln
+  project: tinyexr.sln
