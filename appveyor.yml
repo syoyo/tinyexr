@@ -10,4 +10,4 @@ before_build:
 
 build:
   parallel: true
-  project: test\\build\\tinyexr.sln
+  project: C:\projects\tinyexr\test\build\tinyexr.sln
