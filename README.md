@@ -152,7 +152,7 @@ Contribution is welcome!
 - [ ] Support for various compression type.
 - [x] Multi-channel.
 - [ ] Multi-part(EXR2.0)
-- [ ] Pixel order.
+- [x] Line order.
 - [ ] Pixel format(UINT, FLOAT).
   - [x] UINT, FLOAT(load)
   - [x] UINT, FLOAT(deep load)
