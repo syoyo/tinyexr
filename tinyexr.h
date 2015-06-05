@@ -27,6 +27,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef __TINYEXR_H__
 #define __TINYEXR_H__
 
+#include <cstddef>   // for size_t
+
 #ifdef __cplusplus
 extern "C" {
 #endif
