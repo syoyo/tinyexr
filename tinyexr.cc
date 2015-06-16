@@ -6987,7 +6987,7 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
             const char **err) {
 
   if (out_rgba == NULL) {
-    if (*err) {
+    if (err) {
       (*err) = "Invalid argument.\n";
     }
     return -1;
@@ -7017,7 +7017,7 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
   }
 
   if (idxR == -1) {
-    if (*err) {
+    if (err) {
       (*err) = "R channel not found\n";
     }
 
@@ -7026,7 +7026,7 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
   }
 
   if (idxG == -1) {
-    if (*err) {
+    if (err) {
       (*err) = "G channel not found\n";
     }
     // @todo { free exrImage }
@@ -7034,7 +7034,7 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
   }
 
   if (idxB == -1) {
-    if (*err) {
+    if (err) {
       (*err) = "B channel not found\n";
     }
     // @todo { free exrImage }
@@ -7042,7 +7042,7 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
   }
 
   // if (idxA == -1) {
-  //  if (*err) {
+  //  if (err) {
   //    (*err) = "A channel not found\n";
   //  }
   //  // @todo { free exrImage }
@@ -7212,7 +7212,7 @@ int ParseEXRHeaderFromMemory(int *width, int *height, const unsigned char *memor
 int LoadEXRFromMemory(float *out_rgba, const unsigned char *memory, const char **err) {
 
   if (out_rgba == NULL || memory == NULL) {
-    if (*err) {
+    if (err) {
       (*err) = "Invalid argument.\n";
     }
     return -1;
@@ -7242,7 +7242,7 @@ int LoadEXRFromMemory(float *out_rgba, const unsigned char *memory, const char *
   }
 
   if (idxR == -1) {
-    if (*err) {
+    if (err) {
       (*err) = "R channel not found\n";
     }
 
@@ -7251,7 +7251,7 @@ int LoadEXRFromMemory(float *out_rgba, const unsigned char *memory, const char *
   }
 
   if (idxG == -1) {
-    if (*err) {
+    if (err) {
       (*err) = "G channel not found\n";
     }
     // @todo { free exrImage }
@@ -7259,7 +7259,7 @@ int LoadEXRFromMemory(float *out_rgba, const unsigned char *memory, const char *
   }
 
   if (idxB == -1) {
-    if (*err) {
+    if (err) {
       (*err) = "B channel not found\n";
     }
     // @todo { free exrImage }
@@ -7267,7 +7267,7 @@ int LoadEXRFromMemory(float *out_rgba, const unsigned char *memory, const char *
   }
 
   // if (idxA == -1) {
-  //  if (*err) {
+  //  if (err) {
   //    (*err) = "A channel not found\n";
   //  }
   //  // @todo { free exrImage }
