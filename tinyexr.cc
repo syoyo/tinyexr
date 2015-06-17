@@ -7375,7 +7375,7 @@ int LoadMultiChannelEXRFromMemory(EXRImage *exrImage, const unsigned char *memor
   int numScanlineBlocks = 1; // 16 for ZIP compression.
   int compressionType = -1;
   int numChannels = -1;
-  unsigned char lineOrder = 1; // 1 -> increasing y; 0 -> decreasing
+  unsigned char lineOrder = 0; // 0 -> increasing y; 1 -> decreasing
   std::vector<ChannelInfo> channels;
 
   // Read attributes
@@ -7449,7 +7449,6 @@ int LoadMultiChannelEXRFromMemory(EXRImage *exrImage, const unsigned char *memor
       }
     } else if (attrName.compare("lineOrder") == 0) {
       memcpy(&lineOrder, &data.at(0), sizeof(lineOrder));
-      fprintf(stderr, "lineorder %d\n", (int)lineOrder);
     }
 
     marker = marker_next;
@@ -7584,7 +7583,7 @@ int LoadMultiChannelEXRFromMemory(EXRImage *exrImage, const unsigned char *memor
               FP32 f32 = half_to_float(hf);
 
               float *image = reinterpret_cast<float **>(exrImage->images)[c];
-              if (lineOrder == 1) {
+              if (lineOrder == 0) {
                 image += (lineNo + v) * dataWidth + u;
               } else {
                 image += (dataHeight - 1 - (lineNo + v)) * dataWidth + u;
@@ -7607,7 +7606,7 @@ int LoadMultiChannelEXRFromMemory(EXRImage *exrImage, const unsigned char *memor
 
               unsigned int *image =
                   reinterpret_cast<unsigned int **>(exrImage->images)[c];
-              if (lineOrder == 1) {
+              if (lineOrder == 0) {
                 image += (lineNo + v) * dataWidth + u;
               } else {
                 image += (dataHeight - 1 - (lineNo + v)) * dataWidth + u;
@@ -7629,7 +7628,7 @@ int LoadMultiChannelEXRFromMemory(EXRImage *exrImage, const unsigned char *memor
               }
 
               float *image = reinterpret_cast<float **>(exrImage->images)[c];
-              if (lineOrder == 1) {
+              if (lineOrder == 0) {
                 image += (lineNo + v) * dataWidth + u;
               } else {
                 image += (dataHeight - 1 - (lineNo + v)) * dataWidth + u;
@@ -7649,7 +7648,7 @@ int LoadMultiChannelEXRFromMemory(EXRImage *exrImage, const unsigned char *memor
       for (int c = 0; c < numChannels; c++) {
     
         float *outLine = reinterpret_cast<float **>(exrImage->images)[c];
-        if (lineOrder == 1) {
+        if (lineOrder == 0) {
           outLine += y * dataWidth;
         } else {
           outLine += (dataHeight - 1 - y) * dataWidth;
@@ -7663,7 +7662,6 @@ int LoadMultiChannelEXRFromMemory(EXRImage *exrImage, const unsigned char *memor
           for (int u = 0; u < dataWidth; u++) {
             FP16 hf;
 
-            // Assume (A)BGR
             hf.u = linePtr[u];
 
             if (isBigEndian) {
