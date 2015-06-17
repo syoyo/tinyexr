@@ -7644,33 +7644,51 @@ int LoadMultiChannelEXRFromMemory(EXRImage *exrImage, const unsigned char *memor
 
     } else if (compressionType == 0) { // No compression
 
-      std::vector<unsigned short> srcBuf(numChannels * dataWidth);
-      memcpy(&srcBuf.at(0), dataPtr + 8,
-             numChannels * dataWidth * sizeof(unsigned short));
-
       bool isBigEndian = IsBigEndian();
 
-      // scanline
       for (int c = 0; c < numChannels; c++) {
-        for (int u = 0; u < dataWidth; u++) {
-          FP16 hf;
+    
+        float *outLine = reinterpret_cast<float **>(exrImage->images)[c];
+        if (lineOrder == 1) {
+          outLine += y * dataWidth;
+        } else {
+          outLine += (dataHeight - 1 - y) * dataWidth;
+        }
+    
+        if (channels[c].pixelType == TINYEXR_PIXELTYPE_HALF) {
+    
+          const unsigned short *linePtr = reinterpret_cast<const unsigned short *>(
+                 dataPtr + 8 + c * dataWidth * sizeof(unsigned short));
+      
+          for (int u = 0; u < dataWidth; u++) {
+            FP16 hf;
 
-          // Assume (A)BGR
-          hf.u = srcBuf[c * dataWidth + u];
+            // Assume (A)BGR
+            hf.u = linePtr[u];
 
-          if (isBigEndian) {
-            swap2(reinterpret_cast<unsigned short *>(&hf.u));
+            if (isBigEndian) {
+              swap2(reinterpret_cast<unsigned short *>(&hf.u));
+            }
+
+            FP32 f32 = half_to_float(hf);
+
+            outLine[u] = f32.f;
           }
+        }
+        else if (channels[c].pixelType == TINYEXR_PIXELTYPE_FLOAT) {
 
-          FP32 f32 = half_to_float(hf);
+          const float *linePtr = reinterpret_cast<const float *>(
+                 dataPtr + 8 + c * dataWidth * sizeof(float));
 
-          float *image = reinterpret_cast<float **>(exrImage->images)[c];
-          if (lineOrder == 1) {
-            image += y * dataWidth + u;
-          } else {
-            image += (dataHeight - 1 - y) * dataWidth + u;
+          for (int u = 0; u < dataWidth; u++) {
+            float val = linePtr[u];
+      
+            if (isBigEndian) {
+              swap4(reinterpret_cast<unsigned int *>(&val));
+            }
+            
+            outLine[u] = val;
           }
-          *image = f32.f;
         }
       }
     }
