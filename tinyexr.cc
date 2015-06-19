@@ -6994,6 +6994,7 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
   }
 
   EXRImage exrImage;
+  InitExrImage(&exrImage);
   int ret = LoadMultiChannelEXRFromFile(&exrImage, filename, err);
   if (ret != 0) {
     return ret;
@@ -7219,6 +7220,7 @@ int LoadEXRFromMemory(float *out_rgba, const unsigned char *memory, const char *
   }
 
   EXRImage exrImage;
+  InitExrImage(&exrImage);
   int ret = LoadMultiChannelEXRFromMemory(&exrImage, memory, err);
   if (ret != 0) {
     return ret;
@@ -7502,6 +7504,17 @@ int LoadMultiChannelEXRFromMemory(EXRImage *exrImage, const unsigned char *memor
         dataHeight)); // enough to store float and uint pixel image
   }
 
+  exrImage->internal_images = reinterpret_cast<unsigned char **>(
+      (unsigned short **)malloc(sizeof(unsigned short *) * numChannels));
+  for (int c = 0; c < numChannels; c++) {
+    exrImage->internal_images[c] = NULL;
+  }
+
+  exrImage->internal_pixel_types = (int *)malloc(sizeof(int) * numChannels);
+  for (int c = 0; c < numChannels; c++) {
+    exrImage->internal_pixel_types[c] = channels[c].pixelType;
+  }
+
   std::vector<size_t> channelOffsetList(numChannels);
   int pixelDataSize = 0;
   size_t channelOffset = 0;
@@ -7510,6 +7523,8 @@ int LoadMultiChannelEXRFromMemory(EXRImage *exrImage, const unsigned char *memor
     if (channels[c].pixelType == TINYEXR_PIXELTYPE_HALF) {
       pixelDataSize += sizeof(unsigned short);
       channelOffset += sizeof(unsigned short);
+      // Alloc internal image for half type.
+      exrImage->internal_images[c] = (unsigned char*)malloc(sizeof(unsigned short) * dataWidth * dataHeight);
     } else if (channels[c].pixelType == TINYEXR_PIXELTYPE_FLOAT) {
       pixelDataSize += sizeof(float);
       channelOffset += sizeof(float);
@@ -7582,13 +7597,27 @@ int LoadMultiChannelEXRFromMemory(EXRImage *exrImage, const unsigned char *memor
 
               FP32 f32 = half_to_float(hf);
 
-              float *image = reinterpret_cast<float **>(exrImage->images)[c];
-              if (lineOrder == 0) {
-                image += (lineNo + v) * dataWidth + u;
-              } else {
-                image += (dataHeight - 1 - (lineNo + v)) * dataWidth + u;
+              {
+                float *image = reinterpret_cast<float **>(exrImage->images)[c];
+                if (lineOrder == 0) {
+                  image += (lineNo + v) * dataWidth + u;
+                } else {
+                  image += (dataHeight - 1 - (lineNo + v)) * dataWidth + u;
+                }
+                *image = f32.f;
               }
-              *image = f32.f;
+
+              // Store fp16 value to internal_image
+              {
+                assert(exrImage->internal_images[c]);
+                unsigned short *internalImage = reinterpret_cast<unsigned short **>(exrImage->internal_images)[c];
+                if (lineOrder == 0) {
+                  internalImage += (lineNo + v) * dataWidth + u;
+                } else {
+                  internalImage += (dataHeight - 1 - (lineNo + v)) * dataWidth + u;
+                }
+                *internalImage = hf.u;
+              }
             }
           }
         } else if (channels[c].pixelType == TINYEXR_PIXELTYPE_UINT) {
@@ -7658,6 +7687,13 @@ int LoadMultiChannelEXRFromMemory(EXRImage *exrImage, const unsigned char *memor
     
           const unsigned short *linePtr = reinterpret_cast<const unsigned short *>(
                  dataPtr + 8 + c * dataWidth * sizeof(unsigned short));
+
+          unsigned short *outLineInternal = reinterpret_cast<unsigned short **>(exrImage->internal_images)[c];
+          if (lineOrder == 0) {
+            outLineInternal += y * dataWidth;
+          } else {
+            outLineInternal += (dataHeight - 1 - y) * dataWidth;
+          }
       
           for (int u = 0; u < dataWidth; u++) {
             FP16 hf;
@@ -7671,6 +7707,9 @@ int LoadMultiChannelEXRFromMemory(EXRImage *exrImage, const unsigned char *memor
             FP32 f32 = half_to_float(hf);
 
             outLine[u] = f32.f;
+
+            // Also store fp16 value to internal_image
+            outLineInternal[u] = hf.u;
           }
         }
         else if (channels[c].pixelType == TINYEXR_PIXELTYPE_FLOAT) {
@@ -8783,4 +8822,62 @@ int SaveDeepEXR(const DeepImage *deepImage, const char *filename,
 #endif
 
   return 0; // OK
+}
+
+void InitExrImage(EXRImage* exrImage) {
+  if (exrImage == NULL) {
+    return;
+  }
+
+  exrImage->num_channels = 0;
+  exrImage->channel_names = NULL;
+  exrImage->images = NULL;
+  exrImage->internal_images = NULL;
+  exrImage->pixel_types = NULL;
+  exrImage->internal_pixel_types = NULL;
+}
+
+int FreeExrImage(EXRImage* exrImage) {
+
+  if (exrImage == NULL) {
+    return -1; // Err
+  }
+
+  for (int i = 0; i < exrImage->num_channels; i++) {
+
+    if (exrImage->channel_names && exrImage->channel_names[i]) {
+      free((char*)exrImage->channel_names[i]); // remove const
+    }
+
+    if (exrImage->images && exrImage->images[i]) {
+      free(exrImage->images[i]);
+    }
+
+    if (exrImage->internal_images && exrImage->internal_images[i]) {
+      free(exrImage->internal_images[i]);
+    }
+
+  }
+
+  if (exrImage->channel_names) {
+    free(exrImage->channel_names);
+  }
+
+  if (exrImage->images) {
+    free(exrImage->images);
+  }
+
+  if (exrImage->internal_images) {
+    free(exrImage->internal_images);
+  }
+
+  if (exrImage->pixel_types) {
+    free(exrImage->pixel_types);
+  }
+
+  if (exrImage->internal_pixel_types) {
+    free(exrImage->internal_pixel_types);
+  }
+
+  return 0;
 }

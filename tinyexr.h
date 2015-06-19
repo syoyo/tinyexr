@@ -41,8 +41,13 @@ extern "C" {
 typedef struct _EXRImage {
   int num_channels;
   const char **channel_names;
-  unsigned char **images; // image[channels][pixels]
-  int *pixel_types;       // pixel type(TINYEXR_PIXELTYPE_*) for each channel
+
+  unsigned char **images;    // image[channels][pixels]
+  int *pixel_types;          // pixel type(TINYEXR_PIXELTYPE_*) of `images` for each channel
+
+  unsigned char **internal_images;    // internal image data of half type. Only non-null for half type image channel.
+  int *internal_pixel_types; // internal pixel type(i.e. pixel type stored in .exr data) of `internal_images`
+
   int width;
   int height;
 } EXRImage;
@@ -68,7 +73,6 @@ extern int LoadEXR(float **out_rgba, int *width, int *height,
 // For emscripten.
 // Parse single-frame OpenEXR header from memory.
 // Return 0 if success
-// Returns error string in `err` when there's an error
 extern int ParseEXRHeaderFromMemory(int *width, int *height, const unsigned char *memory);
 
 // For emscripten.
@@ -101,7 +105,7 @@ extern int LoadMultiChannelEXRFromMemory(EXRImage *image, const unsigned char *m
 
 // Saves multi-channel, single-frame OpenEXR image to a file.
 // Application must free EXRImage
-// Return 0 if success
+// Returns 0 if success
 // Returns error string in `err` when there's an error
 extern int SaveMultiChannelEXRToFile(const EXRImage *image,
                                      const char *filename, const char **err);
@@ -109,7 +113,7 @@ extern int SaveMultiChannelEXRToFile(const EXRImage *image,
 // Saves multi-channel, single-frame OpenEXR image to a memory.
 // Application must free EXRImage
 // Return the number of bytes if succes.
-// Retrun zero or negative  number when failed.
+// Retruns 0 if success, negative number when failed.
 // Returns error string in `err` when there's an error
 extern size_t SaveMultiChannelEXRToMemory(const EXRImage *image,
                                           unsigned char **memory,
@@ -117,7 +121,7 @@ extern size_t SaveMultiChannelEXRToMemory(const EXRImage *image,
 
 // Loads single-frame OpenEXR deep image.
 // Application must free memory of variables in DeepImage(image, offset_table)
-// Return 0 if success
+// Returns 0 if success
 // Returns error string in `err` when there's an error
 extern int LoadDeepEXR(DeepImage *out_image, const char *filename,
                        const char **err);
@@ -135,6 +139,13 @@ extern int LoadDeepEXR(DeepImage *out_image, const char *filename,
 // extern int LoadMultiPartDeepEXR(DeepImage **out_image, int num_parts, const
 // char *filename,
 //                       const char **err);
+
+// Initialize of EXRImage struct
+extern void InitExrImage(EXRImage* exrImage);
+
+// Free's internal data of EXRImage struct
+// Returns 0 if success. 
+extern int FreeExrImage(EXRImage* exrImage);
 
 #ifdef __cplusplus
 }
