@@ -4,6 +4,19 @@
 
 #include "tinyexr.h"
 
+const char* GetPixelType(int id)
+{
+  if (id == TINYEXR_PIXELTYPE_HALF) {
+    return "HALF";
+  } else if (id == TINYEXR_PIXELTYPE_FLOAT) {
+    return "FLOAT";
+  } else if (id == TINYEXR_PIXELTYPE_UINT) {
+    return "UINT";
+  }
+
+  return "???";
+}
+
 void
 SaveAsPFM(const char* filename, int width, int height, float* data)
 {
@@ -49,7 +62,6 @@ main(int argc, char** argv)
   }
     
 
-  
   //float *rgba = NULL;
   //int width, height;
   //int ret = LoadEXR(&rgba, &width, &height, argv[1], &err);
@@ -61,7 +73,21 @@ main(int argc, char** argv)
   //SaveAsPFM("out.pfm", width, height, rgba);
 
 #if 1
-  int ret = LoadMultiChannelEXRFromFile(&exrImage, argv[1], &err);
+
+  int ret = ParseMultiChannelEXRHeaderFromFile(&exrImage, argv[1], &err);
+  if (ret != 0) {
+    fprintf(stderr, "Parse EXR err: %s\n", err);
+    return ret;
+  }
+
+  // Read HALF channel as FLOAT.
+  for (int i = 0; i < exrImage.num_channels; i++) {
+    if (exrImage.pixel_types[i] = TINYEXR_PIXELTYPE_HALF) {
+      exrImage.requested_pixel_types[i] = TINYEXR_PIXELTYPE_FLOAT;
+    }
+  }
+
+  ret = LoadMultiChannelEXRFromFile(&exrImage, argv[1], &err);
   if (ret != 0) {
     fprintf(stderr, "Load EXR err: %s\n", err);
     return ret;
@@ -70,14 +96,16 @@ main(int argc, char** argv)
   printf("EXR: %d x %d\n", exrImage.width, exrImage.height);
 
   for (int i = 0; i < exrImage.num_channels; i++) {
-    printf("pixelType[%d]: %d\n", i, exrImage.pixel_types[i]);
+    printf("pixelType[%d]: %s\n", i, GetPixelType(exrImage.pixel_types[i]));
     printf("chan[%d] = %s\n", i, exrImage.channel_names[i]);
-    printf("internal_images[%d] = %p\n", i, exrImage.internal_images[i]);
+    printf("requestedPixelType[%d]: %s\n", i, GetPixelType(exrImage.requested_pixel_types[i]));
   }
 
-  // Uncomment to save image as float pixel type.
+  // Uncomment if you want to save image as FLOAT pixel type.
   for (int i = 0; i < exrImage.num_channels; i++) {
-    exrImage.pixel_types[i] = TINYEXR_PIXELTYPE_FLOAT;
+    if (exrImage.pixel_types[i] = TINYEXR_PIXELTYPE_FLOAT) {
+      exrImage.requested_pixel_types[i] = TINYEXR_PIXELTYPE_HALF;
+    }
   }
 
   ret = SaveMultiChannelEXRToFile(&exrImage, outfilename, &err);

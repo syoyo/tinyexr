@@ -32,11 +32,14 @@ To use `tinyexr`, simply copy `tinyexr.cc` and `tinyexr.h` into your project.
 # Use case 
 
 * mallie https://github.com/lighttransport/mallie
+* PBRT v3 https://github.com/mmp/pbrt-v3
 * Your project here!
 
 ## Usage
 
-Reading ordinal EXR file.
+NOTE: **API is still subject to change**. See the source code for details.
+
+Quickly reading RGB(A) EXR file.
 
 ```
   const char* input = "asakusa.exr";
@@ -48,6 +51,35 @@ Reading ordinal EXR file.
   int ret = LoadEXR(&out, &width, &height, input, &err);
 ```
 
+Loading EXR from a file.
+
+```
+  const char* input = "asakusa.exr";
+  const char* err;
+
+  EXRImage exrImage;
+  InitEXRImage(&exrImage);
+
+  int ret = ParseMultiChannelEXRHeaderFromFile(&exrImage, input, &err);
+  if (ret != 0) {
+    fprintf(stderr, "Parse EXR err: %s\n", err);
+    return;
+  }
+
+  //// Uncomment if you want reading HALF image as FLOAT.
+  //for (int i = 0; i < exrImage.num_channels; i++) {
+  //  if (exrImage.pixel_types[i] = TINYEXR_PIXELTYPE_HALF) {
+  //    exrImage.requested_pixel_types[i] = TINYEXR_PIXELTYPE_FLOAT;
+  //  }
+  //}
+
+  ret = LoadMultiChannelEXRFromFile(&exrImage, input, &err);
+  if (ret != 0) {
+    fprintf(stderr, "Load EXR err: %s\n", err);
+    return;
+  }
+```
+
 Saving EXR file.
 
 ```
@@ -56,6 +88,7 @@ Saving EXR file.
     float* channels[3];
 
     EXRImage image;
+    InitEXRImage(&image);
 
     image.num_channels = 3;
 
@@ -83,8 +116,11 @@ Saving EXR file.
     image.width = gWidth;
     image.height = gHeight;
 
+    image.pixel_types = (int *)malloc(sizeof(int) * image.num_channels);
+    image.requested_pixel_types = (int *)malloc(sizeof(int) * image.num_channels);
     for (int i = 0; i < image.num_channels; i++) {
       image.pixel_types[i] = TINYEXR_PIXELTYPE_FLOAT;
+      image.requested_pixel_types[i] = TINYEXR_PIXELTYPE_FLOAT;
     }
 
     ret = SaveMultiChannelEXRToFile(&image, outfilename, &err);
