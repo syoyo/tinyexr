@@ -112,7 +112,7 @@ Saving EXR file.
     image_ptr[2] = &(images[0].at(0)); // R
 
     image.channel_names = channel_names;
-    image.images = (const unsigned char**)image_ptr;
+    image.images = (unsigned char**)image_ptr;
     image.width = gWidth;
     image.height = gHeight;
 
@@ -123,6 +123,7 @@ Saving EXR file.
       image.requested_pixel_types[i] = TINYEXR_PIXELTYPE_HALF; // pixel type of output image to be stored in .EXR
     }
 
+    const char* err;
     ret = SaveMultiChannelEXRToFile(&image, outfilename, &err);
     if (ret != 0) {
       fprintf(stderr, "Save EXR err: %s\n", err);
