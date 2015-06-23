@@ -186,9 +186,13 @@ Contribution is welcome!
   - [ ] Deep image save/load
 - [ ] Tile format.
 - [ ] Support for various compression type.
+  - [x] zstd compression(Not in OpenEXR spec, though)
 - [x] Multi-channel.
 - [ ] Multi-part(EXR2.0)
-- [x] Line order.
+- [ ] Line order.
+  - [x] Increasing, decreasing(load)
+  - [ ] Random?
+  - [ ] Increasing, decreasing(save)
 - [ ] Pixel format(UINT, FLOAT).
   - [x] UINT, FLOAT(load)
   - [x] UINT, FLOAT(deep load)
@@ -206,9 +210,10 @@ Contribution is welcome!
   - [ ] OpenMP multi-threading in deep image loading.
   - [ ] OpenMP multi-threading in deep image saving.
 
-## Similar projects
+## Similar or related projects
 
 * miniexr: https://github.com/aras-p/miniexr (Write OpenEXR)
+* stb_image_resize.h: https://github.com/nothings/stb (Good for HDR image resizing)
 
 ## License
 
@@ -224,3 +229,4 @@ Syoyo Fujita(syoyo@lighttransport.com)
 
 * Matt Ebb (http://mattebb.com) : deep image example. Thanks!
 * Matt Pharr (http://pharr.org/matt/) : Testing tinyexr with OpenEXR(IlmImf). Thanks! 
+* Andrew Bell (https://github.com/andrewfb) & Richard Eakin (https://github.com/richardeakin) : Improving TinyEXR API. Thanks!
