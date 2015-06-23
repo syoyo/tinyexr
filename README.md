@@ -119,8 +119,8 @@ Saving EXR file.
     image.pixel_types = (int *)malloc(sizeof(int) * image.num_channels);
     image.requested_pixel_types = (int *)malloc(sizeof(int) * image.num_channels);
     for (int i = 0; i < image.num_channels; i++) {
-      image.pixel_types[i] = TINYEXR_PIXELTYPE_FLOAT;
-      image.requested_pixel_types[i] = TINYEXR_PIXELTYPE_FLOAT;
+      image.pixel_types[i] = TINYEXR_PIXELTYPE_FLOAT; // pixel type of input image
+      image.requested_pixel_types[i] = TINYEXR_PIXELTYPE_HALF; // pixel type of output image to be stored in .EXR
     }
 
     ret = SaveMultiChannelEXRToFile(&image, outfilename, &err);
