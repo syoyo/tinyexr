@@ -50,7 +50,7 @@ main(int argc, char** argv)
   const char* outfilename = "output_test.exr";
   const char* err;
   EXRImage exrImage;
-  InitExrImage(&exrImage);
+  InitEXRImage(&exrImage);
 
   if (argc < 2) {
     fprintf(stderr, "Needs input.exr.\n");
@@ -115,7 +115,7 @@ main(int argc, char** argv)
   }
   printf("Saved exr file. [ %s ] \n", outfilename);
 
-  FreeExrImage(&exrImage);
+  FreeEXRImage(&exrImage);
 #endif
 
   return ret;

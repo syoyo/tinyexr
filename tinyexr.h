@@ -153,11 +153,11 @@ extern int LoadDeepEXR(DeepImage *out_image, const char *filename,
 //                       const char **err);
 
 // Initialize of EXRImage struct
-extern void InitExrImage(EXRImage *exrImage);
+extern void InitEXRImage(EXRImage *exrImage);
 
 // Free's internal data of EXRImage struct
 // Returns 0 if success.
-extern int FreeExrImage(EXRImage *exrImage);
+extern int FreeEXRImage(EXRImage *exrImage);
 
 // For emscripten.
 // Parse single-frame OpenEXR header from memory.

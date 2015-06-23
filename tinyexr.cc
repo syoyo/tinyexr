@@ -6979,7 +6979,7 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
   }
 
   EXRImage exrImage;
-  InitExrImage(&exrImage);
+  InitEXRImage(&exrImage);
   int ret = LoadMultiChannelEXRFromFile(&exrImage, filename, err);
   if (ret != 0) {
     return ret;
@@ -7207,7 +7207,7 @@ int LoadEXRFromMemory(float *out_rgba, const unsigned char *memory,
   }
 
   EXRImage exrImage;
-  InitExrImage(&exrImage);
+  InitEXRImage(&exrImage);
   int ret = LoadMultiChannelEXRFromMemory(&exrImage, memory, err);
   if (ret != 0) {
     return ret;
@@ -8900,7 +8900,7 @@ int SaveDeepEXR(const DeepImage *deepImage, const char *filename,
   return 0; // OK
 }
 
-void InitExrImage(EXRImage *exrImage) {
+void InitEXRImage(EXRImage *exrImage) {
   if (exrImage == NULL) {
     return;
   }
@@ -8912,7 +8912,7 @@ void InitExrImage(EXRImage *exrImage) {
   exrImage->requested_pixel_types = NULL;
 }
 
-int FreeExrImage(EXRImage *exrImage) {
+int FreeEXRImage(EXRImage *exrImage) {
 
   if (exrImage == NULL) {
     return -1; // Err

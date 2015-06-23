@@ -112,7 +112,7 @@ Saving EXR file.
     image_ptr[2] = &(images[0].at(0)); // R
 
     image.channel_names = channel_names;
-    image.images = image_ptr;
+    image.images = (const unsigned char**)image_ptr;
     image.width = gWidth;
     image.height = gHeight;
 
