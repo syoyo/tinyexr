@@ -13,7 +13,7 @@ To use `tinyexr`, simply copy `tinyexr.cc` and `tinyexr.h` into your project.
 * OpenEXR version 1.x.
 * Normal image
   * Scanline format.
-  * Uncompress("compress" = 0) and ZIP compression("compress" = 3).
+  * Uncompress("compress" = 0), ZIPS("compress" = 2) and ZIP compression("compress" = 3).
   * Half/Uint/Float pixel type.
 * Deep image
   * Scanline format.
@@ -177,6 +177,8 @@ See `example/deepview` for actual usage.
 
 Contribution is welcome!
 
+- Compression
+  - [ ] RLE("compress" = 1)
 - [ ] JavaScript library
   - [x] LoadEXRFromMemory
   - [ ] SaveMultiChannelEXR
@@ -231,3 +233,4 @@ Syoyo Fujita(syoyo@lighttransport.com)
 * Matt Ebb (http://mattebb.com) : deep image example. Thanks!
 * Matt Pharr (http://pharr.org/matt/) : Testing tinyexr with OpenEXR(IlmImf). Thanks! 
 * Andrew Bell (https://github.com/andrewfb) & Richard Eakin (https://github.com/richardeakin) : Improving TinyEXR API. Thanks!
+* Mike Wong (https://github.com/mwkm) : ZIPS compression support in loading. Thanks!
