@@ -7120,12 +7120,19 @@ int ParseEXRHeaderFromMemory(int *width, int *height,
 
     if (attrName.compare("compression") == 0) {
       // must be 0:No compression, 1: RLE or 3: ZIP
-      if (data[0] != 0 && data[0] != 1 && data[0] != 3) {
-        // if (err) {
-        //  (*err) = "Unsupported compression type.";
-        //}
-        return -5;
-      }
+//      if (data[0] != 0 && data[0] != 1 && data[0] != 3) {
+
+		//	mwkm
+		//	0 : NO_COMPRESSION
+		//	1 : RLE
+		//	2 : ZIPS (Single scanline)
+		//	3 : ZIP (16-line block)
+		if (data[0] != 0 && data[0] != 2 && data[0] != 3) {
+			// if (err) {
+			//  (*err) = "Unsupported compression type.";
+			//}
+			return -5;
+		}
 
       compressionType = data[0];
 
@@ -7377,12 +7384,19 @@ int LoadMultiChannelEXRFromMemory(EXRImage *exrImage,
 
     if (attrName.compare("compression") == 0) {
       // must be 0:No compression, 1: RLE or 3: ZIP
-      if (data[0] != 0 && data[0] != 1 && data[0] != 3) {
-        if (err) {
-          (*err) = "Unsupported compression type.";
-        }
-        return -5;
-      }
+//      if (data[0] != 0 && data[0] != 1 && data[0] != 3) {
+		//	mwkm
+		//	0 : NO_COMPRESSION
+		//	1 : RLE
+		//	2 : ZIPS (Single scanline)
+		//	3 : ZIP (16-line block)
+		if (data[0] != 0 && data[0] != 2 && data[0] != 3) {
+
+			if (err) {
+			  (*err) = "Unsupported compression type.";
+			}
+			return -5;
+		}
 
       compressionType = data[0];
 
@@ -7473,7 +7487,10 @@ int LoadMultiChannelEXRFromMemory(EXRImage *exrImage,
     offsets[y] = offset;
   }
 
-  if (compressionType != 0 && compressionType != 3) {
+//  if (compressionType != 0 && compressionType != 3) {
+//	mwkm
+//	Supported : 0, 2(ZIPS), 3(ZIP)
+  if (compressionType != 0 && compressionType != 2 && compressionType != 3) {
     if (err) {
       (*err) = "Unsupported format.";
     }
@@ -7542,7 +7559,9 @@ int LoadMultiChannelEXRFromMemory(EXRImage *exrImage,
 
     int numLines = endLineNo - lineNo;
 
-    if (compressionType == 3) { // ZIP
+//    if (compressionType == 3) { // ZIP
+//	mwkm, ZIPS or ZIP both good to go
+	if (compressionType == 2 || compressionType == 3) {  // ZIP
 
       // Allocate original data size.
       std::vector<unsigned char> outBuf(dataWidth * numLines * pixelDataSize);
