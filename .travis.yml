@@ -1,5 +1,7 @@
 language: cpp
 
+compiler: gcc
+
 script:
   - premake4 gmake
   - make
