@@ -1,0 +1,5 @@
+language: cpp
+
+script:
+  - premake4 gmake
+  - make
