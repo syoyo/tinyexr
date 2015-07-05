@@ -2,7 +2,9 @@
 
 ![Example](https://github.com/syoyo/tinyexr/blob/master/asakusa.png?raw=true)
 
-[![Build status](https://ci.appveyor.com/api/projects/status/k07ftfe4ph057qau/branch/master?svg=true)](https://ci.appveyor.com/project/syoyo/tinyexr/branch/master)
+[![AppVeyor build status](https://ci.appveyor.com/api/projects/status/k07ftfe4ph057qau/branch/master?svg=true)](https://ci.appveyor.com/project/syoyo/tinyexr/branch/master)
+
+[![Travis build Status](https://travis-ci.org/syoyo/tinyexr.svg)](https://travis-ci.org/syoyo/tinyexr)
 
 `tinyexr` is a small library to load and save OpenEXR(.exr) images.
 `tinyexr` is written in portable C++(no library dependency except for STL), thus `tinyexr` is good to embed into your application.
