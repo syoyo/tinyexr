@@ -2,6 +2,9 @@ language: cpp
 
 compiler: gcc
 
+before_script:
+  - sudo apt-get install premake4
+
 script:
   - premake4 gmake
   - make
