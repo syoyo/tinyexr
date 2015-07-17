@@ -82,7 +82,7 @@ main(int argc, char** argv)
 
   // Read HALF channel as FLOAT.
   for (int i = 0; i < exrImage.num_channels; i++) {
-    if (exrImage.pixel_types[i] = TINYEXR_PIXELTYPE_HALF) {
+    if (exrImage.pixel_types[i] == TINYEXR_PIXELTYPE_HALF) {
       exrImage.requested_pixel_types[i] = TINYEXR_PIXELTYPE_FLOAT;
     }
   }
@@ -103,7 +103,7 @@ main(int argc, char** argv)
 
   // Uncomment if you want to save image as FLOAT pixel type.
   for (int i = 0; i < exrImage.num_channels; i++) {
-    if (exrImage.pixel_types[i] = TINYEXR_PIXELTYPE_FLOAT) {
+    if (exrImage.pixel_types[i] == TINYEXR_PIXELTYPE_FLOAT) {
       exrImage.requested_pixel_types[i] = TINYEXR_PIXELTYPE_HALF;
     }
   }

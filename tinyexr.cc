@@ -6980,9 +6980,26 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
 
   EXRImage exrImage;
   InitEXRImage(&exrImage);
-  int ret = LoadMultiChannelEXRFromFile(&exrImage, filename, err);
-  if (ret != 0) {
-    return ret;
+
+  {
+    int ret = ParseMultiChannelEXRHeaderFromFile(&exrImage, filename, err);
+    if (ret != 0) {
+      return ret;
+    }
+  }
+
+  // Read HALF channel as FLOAT.
+  for (int i = 0; i < exrImage.num_channels; i++) {
+    if (exrImage.pixel_types[i] == TINYEXR_PIXELTYPE_HALF) {
+      exrImage.requested_pixel_types[i] = TINYEXR_PIXELTYPE_FLOAT;
+    }
+  }
+
+  {
+    int ret = LoadMultiChannelEXRFromFile(&exrImage, filename, err);
+    if (ret != 0) {
+      return ret;
+    }
   }
 
   // RGBA
