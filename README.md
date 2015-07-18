@@ -37,6 +37,11 @@ To use `tinyexr`, simply copy `tinyexr.cc` and `tinyexr.h` into your project.
 * PBRT v3 https://github.com/mmp/pbrt-v3
 * Your project here!
 
+## Examples
+
+* [examples/deepview/](deep image viewer)
+* [examples/rgbe2exr/](.hdr to EXR converter)
+
 ## Usage
 
 NOTE: **API is still subject to change**. See the source code for details.
@@ -167,9 +172,7 @@ See `example/deepview` for actual usage.
 
 ```
 
-### Example
-
-#### deepview 
+### deepview
 
 `examples/deepview` is simple deep image viewer in OpenGL.
 
@@ -180,7 +183,7 @@ See `example/deepview` for actual usage.
 Contribution is welcome!
 
 - Compression
-  - [ ] RLE("compress" = 1)
+  - [x] RLE("compress" = 1)
 - [ ] JavaScript library
   - [x] LoadEXRFromMemory
   - [ ] SaveMultiChannelEXR
@@ -225,6 +228,8 @@ Contribution is welcome!
 3-clause BSD
 
 `tinyexr` uses miniz, which is developed by Rich Geldreich <richgel99@gmail.com>, and licensed under public domain.
+
+`tinyexr` tools uses stb, which is licensed under public domain: https://github.com/nothings/stb
 
 ## Author(s)
 
