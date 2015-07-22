@@ -1,3 +1,7 @@
+env:
+  global:
+   - secure: "iGrwT5ZeamAmTrJ/u+ewb1YQvUWeOo2wbOiN2XgcHGKvEWOA2AFUY0LnwgSMV1RJbCzV0VCSglh6kvRXePDEdKNmEb8F6pPfc1GyZyFXX7e+gcG6nkq1NwnpSreLP5pIvEboNH1K57+UEre3buGynVTz/dgrGrIsOIJ1nylu3jbznwDS5wy/thyVoOTV+pMdP+6jsGaQKPJIEtdDJ7/zZ4yVqhdvP8HeJrNeoxGlQsLbgrKxMtZpKYaGcrKgP7nBJs50OHPDs04CxRz0rdEbVwYGP6SsWOAO/IYvNtcMBO4lyvaVmAWyjDITd3EH+q+QkJ8sP+6Vwj3VEqFTAFTFsR5rJJVu/CcvP1Wuq+oNpti7EJkCK8xSLfngLu+OBJMrYxR7W6zPaz4dgMAI7tqJLLSnOo0bQ8bS6aU64EnuXHDy6U7XUaYsAEqsTbmerk4KMtNBMWA667ef2XuXYPz+fK7CZQtPuU15+MBpFBaelnVpXW6qUQbDCtyGD5AHZZMF9llkKXhn2Hn/VBs3GjgP7huUDesH27x3+VJ5MHaghVyaCh0BviI9yuXpTQspm3WItzdBoGqJROFv9yTsJxs/JQz4ytqbMdiBnLlQVFdBEpWo+GjySGjlvFvlLIeCtCuULw0kL0zoY5FU2xCT35isIV5A0+aGAL0vhHaVR/CkNOo="
+
 language: cpp
 
 compiler: gcc
@@ -5,3 +9,12 @@ compiler: gcc
 script:
   - make
   - make test
+
+addons:
+  coverity_scan:
+    project:
+      name: "syoyo/tinyexr"
+      description: "Build submitted via Travis CI"
+    notification_email: syoyo@lighttransport.com
+    build_command:   "make"
+    branch_pattern: coverity_scan
