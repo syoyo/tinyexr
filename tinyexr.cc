@@ -8352,8 +8352,8 @@ int SaveMultiChannelEXRToFile(const EXRImage *exrImage, const char *filename,
 
     fwrite(mem, 1, mem_size, fp);
 
-    free(mem);
   }
+  free(mem);
 
   fclose(fp);
 
@@ -8382,13 +8382,21 @@ int LoadDeepEXR(DeepImage *deepImage, const char *filename, const char **err) {
   filesize = ftell(fp);
   fseek(fp, 0, SEEK_SET);
 
+  if (filesize == 0) {
+    fclose(fp);
+    if (err) {
+      (*err) = "File size is zero.";
+    }
+    return -1;
+  }
+
   std::vector<char> buf(filesize); // @todo { use mmap }
   {
     size_t ret;
     ret = fread(&buf[0], 1, filesize, fp);
     assert(ret == filesize);
-    fclose(fp);
   }
+  fclose(fp);
 
   const char *head = &buf[0];
   const char *marker = &buf[0];
@@ -8932,6 +8940,7 @@ int SaveDeepEXR(const DeepImage *deepImage, const char *filename,
 
   } // y
 #endif
+  fclose(fp);
 
   return 0; // OK
 }
@@ -9169,14 +9178,14 @@ int ParseMultiChannelEXRHeaderFromMemory(EXRImage *exrImage,
     exrImage->width = dataWidth;
     exrImage->height = dataHeight;
 
-    exrImage->pixel_types = (int *)malloc(sizeof(int *) * numChannels);
+    exrImage->pixel_types = (int *)malloc(sizeof(int) * numChannels);
     for (int c = 0; c < numChannels; c++) {
       exrImage->pixel_types[c] = channels[c].pixelType;
     }
 
     // Initially fill with values of `pixel-types`
     exrImage->requested_pixel_types =
-        (int *)malloc(sizeof(int *) * numChannels);
+        (int *)malloc(sizeof(int) * numChannels);
     for (int c = 0; c < numChannels; c++) {
       exrImage->requested_pixel_types[c] = channels[c].pixelType;
     }
