@@ -6,9 +6,18 @@ language: cpp
 
 compiler: gcc
 
+before_install:
+  - sudo apt-get update -qq -y
+  - sudo apt-get install -qq -y libgd2-xpm ia32-libs ia32-libs-multiarch p7zip > /dev/null
+  - wget -q --timeout=120 http://dl.google.com/android/ndk/android-ndk-r10e-linux-x86.bin -O ndk.bin
+  - md5sum ndk.bin | grep c3edd3273029da1cbd2f62c48249e978
+  - 7zr x ndk.bin $(sed 's/^/ -xr!/g' ndk-excludes.txt) | awk '/^Extracting/ { i++; if (i > 50) {print; i = 0}}'
+  - export ANDROID_HOME=$(pwd)/android-sdk-linux
+
 script:
   - make
   - make test
+  - (cd jni; make)
 
 addons:
   coverity_scan:
