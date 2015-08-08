@@ -17,7 +17,7 @@ To use `tinyexr`, simply copy `tinyexr.cc` and `tinyexr.h` into your project.
 * OpenEXR version 1.x.
 * Normal image
   * Scanline format.
-  * Uncompress("compress" = 0), ZIPS("compress" = 2) and ZIP compression("compress" = 3).
+  * Uncompress("compress" = 0), ZIPS("compress" = 2), ZIP compression("compress" = 3) and PIZ compression("compress" = 4).
   * Half/Uint/Float pixel type.
 * Deep image
   * Scanline format.
@@ -187,7 +187,8 @@ Contribution is welcome!
 
 - [ ] Compression
   - [ ] RLE("compress" = 1)
-  - [ ] PIZ
+  - [x] PIZ("compress" = 4, load)
+  - [ ] PIZ("compress" = 4, save)
 - [ ] JavaScript library
   - [x] LoadEXRFromMemory
   - [ ] SaveMultiChannelEXR
@@ -234,6 +235,7 @@ Contribution is welcome!
 `tinyexr` uses miniz, which is developed by Rich Geldreich <richgel99@gmail.com>, and licensed under public domain.
 
 `tinyexr` tools uses stb, which is licensed under public domain: https://github.com/nothings/stb
+`tinyexr` uses some code from OpenEXR, which is licensed under 3-clause BSDF license.
 
 ## Author(s)
 
