@@ -8348,7 +8348,7 @@ int SaveMultiChannelEXRToFile(const EXRImage *exrImage, const char *filename,
   unsigned char *mem = NULL;
   size_t mem_size = SaveMultiChannelEXRToMemory(exrImage, &mem, err);
 
-  if (mem_size > 0) {
+  if ((mem_size > 0) && mem) {
 
     fwrite(mem, 1, mem_size, fp);
 
@@ -9090,8 +9090,8 @@ int ParseMultiChannelEXRHeaderFromMemory(EXRImage *exrImage,
     }
 
     if (attrName.compare("compression") == 0) {
-      // must be 0:No compression, 1: RLE or 3: ZIP
-      if (data[0] != 0 && data[0] != 1 && data[0] != 3) {
+      // must be 0:No compression, 1: RLE, 2: ZIPs or 3: ZIP
+      if (data[0] > 3) {
         if (err) {
           (*err) = "Unsupported compression type.";
         }
