@@ -185,8 +185,9 @@ See `example/deepview` for actual usage.
 
 Contribution is welcome!
 
-- Compression
-  - [x] RLE("compress" = 1)
+- [ ] Compression
+  - [ ] RLE("compress" = 1)
+  - [ ] PIZ
 - [ ] JavaScript library
   - [x] LoadEXRFromMemory
   - [ ] SaveMultiChannelEXR
