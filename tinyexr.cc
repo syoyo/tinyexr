@@ -8399,7 +8399,7 @@ bool DecompressPiz(unsigned char *outPtr, unsigned int &outSize,
 
   // @todo { Xdr }
 
-  for (int y = 0; y <= numLines; y++) {
+  for (int y = 0; y < numLines; y++) {
     for (int i = 0; i < channelData.size(); ++i) {
       PIZChannelData &cd = channelData[i];
 
