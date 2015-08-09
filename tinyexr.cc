@@ -7716,7 +7716,12 @@ bool hufUnpackEncTable(const char **pcode, // io: ptr to packed table (updated)
 void hufClearDecTable(HufDec *hdecod) // io: (allocated by caller)
                                       //     decoding table [HUF_DECSIZE]
 {
-  memset(hdecod, 0, sizeof(HufDec) * HUF_DECSIZE);
+  for (int i = 0; i < HUF_DECSIZE; i++) {
+    hdecod[i].len = 0;
+    hdecod[i].lit = 0;
+    hdecod[i].p = NULL;
+  }
+  //memset(hdecod, 0, sizeof(HufDec) * HUF_DECSIZE);
 }
 
 //
@@ -8139,20 +8144,20 @@ bool hufUncompress(const char compressed[], int nCompressed,
   //}
   // else
   {
-    long long freq[HUF_ENCSIZE];
-    HufDec hdec[HUF_DECSIZE];
+    std::vector<long long> freq(HUF_ENCSIZE);
+    std::vector<HufDec> hdec(HUF_DECSIZE);
 
-    hufClearDecTable(hdec);
+    hufClearDecTable(&hdec.at(0));
 
-    hufUnpackEncTable(&ptr, nCompressed - (ptr - compressed), im, iM, freq);
+    hufUnpackEncTable(&ptr, nCompressed - (ptr - compressed), im, iM, &freq.at(0));
 
     {
       if (nBits > 8 * (nCompressed - (ptr - compressed))) {
         return false;
       }
 
-      hufBuildDecTable(freq, im, iM, hdec);
-      hufDecode(freq, hdec, ptr, nBits, iM, nRaw, raw);
+      hufBuildDecTable(&freq.at(0), im, iM, &hdec.at(0));
+      hufDecode(&freq.at(0), &hdec.at(0), ptr, nBits, iM, nRaw, raw);
     }
     // catch (...)
     //{
@@ -8160,7 +8165,7 @@ bool hufUncompress(const char compressed[], int nCompressed,
     //    throw;
     //}
 
-    hufFreeDecTable(hdec);
+    hufFreeDecTable(&hdec.at(0));
   }
 
   return true;
