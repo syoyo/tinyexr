@@ -123,8 +123,8 @@ Saving EXR file.
 
     image.channel_names = channel_names;
     image.images = (unsigned char**)image_ptr;
-    image.width = gWidth;
-    image.height = gHeight;
+    image.width = width;
+    image.height = height;
 
     image.pixel_types = (int *)malloc(sizeof(int) * image.num_channels);
     image.requested_pixel_types = (int *)malloc(sizeof(int) * image.num_channels);
@@ -134,7 +134,7 @@ Saving EXR file.
     }
 
     const char* err;
-    ret = SaveMultiChannelEXRToFile(&image, outfilename, &err);
+    int ret = SaveMultiChannelEXRToFile(&image, outfilename, &err);
     if (ret != 0) {
       fprintf(stderr, "Save EXR err: %s\n", err);
       return ret;
