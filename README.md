@@ -235,7 +235,7 @@ Contribution is welcome!
 `tinyexr` uses miniz, which is developed by Rich Geldreich <richgel99@gmail.com>, and licensed under public domain.
 
 `tinyexr` tools uses stb, which is licensed under public domain: https://github.com/nothings/stb
-`tinyexr` uses some code from OpenEXR, which is licensed under 3-clause BSDF license.
+`tinyexr` uses some code from OpenEXR, which is licensed under 3-clause BSD license.
 
 ## Author(s)
 
