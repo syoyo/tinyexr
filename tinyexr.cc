@@ -6759,6 +6759,8 @@ void WriteAttribute(FILE *fp, const char *name, const char *type,
 
   n = fwrite(data, 1, len, fp);
   assert(n == (size_t)len);
+
+  (void)n;
 }
 
 void WriteAttributeToMemory(std::vector<unsigned char> &out, const char *name,
@@ -6916,6 +6918,7 @@ void CompressZip(unsigned char *dst, unsigned long long &compressedSize,
   int ret = miniz::mz_compress(dst, &outSize,
                                (const unsigned char *)&tmpBuf.at(0), srcSize);
   assert(ret == miniz::MZ_OK);
+  (void)ret;
 
   compressedSize = outSize;
 }
@@ -6927,6 +6930,7 @@ void DecompressZip(unsigned char *dst, unsigned long &uncompressedSize,
   int ret =
       miniz::mz_uncompress(&tmpBuf.at(0), &uncompressedSize, src, srcSize);
   assert(ret == miniz::MZ_OK);
+  (void)ret;
 
   //
   // Apply EXR-specific? postprocess. Grabbed from OpenEXR's
@@ -8790,6 +8794,7 @@ int LoadMultiChannelEXRFromFile(EXRImage *exrImage, const char *filename,
     ret = fread(&buf[0], 1, filesize, fp);
     assert(ret == filesize);
     fclose(fp);
+    (void)ret;
   }
 
   return LoadMultiChannelEXRFromMemory(exrImage, &buf.at(0), err);
@@ -9956,6 +9961,7 @@ int LoadDeepEXR(DeepImage *deepImage, const char *filename, const char **err) {
     size_t ret;
     ret = fread(&buf[0], 1, filesize, fp);
     assert(ret == filesize);
+    (void)ret;
   }
   fclose(fp);
 
@@ -10581,6 +10587,7 @@ int ParseMultiChannelEXRHeaderFromFile(EXRImage *exrImage, const char *filename,
     ret = fread(&buf[0], 1, filesize, fp);
     assert(ret == filesize);
     fclose(fp);
+    (void)ret;
   }
 
   return ParseMultiChannelEXRHeaderFromMemory(exrImage, &buf.at(0), err);
