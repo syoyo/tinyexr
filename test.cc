@@ -33,7 +33,7 @@ SaveAsPFM(const char* filename, int width, int height, float* data)
   // RGBA -> RGB
   std::vector<float> rgb(width*height*3);
 
-  for (size_t i = 0; i < width * height; i++) {
+  for (int i = 0; i < width * height; i++) {
     rgb[3*i+0] = data[4*i+0];
     rgb[3*i+1] = data[4*i+1];
     rgb[3*i+2] = data[4*i+2];
