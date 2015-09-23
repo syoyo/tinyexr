@@ -2,6 +2,7 @@
 #include <cstdio>
 #include <vector>
 
+#define TINYEXR_IMPLEMENTATION
 #include "tinyexr.h"
 
 const char* GetPixelType(int id)

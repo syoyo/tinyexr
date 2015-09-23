@@ -10,7 +10,7 @@
 
 `tinyexr` is a small library to load and save OpenEXR(.exr) images.
 `tinyexr` is written in portable C++(no library dependency except for STL), thus `tinyexr` is good to embed into your application.
-To use `tinyexr`, simply copy `tinyexr.cc` and `tinyexr.h` into your project.
+To use `tinyexr`, simply copy `tinyexr.h` into your project.
 
 `tinyexr` currently supports:
 
@@ -49,6 +49,13 @@ To use `tinyexr`, simply copy `tinyexr.cc` and `tinyexr.h` into your project.
 ## Usage
 
 NOTE: **API is still subject to change**. See the source code for details.
+
+Include `tinyexr.h` with `TINYEXR_IMPLEMENTATION` flag(do this only for **one** .cc file).
+
+```
+#define TINYEXR_IMPLEMENTATION
+#include "tinyexr.h"
+```
 
 Quickly reading RGB(A) EXR file.
 
@@ -141,6 +148,10 @@ Saving EXR file.
       return ret;
     }
     printf("Saved exr file. [ %s ] \n", outfilename);
+
+    free(image.pixel_types);
+    free(image.requested_pixel_types);
+
     return ret;
 
   }
