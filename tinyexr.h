@@ -8926,7 +8926,7 @@ int ParseEXRHeaderFromMemory(EXRAttribute* customAttributes, int *numCustomAttri
     (*numCustomAttributes) = attribs.size();
 
     // Assume the pointer to customAttributes has enough memory to store.
-    for (int i = 0; i < attribs.size(); i++) {
+    for (int i = 0; i < (int)attribs.size(); i++) {
       customAttributes[i] = attribs[i];
     }
   } 
@@ -11070,7 +11070,7 @@ int ParseMultiChannelEXRHeaderFromMemory(EXRImage *exrImage,
     assert(customAttribs.size() < TINYEXR_MAX_ATTRIBUTES);
     exrImage->num_custom_attributes = numCustomAttributes;
 
-    for (int i = 0; i < customAttribs.size(); i++) {
+    for (int i = 0; i < (int)customAttribs.size(); i++) {
       exrImage->custom_attributes[i] = customAttribs[i];
     }
   } 
