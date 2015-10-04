@@ -81,6 +81,35 @@ main(int argc, char** argv)
     return ret;
   }
 
+  printf("dataWindow = %d, %d, %d, %d\n",
+    exrImage.data_window[0],
+    exrImage.data_window[1],
+    exrImage.data_window[2],
+    exrImage.data_window[3]);
+  printf("displayWindow = %d, %d, %d, %d\n",
+    exrImage.display_window[0],
+    exrImage.display_window[1],
+    exrImage.display_window[2],
+    exrImage.display_window[3]);
+  printf("screenWindowCenter = %f, %f\n",
+    exrImage.screen_window_center[0],
+    exrImage.screen_window_center[1]);
+  printf("screenWindowWidth = %f\n",
+    exrImage.screen_window_width);
+  printf("pixelAspectRatio = %f\n",
+    exrImage.pixel_aspect_ratio);
+  printf("lineOrder = %d\n",
+    exrImage.line_order);
+
+  if (exrImage.num_custom_attributes > 0) {
+    printf("# of custom attributes = %d\n", exrImage.num_custom_attributes);
+    for (int i = 0; i < exrImage.num_custom_attributes; i++) {
+      printf("  [%d] name = %s, type = %s\n", i,
+        exrImage.custom_attributes[i].name,
+        exrImage.custom_attributes[i].type);
+    }
+  }
+
   // Read HALF channel as FLOAT.
   for (int i = 0; i < exrImage.num_channels; i++) {
     if (exrImage.pixel_types[i] == TINYEXR_PIXELTYPE_HALF) {
@@ -108,6 +137,16 @@ main(int argc, char** argv)
       exrImage.requested_pixel_types[i] = TINYEXR_PIXELTYPE_HALF;
     }
   }
+
+#if 0 // example to write custom attribute
+  int version_minor = 3;
+  exrImage.num_custom_attributes = 1;
+  exrImage.custom_attributes[0].name = strdup("tinyexr_version_minor");
+  exrImage.custom_attributes[0].type = strdup("int");
+  exrImage.custom_attributes[0].size = sizeof(int);
+  exrImage.custom_attributes[0].value = (unsigned char*)malloc(sizeof(int));
+  memcpy(exrImage.custom_attributes[0].value, &version_minor, sizeof(int));
+#endif
 
   ret = SaveMultiChannelEXRToFile(&exrImage, outfilename, &err);
   if (ret != 0) {

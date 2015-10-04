@@ -19,6 +19,7 @@ To use `tinyexr`, simply copy `tinyexr.h` into your project.
   * Scanline format.
   * Uncompress("compress" = 0), ZIPS("compress" = 2), ZIP compression("compress" = 3) and PIZ compression("compress" = 4).
   * Half/Uint/Float pixel type.
+  * Custom attributes(up to 128)
 * Deep image
   * Scanline format.
   * ZIPS compression("compress" = 2).
@@ -201,6 +202,9 @@ Contribution is welcome!
   - [ ] RLE("compress" = 1)
   - [x] PIZ("compress" = 4, load)
   - [ ] PIZ("compress" = 4, save)
+- [ ] Custom attributes
+  - [x] Normal image(EXR 1.x)
+  - [ ] Deep image(EXR 2.x)
 - [ ] JavaScript library
   - [x] LoadEXRFromMemory
   - [ ] SaveMultiChannelEXR

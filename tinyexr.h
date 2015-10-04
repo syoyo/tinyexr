@@ -53,7 +53,20 @@ extern "C" {
 #define TINYEXR_PIXELTYPE_HALF (1)
 #define TINYEXR_PIXELTYPE_FLOAT (2)
 
+#define TINYEXR_MAX_ATTRIBUTES  (128)
+
+typedef struct _EXRAttribute {
+  char *name; 
+  char *type;
+  int   size;
+  unsigned char *value; // uint8_t*
+} EXRAttribute;
+
 typedef struct _EXRImage {
+  // Custom attributes(exludes required attributes(e.g. `channels`, `compression`, etc)
+  EXRAttribute custom_attributes[TINYEXR_MAX_ATTRIBUTES];
+  int num_custom_attributes;
+
   int num_channels;
   const char **channel_names;
 
@@ -68,6 +81,12 @@ typedef struct _EXRImage {
 
   int width;
   int height;
+  float pixel_aspect_ratio;
+  int line_order;
+  int data_window[4];
+  int display_window[4];
+  float screen_window_center[2];
+  float screen_window_width;
 } EXRImage;
 
 typedef struct _DeepImage {
@@ -177,7 +196,7 @@ extern int FreeEXRImage(EXRImage *exrImage);
 // For emscripten.
 // Parse single-frame OpenEXR header from memory.
 // Return 0 if success
-extern int ParseEXRHeaderFromMemory(int *width, int *height,
+extern int ParseEXRHeaderFromMemory(EXRAttribute* customAttributes, int *numCustomAttributes, int *width, int *height,
                                     const unsigned char *memory);
 
 // For emscripten.
@@ -8725,7 +8744,7 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
   return 0;
 }
 
-int ParseEXRHeaderFromMemory(int *width, int *height,
+int ParseEXRHeaderFromMemory(EXRAttribute* customAttributes, int *numCustomAttributes, int *width, int *height,
                              const unsigned char *memory) {
 
   if (memory == NULL) {
@@ -8767,8 +8786,18 @@ int ParseEXRHeaderFromMemory(int *width, int *height,
   int dy = -1;
   int dw = -1;
   int dh = -1;
+  int lineOrder = 0; // @fixme
+  int displayWindow[4] = {-1, -1, -1, -1}; // @fixme
+  float screenWindowCenter[2] = {0.0f, 0.0f}; // @fixme
+  float screenWindowWidth = 1.0f; // @fixme
   int numChannels = -1;
+  float pixelAspectRatio = 1.0f; // @fixme
   std::vector<ChannelInfo> channels;
+  std::vector<EXRAttribute> attribs;
+
+  if (numCustomAttributes) {
+    (*numCustomAttributes) = 0;
+  }
 
   // Read attributes
   for (;;) {
@@ -8830,16 +8859,50 @@ int ParseEXRHeaderFromMemory(int *width, int *height,
         swap4(reinterpret_cast<unsigned int *>(&dh));
       }
     } else if (attrName.compare("displayWindow") == 0) {
-      int x, y, w, h;
-      memcpy(&x, &data.at(0), sizeof(int));
-      memcpy(&y, &data.at(4), sizeof(int));
-      memcpy(&w, &data.at(8), sizeof(int));
-      memcpy(&h, &data.at(12), sizeof(int));
+      memcpy(&displayWindow[0], &data.at(0), sizeof(int));
+      memcpy(&displayWindow[1], &data.at(4), sizeof(int));
+      memcpy(&displayWindow[2], &data.at(8), sizeof(int));
+      memcpy(&displayWindow[3], &data.at(12), sizeof(int));
       if (IsBigEndian()) {
-        swap4(reinterpret_cast<unsigned int *>(&x));
-        swap4(reinterpret_cast<unsigned int *>(&y));
-        swap4(reinterpret_cast<unsigned int *>(&w));
-        swap4(reinterpret_cast<unsigned int *>(&h));
+        swap4(reinterpret_cast<unsigned int *>(&displayWindow[0]));
+        swap4(reinterpret_cast<unsigned int *>(&displayWindow[1]));
+        swap4(reinterpret_cast<unsigned int *>(&displayWindow[2]));
+        swap4(reinterpret_cast<unsigned int *>(&displayWindow[3]));
+      }
+    } else if (attrName.compare("lineOrder") == 0) {
+      memcpy(&lineOrder, &data.at(0), sizeof(float));
+      if (IsBigEndian()) {
+        swap4(reinterpret_cast<unsigned int *>(&lineOrder));
+      }
+    } else if (attrName.compare("pixelAspectRatio") == 0) {
+      memcpy(&pixelAspectRatio, &data.at(0), sizeof(float));
+      if (IsBigEndian()) {
+        swap4(reinterpret_cast<unsigned int *>(&pixelAspectRatio));
+      }
+    } else if (attrName.compare("screenWindowCenter") == 0) {
+      memcpy(&screenWindowCenter[0], &data.at(0), sizeof(float));
+      memcpy(&screenWindowCenter[1], &data.at(4), sizeof(float));
+      if (IsBigEndian()) {
+        swap4(reinterpret_cast<unsigned int *>(&screenWindowCenter[0]));
+        swap4(reinterpret_cast<unsigned int *>(&screenWindowCenter[1]));
+      }
+    } else if (attrName.compare("screenWindowWidth") == 0) {
+      memcpy(&screenWindowWidth, &data.at(0), sizeof(float));
+      if (IsBigEndian()) {
+        swap4(reinterpret_cast<unsigned int *>(&screenWindowWidth));
+      }
+      
+    } else {
+      // Custom attribute(up to TINYEXR_MAX_ATTRIBUTES)
+      if (numCustomAttributes && ((*numCustomAttributes) < TINYEXR_MAX_ATTRIBUTES)) {
+        printf("custom\n");
+        EXRAttribute attrib;
+        attrib.name = strdup(attrName.c_str());
+        attrib.type = strdup(attrType.c_str());
+        attrib.size = data.size();
+        attrib.value = (unsigned char*)malloc(data.size());
+        memcpy((char*)attrib.value, &data.at(0), data.size());
+        attribs.push_back(attrib);
       }
     }
 
@@ -8857,6 +8920,16 @@ int ParseEXRHeaderFromMemory(int *width, int *height,
 
   (*width) = dataWidth;
   (*height) = dataHeight;
+
+  if (numCustomAttributes) {
+    assert(attribs.size() < TINYEXR_MAX_ATTRIBUTES);
+    (*numCustomAttributes) = attribs.size();
+
+    // Assume the pointer to customAttributes has enough memory to store.
+    for (int i = 0; i < attribs.size(); i++) {
+      customAttributes[i] = attribs[i];
+    }
+  } 
 
   return 0;
 }
@@ -9842,6 +9915,18 @@ size_t SaveMultiChannelEXRToMemory(const EXRImage *exrImage,
                            sizeof(float));
   }
 
+  // Custom attributes
+  if (exrImage->num_custom_attributes > 0) {
+    printf("custom\n");
+    // @todo { endian }
+    for (int i = 0; i < exrImage->num_custom_attributes; i++) {
+      WriteAttributeToMemory(memory, exrImage->custom_attributes[i].name, exrImage->custom_attributes[i].type,
+                             reinterpret_cast<const unsigned char *>(&exrImage->custom_attributes[i].value),
+                             exrImage->custom_attributes[i].size);
+        
+    }
+  }
+
   { // end of header
     unsigned char e = 0;
     memory.push_back(e);
@@ -10686,6 +10771,7 @@ void InitEXRImage(EXRImage *exrImage) {
     return;
   }
 
+  exrImage->num_custom_attributes = 0;
   exrImage->num_channels = 0;
   exrImage->channel_names = NULL;
   exrImage->images = NULL;
@@ -10724,6 +10810,18 @@ int FreeEXRImage(EXRImage *exrImage) {
 
   if (exrImage->requested_pixel_types) {
     free(exrImage->requested_pixel_types);
+  }
+
+  for (int i = 0; i < exrImage->num_custom_attributes; i++) {
+    if (exrImage->custom_attributes[i].name) {
+      free(exrImage->custom_attributes[i].name);
+    }
+    if (exrImage->custom_attributes[i].type) {
+      free(exrImage->custom_attributes[i].type);
+    }
+    if (exrImage->custom_attributes[i].value) {
+      free(exrImage->custom_attributes[i].value);
+    }
   }
 
   return 0;
@@ -10809,8 +10907,15 @@ int ParseMultiChannelEXRHeaderFromMemory(EXRImage *exrImage,
   int dw = -1;
   int dh = -1;
   int numChannels = -1;
+  int displayWindow[4] = {-1, -1, -1, -1}; // @fixme.
+  float screenWindowCenter[2] = {0.0f, 0.0f}; // @fixme
+  float screenWindowWidth = 1.0f; // @fixme
+  float pixelAspectRatio = 1.0f;
   unsigned char lineOrder = 0; // 0 -> increasing y; 1 -> decreasing
   std::vector<ChannelInfo> channels;
+
+  int numCustomAttributes = 0;
+  std::vector<EXRAttribute> customAttribs;
 
   // Read attributes
   for (;;) {
@@ -10864,19 +10969,49 @@ int ParseMultiChannelEXRHeaderFromMemory(EXRImage *exrImage,
         swap4(reinterpret_cast<unsigned int *>(&dh));
       }
     } else if (attrName.compare("displayWindow") == 0) {
-      int x, y, w, h;
-      memcpy(&x, &data.at(0), sizeof(int));
-      memcpy(&y, &data.at(4), sizeof(int));
-      memcpy(&w, &data.at(8), sizeof(int));
-      memcpy(&h, &data.at(12), sizeof(int));
+      memcpy(&displayWindow[0], &data.at(0), sizeof(int));
+      memcpy(&displayWindow[1], &data.at(4), sizeof(int));
+      memcpy(&displayWindow[2], &data.at(8), sizeof(int));
+      memcpy(&displayWindow[3], &data.at(12), sizeof(int));
       if (IsBigEndian()) {
-        swap4(reinterpret_cast<unsigned int *>(&x));
-        swap4(reinterpret_cast<unsigned int *>(&y));
-        swap4(reinterpret_cast<unsigned int *>(&w));
-        swap4(reinterpret_cast<unsigned int *>(&h));
+        swap4(reinterpret_cast<unsigned int *>(&displayWindow[0]));
+        swap4(reinterpret_cast<unsigned int *>(&displayWindow[1]));
+        swap4(reinterpret_cast<unsigned int *>(&displayWindow[2]));
+        swap4(reinterpret_cast<unsigned int *>(&displayWindow[3]));
       }
     } else if (attrName.compare("lineOrder") == 0) {
       memcpy(&lineOrder, &data.at(0), sizeof(lineOrder));
+      if (IsBigEndian()) {
+        swap4(reinterpret_cast<unsigned int *>(&lineOrder));
+      }
+    } else if (attrName.compare("pixelAspectRatio") == 0) {
+      memcpy(&pixelAspectRatio, &data.at(0), sizeof(float));
+      if (IsBigEndian()) {
+        swap4(reinterpret_cast<unsigned int *>(&pixelAspectRatio));
+      }
+    } else if (attrName.compare("screenWindowCenter") == 0) {
+      memcpy(&screenWindowCenter[0], &data.at(0), sizeof(float));
+      memcpy(&screenWindowCenter[1], &data.at(4), sizeof(float));
+      if (IsBigEndian()) {
+        swap4(reinterpret_cast<unsigned int *>(&screenWindowCenter[0]));
+        swap4(reinterpret_cast<unsigned int *>(&screenWindowCenter[1]));
+      }
+    } else if (attrName.compare("screenWindowWidth") == 0) {
+      memcpy(&screenWindowWidth, &data.at(0), sizeof(float));
+      if (IsBigEndian()) {
+        swap4(reinterpret_cast<unsigned int *>(&screenWindowWidth));
+      }
+    } else {
+      // Custom attribute(up to TINYEXR_MAX_ATTRIBUTES)
+      if (numCustomAttributes < TINYEXR_MAX_ATTRIBUTES) {
+        EXRAttribute attrib;
+        attrib.name = strdup(attrName.c_str());
+        attrib.type = strdup(attrType.c_str());
+        attrib.size = data.size();
+        attrib.value = (unsigned char*)malloc(data.size());
+        memcpy((char*)attrib.value, &data.at(0), data.size());
+        customAttribs.push_back(attrib);
+      }
     }
 
     marker = marker_next;
@@ -10905,6 +11040,19 @@ int ParseMultiChannelEXRHeaderFromMemory(EXRImage *exrImage,
 
     exrImage->width = dataWidth;
     exrImage->height = dataHeight;
+    exrImage->pixel_aspect_ratio = pixelAspectRatio;
+    exrImage->screen_window_center[0] = screenWindowCenter[0];
+    exrImage->screen_window_center[1] = screenWindowCenter[1];
+    exrImage->screen_window_width = screenWindowWidth;
+    exrImage->display_window[0] = displayWindow[0];
+    exrImage->display_window[1] = displayWindow[1];
+    exrImage->display_window[2] = displayWindow[2];
+    exrImage->display_window[3] = displayWindow[3];
+    exrImage->data_window[0] = dx;
+    exrImage->data_window[1] = dy;
+    exrImage->data_window[2] = dw;
+    exrImage->data_window[3] = dh;
+    exrImage->line_order = lineOrder;
 
     exrImage->pixel_types = (int *)malloc(sizeof(int) * numChannels);
     for (int c = 0; c < numChannels; c++) {
@@ -10917,6 +11065,15 @@ int ParseMultiChannelEXRHeaderFromMemory(EXRImage *exrImage,
       exrImage->requested_pixel_types[c] = channels[c].pixelType;
     }
   }
+
+  if (numCustomAttributes > 0) {
+    assert(customAttribs.size() < TINYEXR_MAX_ATTRIBUTES);
+    exrImage->num_custom_attributes = numCustomAttributes;
+
+    for (int i = 0; i < customAttribs.size(); i++) {
+      exrImage->custom_attributes[i] = customAttribs[i];
+    }
+  } 
 
   return 0; // OK
 }
