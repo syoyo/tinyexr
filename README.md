@@ -8,7 +8,7 @@
 
 [![Coverity Scan Build Status](https://scan.coverity.com/projects/5827/badge.svg)](https://scan.coverity.com/projects/5827)
 
-`tinyexr` is a small library to load and save OpenEXR(.exr) images.
+`tinyexr` is a small, single header-only library to load and save OpenEXR(.exr) images.
 `tinyexr` is written in portable C++(no library dependency except for STL), thus `tinyexr` is good to embed into your application.
 To use `tinyexr`, simply copy `tinyexr.h` into your project.
 
