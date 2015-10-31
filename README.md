@@ -134,6 +134,7 @@ Saving EXR file.
     image.images = (unsigned char**)image_ptr;
     image.width = width;
     image.height = height;
+    image.compression = TINYEXR_COMPRESSIONTYPE_ZIP;
 
     image.pixel_types = (int *)malloc(sizeof(int) * image.num_channels);
     image.requested_pixel_types = (int *)malloc(sizeof(int) * image.num_channels);
@@ -143,7 +144,7 @@ Saving EXR file.
     }
 
     const char* err;
-    int ret = SaveMultiChannelEXRToFile(&image, outfilename, TINYEXR_COMPRESSION_TYPE_ZIP, &err);
+    int ret = SaveMultiChannelEXRToFile(&image, outfilename, &err);
     if (ret != 0) {
       fprintf(stderr, "Save EXR err: %s\n", err);
       return ret;
