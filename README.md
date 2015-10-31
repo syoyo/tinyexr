@@ -143,7 +143,7 @@ Saving EXR file.
     }
 
     const char* err;
-    int ret = SaveMultiChannelEXRToFile(&image, outfilename, &err);
+    int ret = SaveMultiChannelEXRToFile(&image, outfilename, TINYEXR_COMPRESSION_TYPE_ZIP, &err);
     if (ret != 0) {
       fprintf(stderr, "Save EXR err: %s\n", err);
       return ret;
@@ -199,8 +199,15 @@ See `example/deepview` for actual usage.
 Contribution is welcome!
 
 - [ ] Compression
-  - [ ] RLE("compress" = 1)
+  - [ ] NONE("compress" = 0, load)
+  - [ ] RLE("compress" = 1, load)
+  - [x] ZIPS("compress" = 2, load)
+  - [x] ZIP("compress" = 3, load)
   - [x] PIZ("compress" = 4, load)
+  - [x] NONE("compress" = 0, save)
+  - [ ] RLE("compress" = 1, save)
+  - [x] ZIPS("compress" = 2, save)
+  - [x] ZIP("compress" = 3, save)
   - [ ] PIZ("compress" = 4, save)
 - [ ] Custom attributes
   - [x] Normal image(EXR 1.x)
