@@ -558,9 +558,13 @@ namespace miniz {
 #define MINIZ_X86_OR_X64_CPU 1
 #endif
 
+#if defined(__sparcv9)
+// Big endian
+#else
 #if (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__) || MINIZ_X86_OR_X64_CPU
 // Set MINIZ_LITTLE_ENDIAN to 1 if the processor is little endian.
 #define MINIZ_LITTLE_ENDIAN 1
+#endif
 #endif
 
 #if MINIZ_X86_OR_X64_CPU
@@ -9402,6 +9406,7 @@ int LoadMultiChannelEXRFromMemory(EXRImage *exrImage,
       DecompressZip(reinterpret_cast<unsigned char *>(&outBuf.at(0)), dstLen,
                     dataPtr + 8, dataLen);
 
+
       bool isBigEndian = IsBigEndian();
 
       // For ZIP_COMPRESSION:
@@ -9816,7 +9821,7 @@ size_t SaveMultiChannelEXRToMemory(const EXRImage *exrImage,
     if (err) {
       (*err) = "Invalid argument.";
     }
-    return -1;
+    return 0;
   }
 
   std::vector<unsigned char> memory;
@@ -11013,10 +11018,12 @@ int ParseMultiChannelEXRHeaderFromMemory(EXRImage *exrImage,
         swap4(reinterpret_cast<unsigned int *>(&displayWindow[3]));
       }
     } else if (attrName.compare("lineOrder") == 0) {
-      memcpy(&lineOrder, &data.at(0), sizeof(lineOrder));
+      int order;
+      memcpy(&order, &data.at(0), sizeof(int));
       if (IsBigEndian()) {
-        swap4(reinterpret_cast<unsigned int *>(&lineOrder));
+        swap4(reinterpret_cast<unsigned int *>(&order));
       }
+      lineOrder = (unsigned char)order;
     } else if (attrName.compare("pixelAspectRatio") == 0) {
       memcpy(&pixelAspectRatio, &data.at(0), sizeof(float));
       if (IsBigEndian()) {
