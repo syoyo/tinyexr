@@ -7088,7 +7088,7 @@ void CompressZip(unsigned char *dst, unsigned long long &compressedSize,
     char *t2 = (char *)&tmpBuf.at(0) + (srcSize + 1) / 2;
     const char *stop = (const char *)src + srcSize;
 
-    while (true) {
+    for (;;) {
       if ((const char *)src < stop)
         *(t1++) = *(src++);
       else
@@ -7165,7 +7165,7 @@ void DecompressZip(unsigned char *dst, unsigned long &uncompressedSize,
     char *s = reinterpret_cast<char *>(dst);
     char *stop = s + uncompressedSize;
 
-    while (true) {
+    for(;;) {
       if (s < stop)
         *(s++) = *(t1++);
       else
