@@ -8551,8 +8551,7 @@ bool CompressPiz(unsigned char *outPtr, unsigned int &outSize) {
 }
 #endif
 
-bool DecompressPiz(unsigned char *outPtr, unsigned int &,
-                   const unsigned char *inPtr, size_t tmpBufSize,
+bool DecompressPiz(unsigned char *outPtr, const unsigned char *inPtr, size_t tmpBufSize,
                    const std::vector<ChannelInfo> &channelInfo, int dataWidth,
                    int numLines) {
   unsigned char bitmap[BITMAP_SIZE];
@@ -8638,8 +8637,6 @@ bool DecompressPiz(unsigned char *outPtr, unsigned int &,
   //
 
   applyLut(lut, &tmpBuffer.at(0), tmpBufSize);
-
-  // @todo { Xdr }
 
   for (int y = 0; y < numLines; y++) {
     for (size_t i = 0; i < channelData.size(); ++i) {
@@ -9289,10 +9286,9 @@ int LoadMultiChannelEXRFromMemory(EXRImage *exrImage,
     if (compressionType == 4) { // PIZ
       // Allocate original data size.
       std::vector<unsigned char> outBuf(dataWidth * numLines * pixelDataSize);
-      unsigned int dstLen;
       size_t tmpBufLen = dataWidth * numLines * pixelDataSize;
 
-      DecompressPiz(reinterpret_cast<unsigned char *>(&outBuf.at(0)), dstLen,
+      DecompressPiz(reinterpret_cast<unsigned char *>(&outBuf.at(0)),
                     dataPtr + 8, tmpBufLen, channels, dataWidth, numLines);
 
       bool isBigEndian = IsBigEndian();
