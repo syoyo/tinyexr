@@ -3932,7 +3932,7 @@ static mz_bool tdefl_compress_normal(tdefl_compressor *d) {
     d->m_lookahead_pos += len_to_move;
     MZ_ASSERT(d->m_lookahead_size >= len_to_move);
     d->m_lookahead_size -= len_to_move;
-    d->m_dict_size = MZ_MIN(d->m_dict_size + len_to_move, TDEFL_LZ_DICT_SIZE);
+    d->m_dict_size = MZ_MIN(d->m_dict_size + len_to_move, (mz_uint)TDEFL_LZ_DICT_SIZE);
     // Check if it's time to flush the current LZ codes to the internal output
     // buffer.
     if ((d->m_pLZ_code_buf > &d->m_lz_code_buf[TDEFL_LZ_CODE_BUF_SIZE - 8]) ||
@@ -4210,6 +4210,13 @@ mz_uint tdefl_create_comp_flags_from_zip_params(int level, int window_bits,
 #pragma warning(disable : 4204) // nonstandard extension used : non-constant
                                 // aggregate initializer (also supported by GNU
                                 // C and C99, so no big deal)
+#pragma warning(disable : 4244) // 'initializing': conversion from '__int64' to
+                                // 'int', possible loss of data
+#pragma warning(disable : 4267) // 'argument': conversion from '__int64' to 'int',
+                                // possible loss of data
+#pragma warning(disable : 4996) // 'strdup': The POSIX name for this item is
+                                // deprecated. Instead, use the ISO C and C++
+                                // conformant name: _strdup.
 #endif
 
 // Simple PNG writer function by Alex Evans, 2011. Released into the public
@@ -4300,10 +4307,6 @@ void *tdefl_write_image_to_png_file_in_memory(const void *pImage, int w, int h,
   return tdefl_write_image_to_png_file_in_memory_ex(pImage, w, h, num_chans,
                                                     pLen_out, 6, MZ_FALSE);
 }
-
-#ifdef _MSC_VER
-#pragma warning(pop)
-#endif
 
 // ------------------- .ZIP archive reading
 
@@ -5270,7 +5273,7 @@ mz_bool mz_zip_reader_extract_to_mem_no_alloc(mz_zip_archive *pZip,
     comp_remaining = file_stat.m_comp_size;
   } else {
     // Temporarily allocate a read buffer.
-    read_buf_size = MZ_MIN(file_stat.m_comp_size, MZ_ZIP_MAX_IO_BUF_SIZE);
+    read_buf_size = MZ_MIN(file_stat.m_comp_size, (mz_uint)MZ_ZIP_MAX_IO_BUF_SIZE);
 #ifdef _MSC_VER
     if (((0, sizeof(size_t) == sizeof(mz_uint32))) &&
         (read_buf_size > 0x7FFFFFFF))
@@ -5459,7 +5462,7 @@ mz_bool mz_zip_reader_extract_to_callback(mz_zip_archive *pZip,
     read_buf_size = read_buf_avail = file_stat.m_comp_size;
     comp_remaining = 0;
   } else {
-    read_buf_size = MZ_MIN(file_stat.m_comp_size, MZ_ZIP_MAX_IO_BUF_SIZE);
+    read_buf_size = MZ_MIN(file_stat.m_comp_size, (mz_uint)MZ_ZIP_MAX_IO_BUF_SIZE);
     if (NULL == (pRead_buf = pZip->m_pAlloc(pZip->m_pAlloc_opaque, 1,
                                             (size_t)read_buf_size)))
       return MZ_FALSE;
@@ -6280,7 +6283,7 @@ mz_bool mz_zip_writer_add_file(mz_zip_archive *pZip, const char *pArchive_name,
 
     if (!level) {
       while (uncomp_remaining) {
-        mz_uint n = (mz_uint)MZ_MIN(MZ_ZIP_MAX_IO_BUF_SIZE, uncomp_remaining);
+        mz_uint n = (mz_uint)MZ_MIN((mz_uint)MZ_ZIP_MAX_IO_BUF_SIZE, uncomp_remaining);
         if ((MZ_FREAD(pRead_buf, 1, n, pSrc_file) != n) ||
             (pZip->m_pWrite(pZip->m_pIO_opaque, cur_archive_file_ofs, pRead_buf,
                             n) != n)) {
@@ -6321,7 +6324,7 @@ mz_bool mz_zip_writer_add_file(mz_zip_archive *pZip, const char *pArchive_name,
 
       for (;;) {
         size_t in_buf_size =
-            (mz_uint32)MZ_MIN(uncomp_remaining, MZ_ZIP_MAX_IO_BUF_SIZE);
+            (mz_uint32)MZ_MIN(uncomp_remaining, (mz_uint)MZ_ZIP_MAX_IO_BUF_SIZE);
         tdefl_status status;
 
         if (MZ_FREAD(pRead_buf, 1, in_buf_size, pSrc_file) != in_buf_size)
@@ -6456,12 +6459,12 @@ mz_bool mz_zip_writer_add_from_zip_reader(mz_zip_archive *pZip,
   if (NULL ==
       (pBuf = pZip->m_pAlloc(pZip->m_pAlloc_opaque, 1,
                              (size_t)MZ_MAX(sizeof(mz_uint32) * 4,
-                                            MZ_MIN(MZ_ZIP_MAX_IO_BUF_SIZE,
+                                            MZ_MIN((mz_uint)MZ_ZIP_MAX_IO_BUF_SIZE,
                                                    comp_bytes_remaining)))))
     return MZ_FALSE;
 
   while (comp_bytes_remaining) {
-    n = (mz_uint)MZ_MIN(MZ_ZIP_MAX_IO_BUF_SIZE, comp_bytes_remaining);
+    n = (mz_uint)MZ_MIN((mz_uint)MZ_ZIP_MAX_IO_BUF_SIZE, comp_bytes_remaining);
     if (pSource_zip->m_pRead(pSource_zip->m_pIO_opaque, cur_src_file_ofs, pBuf,
                              n) != n) {
       pZip->m_pFree(pZip->m_pAlloc_opaque, pBuf);
@@ -8548,7 +8551,7 @@ bool CompressPiz(unsigned char *outPtr, unsigned int &outSize) {
 }
 #endif
 
-bool DecompressPiz(unsigned char *outPtr, unsigned int &outSize,
+bool DecompressPiz(unsigned char *outPtr, unsigned int &,
                    const unsigned char *inPtr, size_t tmpBufSize,
                    const std::vector<ChannelInfo> &channelInfo, int dataWidth,
                    int numLines) {
@@ -11118,6 +11121,10 @@ int ParseMultiChannelEXRHeaderFromMemory(EXRImage *exrImage,
 
   return 0; // OK
 }
+
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
 #endif
 
