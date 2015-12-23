@@ -148,7 +148,7 @@ main(int argc, char** argv)
   memcpy(exrImage.custom_attributes[0].value, &version_minor, sizeof(int));
 #endif
 
-  exrImage.compression = TINYEXR_COMPRESSIONTYPE_ZIP;
+  exrImage.compression = TINYEXR_COMPRESSIONTYPE_NONE;
   ret = SaveMultiChannelEXRToFile(&exrImage, outfilename, &err);
   if (ret != 0) {
     fprintf(stderr, "Save EXR err: %s\n", err);

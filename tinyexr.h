@@ -7207,7 +7207,6 @@ struct PIZChannelData {
 // data (untransformed data values must be less than (1 << 14)).
 //
 
-#if 0 // @todo
 inline void wenc14(unsigned short a, unsigned short b, unsigned short &l,
                    unsigned short &h) {
   short as = a;
@@ -7219,7 +7218,6 @@ inline void wenc14(unsigned short a, unsigned short b, unsigned short &l,
   l = ms;
   h = ds;
 }
-#endif
 
 inline void wdec14(unsigned short l, unsigned short h, unsigned short &a,
                    unsigned short &b) {
@@ -7244,10 +7242,9 @@ inline void wdec14(unsigned short l, unsigned short h, unsigned short &a,
 
 const int NBITS = 16;
 const int A_OFFSET = 1 << (NBITS - 1);
-// const int M_OFFSET = 1 << (NBITS - 1);
+const int M_OFFSET = 1 << (NBITS - 1);
 const int MOD_MASK = (1 << NBITS) - 1;
 
-#if 0 // @ood
 inline void wenc16(unsigned short a, unsigned short b, unsigned short &l,
                    unsigned short &h) {
   int ao = (a + A_OFFSET) & MOD_MASK;
@@ -7262,7 +7259,6 @@ inline void wenc16(unsigned short a, unsigned short b, unsigned short &l,
   l = m;
   h = d;
 }
-#endif
 
 inline void wdec16(unsigned short l, unsigned short h, unsigned short &a,
                    unsigned short &b) {
@@ -7278,7 +7274,6 @@ inline void wdec16(unsigned short l, unsigned short h, unsigned short &a,
 // 2D Wavelet encoding:
 //
 
-#if 0 // @todo
 void wav2Encode(unsigned short *in, // io: values are transformed in place
                 int nx,             // i : x size
                 int ox,             // i : x offset
@@ -7382,7 +7377,6 @@ void wav2Encode(unsigned short *in, // io: values are transformed in place
     p2 <<= 1;
   }
 }
-#endif
 
 //
 // 2D Wavelet decoding:
@@ -7533,7 +7527,6 @@ inline long long hufLength(long long code) { return code & 63; }
 
 inline long long hufCode(long long code) { return code >> 6; }
 
-#if 0  
 inline void outputBits(int nBits, long long bits, long long &c, int &lc,
                        char *&out) {
   c <<= nBits;
@@ -7544,7 +7537,6 @@ inline void outputBits(int nBits, long long bits, long long &c, int &lc,
   while (lc >= 8)
     *out++ = (c >> (lc -= 8));
 }
-#endif
 
 inline long long getBits(int nBits, long long &c, int &lc, const char *&in) {
   while (lc < nBits) {
@@ -7628,7 +7620,6 @@ void hufCanonicalCodeTable(long long hcode[HUF_ENCSIZE]) {
 //	- original frequencies are destroyed;
 //	- encoding tables are used by hufEncode() and hufBuildDecTable();
 //
-#if 0 // @todo
 
 struct FHeapCompare {
   bool operator()(long long *a, long long *b) { return *a > *b; }
@@ -7798,7 +7789,6 @@ void hufBuildEncTable(
   hufCanonicalCodeTable(scode);
   memcpy(frq, scode, sizeof(long long) * HUF_ENCSIZE);
 }
-#endif
 
 //
 // Pack an encoding table:
@@ -7818,9 +7808,8 @@ void hufBuildEncTable(
 const int SHORT_ZEROCODE_RUN = 59;
 const int LONG_ZEROCODE_RUN = 63;
 const int SHORTEST_LONG_RUN = 2 + LONG_ZEROCODE_RUN - SHORT_ZEROCODE_RUN;
-// const int LONGEST_LONG_RUN = 255 + SHORTEST_LONG_RUN;
+const int LONGEST_LONG_RUN = 255 + SHORTEST_LONG_RUN;
 
-#if 0
 void hufPackEncTable(const long long *hcode, // i : encoding table [HUF_ENCSIZE]
                      int im,                 // i : min hcode index
                      int iM,                 // i : max hcode index
@@ -7862,7 +7851,6 @@ void hufPackEncTable(const long long *hcode, // i : encoding table [HUF_ENCSIZE]
 
   *pcode = p;
 }
-#endif
 
 //
 // Unpack an encoding table packed by hufPackEncTable():
@@ -8053,7 +8041,6 @@ void hufFreeDecTable(HufDec *hdecod) // io: Decoding table
 // ENCODING
 //
 
-#if 0 // @todo
 inline void outputCode(long long code, long long &c, int &lc, char *&out) {
   outputBits(hufLength(code), hufCode(code), c, lc, out);
 }
@@ -8124,7 +8111,6 @@ int hufEncode                  // return: output size (in bits)
 
   return (out - outStart) * 8 + lc;
 }
-#endif
 
 //
 // DECODING
@@ -8273,7 +8259,6 @@ bool hufDecode(const long long *hcode, // i : encoding table
   return true;
 }
 
-#if 0 // @todo
 void countFrequencies(long long freq[HUF_ENCSIZE],
                       const unsigned short data[/*n*/], int n) {
   for (int i = 0; i < HUF_ENCSIZE; ++i)
@@ -8291,7 +8276,6 @@ void writeUInt(char buf[4], unsigned int i) {
   b[2] = i >> 16;
   b[3] = i >> 24;
 }
-#endif
 
 unsigned int readUInt(const char buf[4]) {
   const unsigned char *b = (const unsigned char *)buf;
@@ -8304,7 +8288,6 @@ unsigned int readUInt(const char buf[4]) {
 // EXTERNAL INTERFACE
 //
 
-#if 0 // @todo
 int hufCompress(const unsigned short raw[], int nRaw, char compressed[]) {
   if (nRaw == 0)
     return 0;
@@ -8334,7 +8317,6 @@ int hufCompress(const unsigned short raw[], int nRaw, char compressed[]) {
 
   return dataStart + dataLength - compressed;
 }
-#endif
 
 bool hufUncompress(const char compressed[], int nCompressed,
                    unsigned short raw[], int nRaw) {
@@ -8403,7 +8385,6 @@ bool hufUncompress(const char compressed[], int nCompressed,
 const int USHORT_RANGE = (1 << 16);
 const int BITMAP_SIZE = (USHORT_RANGE >> 3);
 
-#if 0 // @todo
 
 void bitmapFromData(const unsigned short data[/*nData*/], int nData,
                     unsigned char bitmap[BITMAP_SIZE],
@@ -8443,7 +8424,6 @@ unsigned short forwardLutFromBitmap(const unsigned char bitmap[BITMAP_SIZE],
 
   return k - 1; // maximum value stored in lut[],
 } // i.e. number of ones in bitmap minus 1
-#endif
 
 unsigned short reverseLutFromBitmap(const unsigned char bitmap[BITMAP_SIZE],
                                     unsigned short lut[USHORT_RANGE]) {
@@ -8468,8 +8448,10 @@ void applyLut(const unsigned short lut[USHORT_RANGE],
     data[i] = lut[data[i]];
 }
 
-#if 0 // @todo
-bool CompressPiz(unsigned char *outPtr, unsigned int &outSize) {
+bool CompressPiz(unsigned char *outPtr, unsigned int &outSize,
+                 const unsigned short *inPtr, size_t inSize,
+                 const std::vector<ChannelInfo> &channelInfo, int dataWidth,
+                 int numLines) {
   unsigned char bitmap[BITMAP_SIZE];
   unsigned short minNonZero;
   unsigned short maxNonZero;
@@ -8480,14 +8462,14 @@ bool CompressPiz(unsigned char *outPtr, unsigned int &outSize) {
     return false;
   }
 
-  std::vector<unsigned short> tmpBuffer;
-  int nData = tmpBuffer.size();
+  std::vector<unsigned short> tmpBuffer(inSize);
+  memcpy(&tmpBuffer.at(0), inPtr, inSize*sizeof(short));
 
-  bitmapFromData(&tmpBuffer.at(0), nData, bitmap, minNonZero, maxNonZero);
+  bitmapFromData(&tmpBuffer.at(0), inSize, bitmap, minNonZero, maxNonZero);
 
   unsigned short lut[USHORT_RANGE];
-  //unsigned short maxValue = forwardLutFromBitmap(bitmap, lut);
-  applyLut(lut, &tmpBuffer.at(0), nData);
+  unsigned short maxValue = forwardLutFromBitmap(bitmap, lut);
+  applyLut(lut, &tmpBuffer.at(0), inSize);
 
   //
   // Store range compression info in _outBuffer
@@ -8505,14 +8487,23 @@ bool CompressPiz(unsigned char *outPtr, unsigned int &outSize) {
     buf += maxNonZero - minNonZero + 1;
   }
 
-#if 0 // @todo
     //
     // Apply wavelet encoding
     //
 
-    for (int i = 0; i < channels; ++i)
+    for (int i = 0; i < channelInfo.size(); ++i)
     {
-      ChannelData &cd = _channelData[i];
+      int pixelSize = sizeof(int); // UINT and FLOAT
+      if (channelInfo[i].pixelType == TINYEXR_PIXELTYPE_HALF) {
+        pixelSize = sizeof(short);
+      }
+
+      PIZChannelData cd;
+      cd.size = pixelSize / sizeof(short);
+      cd.start = &tmpBuffer[i * dataWidth * numLines * cd.size];
+      //cd.end = channelData[i].start;
+      cd.nx = dataWidth;
+      cd.ny = numLines;
 
       for (int j = 0; j < cd.size; ++j)
       {
@@ -8531,18 +8522,14 @@ bool CompressPiz(unsigned char *outPtr, unsigned int &outSize) {
     int zero = 0;
     memcpy(buf, &zero, sizeof(int)); buf += sizeof(int);
 
-    int length = hufCompress (_tmpBuffer, tmpBufferEnd - _tmpBuffer, buf);
-    memcpy(lengthPtr, tmpBuffer, length);
+    int length = hufCompress (&tmpBuffer.at(0), tmpBuffer.size(), buf);
+    memcpy(lengthPtr, &tmpBuffer.at(0), length);
     //Xdr::write <CharPtrIO> (lengthPtr, length);
 
-    outPtr = _outBuffer;
-    return buf - _outBuffer + length;
-#endif
-  assert(0);
-
+    //outPtr = _outBuffer;
+    //return buf - _outBuffer + length;
   return true;
 }
-#endif
 
 bool DecompressPiz(unsigned char *outPtr, unsigned int &outSize,
                    const unsigned char *inPtr, size_t tmpBufSize,
