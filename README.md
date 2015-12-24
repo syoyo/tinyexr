@@ -37,7 +37,6 @@ To use `tinyexr`, simply copy `tinyexr.h` into your project.
 # Use case 
 
 * mallie https://github.com/lighttransport/mallie
-* PBRT v3 https://github.com/mmp/pbrt-v3
 * Cinder 0.9.0 https://libcinder.org/notes/v0.9.0
 * Piccante(develop branch) http://piccantelib.net/
 * Your project here!
