@@ -8497,7 +8497,7 @@ bool CompressPiz(unsigned char *outPtr, unsigned int &outSize,
 
   const unsigned char *ptr = inPtr;
   for (int y = 0; y < numLines; ++y) {
-    for (int i = 0; i < channelData.size(); ++i) {
+    for (size_t i = 0; i < channelData.size(); ++i) {
       PIZChannelData &cd = channelData[i];
 
       // if (modp (y, cd.ys) != 0)
@@ -8537,7 +8537,7 @@ bool CompressPiz(unsigned char *outPtr, unsigned int &outSize,
   // Apply wavelet encoding
   //
 
-  for (int i = 0; i < channelData.size(); ++i) {
+  for (size_t i = 0; i < channelData.size(); ++i) {
     PIZChannelData &cd = channelData[i];
 
     for (int j = 0; j < cd.size; ++j) {
