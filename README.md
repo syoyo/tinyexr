@@ -210,7 +210,7 @@ Contribution is welcome!
   - [ ] RLE("compress" = 1, save)
   - [x] ZIPS("compress" = 2, save)
   - [x] ZIP("compress" = 3, save)
-  - [ ] PIZ("compress" = 4, save)
+  - [x] PIZ("compress" = 4, save)
 - [ ] Custom attributes
   - [x] Normal image(EXR 1.x)
   - [ ] Deep image(EXR 2.x)

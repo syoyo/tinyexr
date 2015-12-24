@@ -8385,7 +8385,6 @@ bool hufUncompress(const char compressed[], int nCompressed,
 const int USHORT_RANGE = (1 << 16);
 const int BITMAP_SIZE = (USHORT_RANGE >> 3);
 
-
 void bitmapFromData(const unsigned short data[/*nData*/], int nData,
                     unsigned char bitmap[BITMAP_SIZE],
                     unsigned short &minNonZero, unsigned short &maxNonZero) {
@@ -8449,7 +8448,7 @@ void applyLut(const unsigned short lut[USHORT_RANGE],
 }
 
 bool CompressPiz(unsigned char *outPtr, unsigned int &outSize,
-                 const unsigned short *inPtr, size_t inSize,
+                 const unsigned char *inPtr, size_t inSize,
                  const std::vector<ChannelInfo> &channelInfo, int dataWidth,
                  int numLines) {
   unsigned char bitmap[BITMAP_SIZE];
@@ -8462,14 +8461,54 @@ bool CompressPiz(unsigned char *outPtr, unsigned int &outSize,
     return false;
   }
 
-  std::vector<unsigned short> tmpBuffer(inSize);
-  memcpy(&tmpBuffer.at(0), inPtr, inSize*sizeof(short));
+  // Assume `inSize` is multiple of 2 or 4.
+  std::vector<unsigned short> tmpBuffer(inSize / sizeof(unsigned short));
 
-  bitmapFromData(&tmpBuffer.at(0), inSize, bitmap, minNonZero, maxNonZero);
+  std::vector<PIZChannelData> channelData(channelInfo.size());
+  unsigned short *tmpBufferEnd = &tmpBuffer.at(0);
+
+  int i = 0;
+  for (size_t c = 0; c < channelData.size(); c++, i++) {
+    PIZChannelData &cd = channelData[i];
+
+    cd.start = tmpBufferEnd;
+    cd.end = cd.start;
+
+    cd.nx = dataWidth;
+    cd.ny = numLines;
+    // cd.ys = c.channel().ySampling;
+
+    int pixelSize = sizeof(int); // UINT and FLOAT
+    if (channelInfo[i].pixelType == TINYEXR_PIXELTYPE_HALF) {
+      pixelSize = sizeof(short);
+    }
+
+    cd.size = pixelSize / sizeof(short);
+
+    tmpBufferEnd += cd.nx * cd.ny * cd.size;
+  }
+
+  const unsigned char *ptr = inPtr;
+  for (int y = 0; y < numLines; ++y) {
+    for (int i = 0; i < channelData.size(); ++i) {
+      PIZChannelData &cd = channelData[i];
+
+      // if (modp (y, cd.ys) != 0)
+      //    continue;
+
+      int n = cd.nx * cd.size;
+      memcpy(cd.end, ptr, n * sizeof(unsigned short));
+      ptr += n * sizeof(unsigned short);
+      cd.end += n;
+    }
+  }
+
+  bitmapFromData(&tmpBuffer.at(0), tmpBuffer.size(), bitmap, minNonZero,
+                 maxNonZero);
 
   unsigned short lut[USHORT_RANGE];
   unsigned short maxValue = forwardLutFromBitmap(bitmap, lut);
-  applyLut(lut, &tmpBuffer.at(0), inSize);
+  applyLut(lut, &tmpBuffer.at(0), tmpBuffer.size());
 
   //
   // Store range compression info in _outBuffer
@@ -8487,47 +8526,34 @@ bool CompressPiz(unsigned char *outPtr, unsigned int &outSize,
     buf += maxNonZero - minNonZero + 1;
   }
 
-    //
-    // Apply wavelet encoding
-    //
+  //
+  // Apply wavelet encoding
+  //
 
-    for (int i = 0; i < channelInfo.size(); ++i)
-    {
-      int pixelSize = sizeof(int); // UINT and FLOAT
-      if (channelInfo[i].pixelType == TINYEXR_PIXELTYPE_HALF) {
-        pixelSize = sizeof(short);
-      }
+  for (int i = 0; i < channelData.size(); ++i) {
+    PIZChannelData &cd = channelData[i];
 
-      PIZChannelData cd;
-      cd.size = pixelSize / sizeof(short);
-      cd.start = &tmpBuffer[i * dataWidth * numLines * cd.size];
-      //cd.end = channelData[i].start;
-      cd.nx = dataWidth;
-      cd.ny = numLines;
-
-      for (int j = 0; j < cd.size; ++j)
-      {
-          wav2Encode (cd.start + j,
-              cd.nx, cd.size,
-              cd.ny, cd.nx * cd.size,
-              maxValue);
-      }
+    for (int j = 0; j < cd.size; ++j) {
+      wav2Encode(cd.start + j, cd.nx, cd.size, cd.ny, cd.nx * cd.size,
+                 maxValue);
     }
+  }
 
-    //
-    // Apply Huffman encoding; append the result to _outBuffer
-    //
+  //
+  // Apply Huffman encoding; append the result to _outBuffer
+  //
 
-    char *lengthPtr = buf;
-    int zero = 0;
-    memcpy(buf, &zero, sizeof(int)); buf += sizeof(int);
+  // length header(4byte), then huff data. Initialize length header with zero,
+  // then later fill it by `length`.
+  char *lengthPtr = buf;
+  int zero = 0;
+  memcpy(buf, &zero, sizeof(int));
+  buf += sizeof(int);
 
-    int length = hufCompress (&tmpBuffer.at(0), tmpBuffer.size(), buf);
-    memcpy(lengthPtr, &tmpBuffer.at(0), length);
-    //Xdr::write <CharPtrIO> (lengthPtr, length);
+  int length = hufCompress(&tmpBuffer.at(0), tmpBuffer.size(), buf);
+  memcpy(lengthPtr, &length, sizeof(int));
 
-    //outPtr = _outBuffer;
-    //return buf - _outBuffer + length;
+  outSize = (reinterpret_cast<unsigned char *>(buf) - outPtr) + length;
   return true;
 }
 
@@ -8618,8 +8644,6 @@ bool DecompressPiz(unsigned char *outPtr, unsigned int &outSize,
   //
 
   applyLut(lut, &tmpBuffer.at(0), tmpBufSize);
-
-  // @todo { Xdr }
 
   for (int y = 0; y < numLines; y++) {
     for (size_t i = 0; i < channelData.size(); ++i) {
@@ -9820,18 +9844,18 @@ size_t SaveMultiChannelEXRToMemory(const EXRImage *exrImage,
     memory.insert(memory.end(), marker, marker + 4);
   }
 
-  int numScanlineBlocks = 1;
+  int numScanlines = 1;
   if (exrImage->compression == TINYEXR_COMPRESSIONTYPE_ZIP) {
-    numScanlineBlocks = 16;
+    numScanlines = 16;
   } else if (exrImage->compression == TINYEXR_COMPRESSIONTYPE_PIZ) {
-    numScanlineBlocks = 32;
+    numScanlines = 32;
   }
 
   // Write attributes.
+  std::vector<ChannelInfo> channels;
   {
     std::vector<unsigned char> data;
 
-    std::vector<ChannelInfo> channels;
     for (int c = 0; c < exrImage->num_channels; c++) {
       ChannelInfo info;
       info.pLinear = 0;
@@ -9926,8 +9950,8 @@ size_t SaveMultiChannelEXRToMemory(const EXRImage *exrImage,
     memory.push_back(e);
   }
 
-  int numBlocks = exrImage->height / numScanlineBlocks;
-  if (numBlocks * numScanlineBlocks < exrImage->height) {
+  int numBlocks = exrImage->height / numScanlines;
+  if (numBlocks * numScanlines < exrImage->height) {
     numBlocks++;
   }
 
@@ -9967,8 +9991,8 @@ size_t SaveMultiChannelEXRToMemory(const EXRImage *exrImage,
 #pragma omp parallel for
 #endif
   for (int i = 0; i < numBlocks; i++) {
-    int startY = numScanlineBlocks * i;
-    int endY = (std::min)(numScanlineBlocks * (i + 1), exrImage->height);
+    int startY = numScanlines * i;
+    int endY = (std::min)(numScanlines * (i + 1), exrImage->height);
     int h = endY - startY;
 
     std::vector<unsigned char> buf(exrImage->width * h * pixelDataSize);
@@ -10129,8 +10153,33 @@ size_t SaveMultiChannelEXRToMemory(const EXRImage *exrImage,
                          block.begin() + dataLen);
 
     } else if (exrImage->compression == TINYEXR_COMPRESSIONTYPE_PIZ) {
-      // @todo
-      assert(0);
+      unsigned int bufLen =
+          1024 +
+          1.2 * (unsigned int)buf.size(); // @fixme { compute good bound. }
+      std::vector<unsigned char> block(bufLen);
+      unsigned int outSize = static_cast<unsigned int>(block.size());
+
+      CompressPiz(&block.at(0), outSize,
+                  reinterpret_cast<const unsigned char *>(&buf.at(0)),
+                  buf.size(), channels, exrImage->width, h);
+
+      // 4 byte: scan line
+      // 4 byte: data size
+      // ~     : pixel data(compressed)
+      std::vector<unsigned char> header(8);
+      unsigned int dataLen = outSize;
+      memcpy(&header.at(0), &startY, sizeof(int));
+      memcpy(&header.at(4), &dataLen, sizeof(unsigned int));
+
+      if (IsBigEndian()) {
+        swap4(reinterpret_cast<unsigned int *>(&header.at(0)));
+        swap4(reinterpret_cast<unsigned int *>(&header.at(4)));
+      }
+
+      dataList[i].insert(dataList[i].end(), header.begin(), header.end());
+      dataList[i].insert(dataList[i].end(), block.begin(),
+                         block.begin() + dataLen);
+
     } else {
       assert(0);
     }
