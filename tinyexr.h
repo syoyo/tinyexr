@@ -8758,7 +8758,7 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
         reinterpret_cast<float **>(exrImage.images)[idxG][i];
     (*out_rgba)[4 * i + 2] =
         reinterpret_cast<float **>(exrImage.images)[idxB][i];
-    if (idxA > 0) {
+    if (idxA != -1) {
       (*out_rgba)[4 * i + 3] =
           reinterpret_cast<float **>(exrImage.images)[idxA][i];
     } else {
