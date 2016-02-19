@@ -168,7 +168,7 @@ extern int SaveMultiChannelEXRToFile(const EXRImage *image,
 // Saves multi-channel, single-frame OpenEXR image to a memory.
 // Image is compressed using EXRImage.compression value.
 // Return the number of bytes if succes.
-// Retruns 0 if success, negative number when failed.
+// Returns 0 if success, negative number when failed.
 // Returns error string in `err` when there's an error
 extern size_t SaveMultiChannelEXRToMemory(const EXRImage *image,
                                           unsigned char **memory,
