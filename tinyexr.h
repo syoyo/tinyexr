@@ -7758,7 +7758,7 @@ void hufBuildEncTable(
     // Add a bit to all codes in the first list.
     //
 
-    for (int j = m; true; j = hlink[j]) {
+    for (int j = m; ; j = hlink[j]) {
       scode[j]++;
 
       assert(scode[j] <= 58);
@@ -7777,7 +7777,7 @@ void hufBuildEncTable(
     // Add a bit to all codes in the second list
     //
 
-    for (int j = mm; true; j = hlink[j]) {
+    for (int j = mm; ; j = hlink[j]) {
       scode[j]++;
 
       assert(scode[j] <= 58);
