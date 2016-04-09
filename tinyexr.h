@@ -2292,7 +2292,7 @@ tinfl_status tinfl_decompress(tinfl_decompressor *r,
     if (!(decomp_flags & TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF))
       counter |= (((1U << (8U + (r->m_zhdr0 >> 4))) > 32768U) ||
                   ((out_buf_size_mask + 1) <
-                   (size_t)(1U << (8U + (r->m_zhdr0 >> 4)))));
+                   (size_t)(1ULL << (8U + (r->m_zhdr0 >> 4)))));
     if (counter) {
       TINFL_CR_RETURN_FOREVER(36, TINFL_STATUS_FAILED);
     }
@@ -8010,7 +8010,7 @@ bool hufBuildDecTable(const long long *hcode, // i : encoding table
 
       HufDec *pl = hdecod + (c << (HUF_DECBITS - l));
 
-      for (long long i = 1 << (HUF_DECBITS - l); i > 0; i--, pl++) {
+      for (long long i = 1ULL << (HUF_DECBITS - l); i > 0; i--, pl++) {
         if (pl->len || pl->p) {
           //
           // Error: a short code or a long code has
