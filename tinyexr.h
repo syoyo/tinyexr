@@ -53,7 +53,7 @@ extern "C" {
 // Some compiler flags
 #ifndef TINYEXR_USE_MINIZ
 #define TINYEXR_USE_MINIZ \
-  (0)  // Use external zlib if this flag is not set. Linking with zlib required.
+  (1)  // Use external zlib if this flag is not set. Linking with zlib required.
 #endif
 
 #ifndef TINYEXR_USE_PIZ
