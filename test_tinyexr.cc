@@ -5,7 +5,7 @@
 #define TINYEXR_IMPLEMENTATION
 #include "tinyexr.h"
 
-const char* GetPixelType(int id)
+static const char* GetPixelType(int id)
 {
   if (id == TINYEXR_PIXELTYPE_HALF) {
     return "HALF";
@@ -18,7 +18,8 @@ const char* GetPixelType(int id)
   return "???";
 }
 
-void
+#if 0
+static void
 SaveAsPFM(const char* filename, int width, int height, float* data)
 {
   FILE* fp = fopen(filename, "wb");
@@ -44,6 +45,7 @@ SaveAsPFM(const char* filename, int width, int height, float* data)
 
   fclose(fp);
 }
+#endif
 
 int
 main(int argc, char** argv)
@@ -92,12 +94,12 @@ main(int argc, char** argv)
     exrImage.display_window[2],
     exrImage.display_window[3]);
   printf("screenWindowCenter = %f, %f\n",
-    exrImage.screen_window_center[0],
-    exrImage.screen_window_center[1]);
+    static_cast<double>(exrImage.screen_window_center[0]),
+    static_cast<double>(exrImage.screen_window_center[1]));
   printf("screenWindowWidth = %f\n",
-    exrImage.screen_window_width);
+    static_cast<double>(exrImage.screen_window_width));
   printf("pixelAspectRatio = %f\n",
-    exrImage.pixel_aspect_ratio);
+    static_cast<double>(exrImage.pixel_aspect_ratio));
   printf("lineOrder = %d\n",
     exrImage.line_order);
 
