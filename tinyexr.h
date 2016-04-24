@@ -8698,10 +8698,7 @@ int ParseEXRHeaderFromMemory(EXRAttribute *customAttributes,
         swap4(reinterpret_cast<unsigned int *>(&displayWindow[3]));
       }
     } else if (attrName.compare("lineOrder") == 0) {
-      memcpy(&lineOrder, &data.at(0), sizeof(float));
-      if (IsBigEndian()) {
-        swap4(reinterpret_cast<unsigned int *>(&lineOrder));
-      }
+      lineOrder = static_cast<int>(data[0]);
     } else if (attrName.compare("pixelAspectRatio") == 0) {
       memcpy(&pixelAspectRatio, &data.at(0), sizeof(float));
       if (IsBigEndian()) {
@@ -9001,7 +8998,7 @@ int LoadMultiChannelEXRFromMemory(EXRImage *exrImage,
         swap4(reinterpret_cast<unsigned int *>(&h));
       }
     } else if (attrName.compare("lineOrder") == 0) {
-      memcpy(&lineOrder, &data.at(0), sizeof(lineOrder));
+      lineOrder = static_cast<int>(data[0]);
     }
 
     marker = marker_next;
@@ -10828,12 +10825,7 @@ int ParseMultiChannelEXRHeaderFromMemory(EXRImage *exrImage,
         swap4(reinterpret_cast<unsigned int *>(&displayWindow[3]));
       }
     } else if (attrName.compare("lineOrder") == 0) {
-      int order;
-      memcpy(&order, &data.at(0), sizeof(int));
-      if (IsBigEndian()) {
-        swap4(reinterpret_cast<unsigned int *>(&order));
-      }
-      lineOrder = (unsigned char)order;
+      lineOrder = static_cast<int>(data[0]);
     } else if (attrName.compare("pixelAspectRatio") == 0) {
       memcpy(&pixelAspectRatio, &data.at(0), sizeof(float));
       if (IsBigEndian()) {
