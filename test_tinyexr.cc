@@ -52,8 +52,6 @@ main(int argc, char** argv)
 {
   const char* outfilename = "output_test.exr";
   const char* err;
-  EXRImage exrImage;
-  InitEXRImage(&exrImage);
 
   if (argc < 2) {
     fprintf(stderr, "Needs input.exr.\n");
@@ -64,102 +62,94 @@ main(int argc, char** argv)
     outfilename = argv[2];
   }
     
+  EXRHeader exr_header;
 
-  //float *rgba = NULL;
-  //int width, height;
-  //int ret = LoadEXR(&rgba, &width, &height, argv[1], &err);
-  //if (ret != 0) {
-  //  fprintf(stderr, "Load EXR err: %s\n", err);
-  //  return ret;
-  //}
-
-  //SaveAsPFM("out.pfm", width, height, rgba);
-
-#if 1
-
-  int ret = ParseMultiChannelEXRHeaderFromFile(&exrImage, argv[1], &err);
+  int ret = ParseMultiChannelEXRHeaderFromFile(&exr_header, argv[1], &err);
   if (ret != 0) {
     fprintf(stderr, "Parse EXR err: %s\n", err);
     return ret;
   }
 
   printf("dataWindow = %d, %d, %d, %d\n",
-    exrImage.data_window[0],
-    exrImage.data_window[1],
-    exrImage.data_window[2],
-    exrImage.data_window[3]);
+    exr_header.data_window[0],
+    exr_header.data_window[1],
+    exr_header.data_window[2],
+    exr_header.data_window[3]);
   printf("displayWindow = %d, %d, %d, %d\n",
-    exrImage.display_window[0],
-    exrImage.display_window[1],
-    exrImage.display_window[2],
-    exrImage.display_window[3]);
+    exr_header.display_window[0],
+    exr_header.display_window[1],
+    exr_header.display_window[2],
+    exr_header.display_window[3]);
   printf("screenWindowCenter = %f, %f\n",
-    static_cast<double>(exrImage.screen_window_center[0]),
-    static_cast<double>(exrImage.screen_window_center[1]));
+    static_cast<double>(exr_header.screen_window_center[0]),
+    static_cast<double>(exr_header.screen_window_center[1]));
   printf("screenWindowWidth = %f\n",
-    static_cast<double>(exrImage.screen_window_width));
+    static_cast<double>(exr_header.screen_window_width));
   printf("pixelAspectRatio = %f\n",
-    static_cast<double>(exrImage.pixel_aspect_ratio));
+    static_cast<double>(exr_header.pixel_aspect_ratio));
   printf("lineOrder = %d\n",
-    exrImage.line_order);
+    exr_header.line_order);
 
-  if (exrImage.num_custom_attributes > 0) {
-    printf("# of custom attributes = %d\n", exrImage.num_custom_attributes);
-    for (int i = 0; i < exrImage.num_custom_attributes; i++) {
+  if (exr_header.num_custom_attributes > 0) {
+    printf("# of custom attributes = %d\n", exr_header.num_custom_attributes);
+    for (int i = 0; i < exr_header.num_custom_attributes; i++) {
       printf("  [%d] name = %s, type = %s\n", i,
-        exrImage.custom_attributes[i].name,
-        exrImage.custom_attributes[i].type);
+        exr_header.custom_attributes[i].name,
+        exr_header.custom_attributes[i].type);
     }
   }
 
   // Read HALF channel as FLOAT.
-  for (int i = 0; i < exrImage.num_channels; i++) {
-    if (exrImage.pixel_types[i] == TINYEXR_PIXELTYPE_HALF) {
-      exrImage.requested_pixel_types[i] = TINYEXR_PIXELTYPE_FLOAT;
+  for (int i = 0; i < exr_header.num_channels; i++) {
+    if (exr_header.pixel_types[i] == TINYEXR_PIXELTYPE_HALF) {
+      exr_header.requested_pixel_types[i] = TINYEXR_PIXELTYPE_FLOAT;
     }
   }
 
-  ret = LoadMultiChannelEXRFromFile(&exrImage, argv[1], &err);
+  EXRImage exr_image;
+  InitEXRImage(&exr_image);
+
+  ret = LoadMultiChannelEXRFromFile(&exr_image, &exr_header, argv[1], &err);
   if (ret != 0) {
     fprintf(stderr, "Load EXR err: %s\n", err);
     return ret;
   }
 
-  printf("EXR: %d x %d\n", exrImage.width, exrImage.height);
+  printf("EXR: %d x %d\n", exr_image.width, exr_image.height);
 
-  for (int i = 0; i < exrImage.num_channels; i++) {
-    printf("pixelType[%d]: %s\n", i, GetPixelType(exrImage.pixel_types[i]));
-    printf("chan[%d] = %s\n", i, exrImage.channel_names[i]);
-    printf("requestedPixelType[%d]: %s\n", i, GetPixelType(exrImage.requested_pixel_types[i]));
+  for (int i = 0; i < exr_header.num_channels; i++) {
+    printf("pixelType[%d]: %s\n", i, GetPixelType(exr_header.pixel_types[i]));
+    printf("chan[%d] = %s\n", i, exr_header.channels[i].name);
+    printf("requestedPixelType[%d]: %s\n", i, GetPixelType(exr_header.requested_pixel_types[i]));
   }
 
   // Uncomment if you want to save image as FLOAT pixel type.
-  for (int i = 0; i < exrImage.num_channels; i++) {
-    if (exrImage.pixel_types[i] == TINYEXR_PIXELTYPE_FLOAT) {
-      exrImage.requested_pixel_types[i] = TINYEXR_PIXELTYPE_HALF;
+  for (int i = 0; i < exr_header.num_channels; i++) {
+    if (exr_header.pixel_types[i] == TINYEXR_PIXELTYPE_FLOAT) {
+      exr_header.requested_pixel_types[i] = TINYEXR_PIXELTYPE_HALF;
     }
   }
 
 #if 0 // example to write custom attribute
   int version_minor = 3;
-  exrImage.num_custom_attributes = 1;
-  exrImage.custom_attributes[0].name = strdup("tinyexr_version_minor");
-  exrImage.custom_attributes[0].type = strdup("int");
-  exrImage.custom_attributes[0].size = sizeof(int);
-  exrImage.custom_attributes[0].value = (unsigned char*)malloc(sizeof(int));
-  memcpy(exrImage.custom_attributes[0].value, &version_minor, sizeof(int));
+  exr_header.num_custom_attributes = 1;
+  exr_header.custom_attributes[0].name = strdup("tinyexr_version_minor");
+  exr_header.custom_attributes[0].type = strdup("int");
+  exr_header.custom_attributes[0].size = sizeof(int);
+  exr_header.custom_attributes[0].value = (unsigned char*)malloc(sizeof(int));
+  memcpy(exr_header.custom_attributes[0].value, &version_minor, sizeof(int));
 #endif
 
-  exrImage.compression = TINYEXR_COMPRESSIONTYPE_NONE;
-  ret = SaveMultiChannelEXRToFile(&exrImage, outfilename, &err);
+  exr_header.compression = TINYEXR_COMPRESSIONTYPE_NONE;
+  ret = SaveMultiChannelEXRToFile(&exr_image, &exr_header, outfilename, &err);
   if (ret != 0) {
     fprintf(stderr, "Save EXR err: %s\n", err);
     return ret;
   }
   printf("Saved exr file. [ %s ] \n", outfilename);
 
-  FreeEXRImage(&exrImage);
-#endif
+  FreeEXRHeader(&exr_header);
+  FreeEXRImage(&exr_image);
 
   return ret;
 }
