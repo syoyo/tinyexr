@@ -8699,6 +8699,7 @@ int ParseEXRHeaderFromMemory(EXRAttribute *customAttributes,
       }
     } else if (attrName.compare("lineOrder") == 0) {
       lineOrder = static_cast<int>(data[0]);
+      (void)lineOrder;
     } else if (attrName.compare("pixelAspectRatio") == 0) {
       memcpy(&pixelAspectRatio, &data.at(0), sizeof(float));
       if (IsBigEndian()) {
