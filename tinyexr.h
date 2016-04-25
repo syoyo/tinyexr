@@ -117,7 +117,6 @@ typedef struct _EXRTile {
 
 typedef struct _EXRHeader {
   float pixel_aspect_ratio;
-  int compression;  // compression type(TINYEXR_COMPRESSIONTYPE_*)
   int line_order;
   int data_window[4];
   int display_window[4];
@@ -156,7 +155,7 @@ typedef struct _EXRHeader {
   int *original_pixel_types;  // Original pixel types(pixel type stored in a
                               // file). Users cannot edit this field.
 
-  int compression_type;
+  int compression_type;       // compression type(TINYEXR_COMPRESSIONTYPE_*)
 } EXRHeader;
 
 typedef struct _EXRImage {
@@ -6901,29 +6900,6 @@ static const char *ReadAttribute(std::string *name, std::string *ty,
   return p;
 }
 
-#if 0  // @todo { remove. }
-static void WriteAttribute(FILE *fp, const char *name, const char *type,
-                    const unsigned char *data, int len) {
-  size_t n = fwrite(name, 1, strlen(name) + 1, fp);
-  assert(n == strlen(name) + 1);
-
-  n = fwrite(type, 1, strlen(type) + 1, fp);
-  assert(n == strlen(type) + 1);
-
-  int outLen = len;
-  if (tinyexr::IsBigEndian()) {
-    tinyexr::swap4(reinterpret_cast<unsigned int *>(&outLen));
-  }
-  n = fwrite(&outLen, 1, sizeof(int), fp);
-  assert(n == sizeof(int));
-
-  n = fwrite(data, 1, static_cast<size_t>(len), fp);
-  assert(n == static_cast<size_t>(len));
-
-  (void)n;
-}
-#endif
-
 static void WriteAttributeToMemory(std::vector<unsigned char> *out,
                                    const char *name, const char *type,
                                    const unsigned char *data, int len) {
@@ -8683,11 +8659,13 @@ static void DecodePixelData(/* out */ unsigned char **out_images,
         static_cast<size_t>(width * num_lines * pixel_data_size));
     size_t tmpBufLen = static_cast<size_t>(width * num_lines * pixel_data_size);
 
-    tinyexr::DecompressPiz(reinterpret_cast<unsigned char *>(&outBuf.at(0)),
-                           data_ptr + 8, tmpBufLen, num_channels, channels,
+    bool ret = tinyexr::DecompressPiz(reinterpret_cast<unsigned char *>(&outBuf.at(0)),
+                           data_ptr, tmpBufLen, num_channels, channels,
                            width, num_lines);
 
-    // For ZIP_COMPRESSION:
+    assert(ret);
+
+    // For PIZ_COMPRESSION:
     //   pixel sample data for channel 0 for scanline 0
     //   pixel sample data for channel 1 for scanline 0
     //   pixel sample data for channel ... for scanline 0
@@ -8789,7 +8767,7 @@ static void DecodePixelData(/* out */ unsigned char **out_images,
 
     unsigned long dstLen = outBuf.size();
     tinyexr::DecompressZip(reinterpret_cast<unsigned char *>(&outBuf.at(0)),
-                           dstLen, data_ptr + 8,
+                           dstLen, data_ptr,
                            static_cast<unsigned long>(data_len));
 
     // For ZIP_COMPRESSION:
@@ -8891,7 +8869,7 @@ static void DecodePixelData(/* out */ unsigned char **out_images,
       if (channels[c].pixel_type == TINYEXR_PIXELTYPE_HALF) {
         const unsigned short *line_ptr =
             reinterpret_cast<const unsigned short *>(
-                data_ptr + 8 + c * width * sizeof(unsigned short));
+                data_ptr + c * width * sizeof(unsigned short));
 
         if (requested_pixel_types[c] == TINYEXR_PIXELTYPE_HALF) {
           unsigned short *outLine =
@@ -8935,7 +8913,7 @@ static void DecodePixelData(/* out */ unsigned char **out_images,
         }
       } else if (channels[c].pixel_type == TINYEXR_PIXELTYPE_FLOAT) {
         const float *line_ptr = reinterpret_cast<const float *>(
-            data_ptr + 8 + c * width * sizeof(float));
+            data_ptr + c * width * sizeof(float));
 
         float *outLine = reinterpret_cast<float *>(out_images[c]);
         if (line_order == 0) {
@@ -8953,7 +8931,7 @@ static void DecodePixelData(/* out */ unsigned char **out_images,
         }
       } else if (channels[c].pixel_type == TINYEXR_PIXELTYPE_UINT) {
         const unsigned int *line_ptr = reinterpret_cast<const unsigned int *>(
-            data_ptr + 8 + c * width * sizeof(unsigned int));
+            data_ptr + c * width * sizeof(unsigned int));
 
         unsigned int *outLine = reinterpret_cast<unsigned int *>(out_images[c]);
         if (line_order == 0) {
@@ -9461,7 +9439,11 @@ int ParseEXRHeaderFromMemory(EXRHeader *exr_header, const unsigned char *memory,
         static_cast<int>(info.attributes.size());
 
     for (int i = 0; i < static_cast<int>(info.attributes.size()); i++) {
-      exr_header->custom_attributes[i] = info.attributes[i];
+      // Just copy pointer
+      exr_header->custom_attributes[i].name = info.attributes[i].name;
+      exr_header->custom_attributes[i].type = info.attributes[i].type;
+      exr_header->custom_attributes[i].size = info.attributes[i].size;
+      exr_header->custom_attributes[i].value = info.attributes[i].value;
     }
 
     exr_header->header_len = info.header_len;
@@ -9679,8 +9661,8 @@ int LoadMultiChannelEXRFromMemory(EXRImage *exr_image,
           data_width, data_height);
 
       // 16 byte: tile coordinates
-      // 4 byte : pixel size
-      // ~      : pixel data(uncompressed or compressed)
+      // 4 byte : data size
+      // ~      : data(uncompressed or compressed)
       const unsigned char *data_ptr =
           reinterpret_cast<const unsigned char *>(head + offsets[tile_idx]);
 
@@ -9696,8 +9678,12 @@ int LoadMultiChannelEXRFromMemory(EXRImage *exr_image,
       assert(tile_coordinates[3] == 0);
 
       int data_len;
-      memcpy(&data_len, data_ptr + 4, sizeof(int));
+      memcpy(&data_len, data_ptr + 16, sizeof(int)); // 16 = sizeof(tile_coordinates)
       tinyexr::swap4(reinterpret_cast<unsigned int *>(&data_len));
+      assert(data_len >= 4);
+
+      // Move to data addr: 20 = 16 + 4;
+      data_ptr += 20;
 
       tinyexr::DecodeTiledPixelData(
           exr_image->tiles[tile_idx].images,
@@ -9742,6 +9728,9 @@ int LoadMultiChannelEXRFromMemory(EXRImage *exr_image,
       int end_line_no = (std::min)(line_no + num_scanline_blocks, data_height);
 
       int num_lines = end_line_no - line_no;
+
+      // Move to data addr: 8 = 4 + 4;
+      data_ptr += 8;
 
       tinyexr::DecodePixelData(
           exr_image->images, exr_header->requested_pixel_types, data_ptr,
@@ -9813,7 +9802,7 @@ static size_t SaveMultiChannelEXRToMemory(const EXRImage *exr_image,
   int num_scanlines = 1;
   if (exr_header->compression_type == TINYEXR_COMPRESSIONTYPE_ZIP) {
     num_scanlines = 16;
-  } else if (exr_header->compression == TINYEXR_COMPRESSIONTYPE_PIZ) {
+  } else if (exr_header->compression_type == TINYEXR_COMPRESSIONTYPE_PIZ) {
     num_scanlines = 32;
   }
 
@@ -9861,7 +9850,7 @@ static size_t SaveMultiChannelEXRToMemory(const EXRImage *exr_image,
   }
 
   {
-    unsigned char line_order = 0;  // increasingY
+    unsigned char line_order = 0;  // @fixme { read line_order from EXRHeader }
     tinyexr::WriteAttributeToMemory(&memory, "lineOrder", "lineOrder",
                                     &line_order, 1);
   }
@@ -9898,7 +9887,7 @@ static size_t SaveMultiChannelEXRToMemory(const EXRImage *exr_image,
           &memory, exr_header->custom_attributes[i].name,
           exr_header->custom_attributes[i].type,
           reinterpret_cast<const unsigned char *>(
-              &exr_header->custom_attributes[i].value),
+              exr_header->custom_attributes[i].value),
           exr_header->custom_attributes[i].size);
     }
   }
@@ -10051,7 +10040,7 @@ static size_t SaveMultiChannelEXRToMemory(const EXRImage *exr_image,
       }
     }
 
-    if (exr_header->compression == TINYEXR_COMPRESSIONTYPE_NONE) {
+    if (exr_header->compression_type == TINYEXR_COMPRESSIONTYPE_NONE) {
       // 4 byte: scan line
       // 4 byte: data size
       // ~     : pixel data(uncompressed)
@@ -10067,8 +10056,8 @@ static size_t SaveMultiChannelEXRToMemory(const EXRImage *exr_image,
       data_list[i].insert(data_list[i].end(), buf.begin(),
                           buf.begin() + data_len);
 
-    } else if ((exr_header->compression == TINYEXR_COMPRESSIONTYPE_ZIPS) ||
-               (exr_header->compression == TINYEXR_COMPRESSIONTYPE_ZIP)) {
+    } else if ((exr_header->compression_type == TINYEXR_COMPRESSIONTYPE_ZIPS) ||
+               (exr_header->compression_type == TINYEXR_COMPRESSIONTYPE_ZIP)) {
 #if TINYEXR_USE_MINIZ
       std::vector<unsigned char> block(
           tinyexr::miniz::mz_compressBound(buf.size()));
@@ -10096,7 +10085,7 @@ static size_t SaveMultiChannelEXRToMemory(const EXRImage *exr_image,
       data_list[i].insert(data_list[i].end(), block.begin(),
                           block.begin() + data_len);
 
-    } else if (exr_header->compression == TINYEXR_COMPRESSIONTYPE_PIZ) {
+    } else if (exr_header->compression_type == TINYEXR_COMPRESSIONTYPE_PIZ) {
 #if TINYEXR_USE_PIZ
       unsigned int bufLen =
           1024 +

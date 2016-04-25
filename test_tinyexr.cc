@@ -54,20 +54,24 @@ TiledImageToScanlineImage(EXRImage* src, const EXRHeader* header)
 
   src->images = static_cast<unsigned char**>(malloc(sizeof(float*) * header->num_channels));
   for (size_t c = 0; c < static_cast<size_t>(header->num_channels); c++) {
+    assert(header->pixel_types[c] == TINYEXR_PIXELTYPE_FLOAT);
     src->images[c] = static_cast<unsigned char*>(malloc(sizeof(float) * data_width * data_height));
+    memset(src->images[c], 0, sizeof(float) * data_width * data_height);
   }
 
   for (size_t tile_idx = 0; tile_idx < static_cast<size_t>(src->num_tiles); tile_idx++) {
 
     int sx = src->tiles[tile_idx].offset_x * header->tile_size_x;
-    int sy = src->tiles[tile_idx].offset_x * header->tile_size_x;
+    int sy = src->tiles[tile_idx].offset_y * header->tile_size_y;
     int ex = src->tiles[tile_idx].offset_x * header->tile_size_x + src->tiles[tile_idx].width;
-    int ey = src->tiles[tile_idx].offset_x * header->tile_size_x + src->tiles[tile_idx].height;
+    int ey = src->tiles[tile_idx].offset_y * header->tile_size_y + src->tiles[tile_idx].height;
 
     for (size_t c = 0; c < static_cast<size_t>(header->num_channels); c++) {
+      float *dst_image = reinterpret_cast<float*>(src->images[c]);
+      const float *src_image = reinterpret_cast<const float*>(src->tiles[tile_idx].images[c]);
       for (size_t y = 0; y < static_cast<size_t>(ey - sy); y++) {
         for (size_t x = 0; x < static_cast<size_t>(ex - sx); x++) {
-          src->images[c][(y + sy) * data_width + (x + sx)] = src->tiles[tile_idx].images[c][y * header->tile_size_x + x];
+          dst_image[(y + sy) * data_width + (x + sx)] = src_image[y * header->tile_size_x + x];
         }
       }
     }
@@ -140,6 +144,9 @@ main(int argc, char** argv)
         exr_header.custom_attributes[i].name,
         exr_header.custom_attributes[i].type,
         exr_header.custom_attributes[i].size);
+      if (strcmp(exr_header.custom_attributes[i].type, "float") == 0) {
+        printf("    value = %f\n", *reinterpret_cast<float *>(exr_header.custom_attributes[i].value));
+      }
     }
   }
 
@@ -167,7 +174,6 @@ main(int argc, char** argv)
     printf("requestedPixelType[%d]: %s\n", i, GetPixelType(exr_header.requested_pixel_types[i]));
   }
 
-
 #if 0 // example to write custom attribute
   int version_minor = 3;
   exr_header.num_custom_attributes = 1;
@@ -188,7 +194,7 @@ main(int argc, char** argv)
   //  }
   //}
 
-  exr_header.compression = TINYEXR_COMPRESSIONTYPE_NONE;
+  exr_header.compression_type = TINYEXR_COMPRESSIONTYPE_NONE;
   ret = SaveMultiChannelEXRToFile(&exr_image, &exr_header, outfilename, &err);
   if (ret != 0) {
     fprintf(stderr, "Save EXR err: %s\n", err);
