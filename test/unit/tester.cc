@@ -9,13 +9,15 @@
 #include <fstream>
 
 #define TINYEXR_IMPLEMENTATION
+#define TINYEXR_USE_MINIZ 1
 #include "../../tinyexr.h"
 
 
 TEST_CASE("asakusa", "[Load]") {
   EXRImage exrImage;
+  EXRHeader exrHeader;
   const char* err = NULL;
-  int ret = ParseMultiChannelEXRHeaderFromFile(&exrImage, "../../asakusa.exr", &err);
+  int ret = ParseMultiChannelEXRHeaderFromFile(&exrHeader, "../../asakusa.exr", &err);
   REQUIRE(NULL == err);
   REQUIRE(0 == ret);
 }

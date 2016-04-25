@@ -222,8 +222,12 @@ Contribution is welcome!
   - [x] LoadMultiChannelEXR
   - [ ] Deep image save/load
 - [ ] Tile format.
+  - [x] Tile format with no LoD(load).
+  - [ ] Tile format with LoD(load).
+  - [ ] Tile format with no LoD(save).
+  - [ ] Tile format with LoD(save).
 - [ ] Support for various compression type.
-  - [x] zstd compression(Not in OpenEXR spec, though)
+  - [x] zfp compression(Not in OpenEXR spec, though)
 - [x] Multi-channel.
 - [ ] Multi-part(EXR2.0)
 - [ ] Line order.

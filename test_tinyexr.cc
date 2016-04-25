@@ -18,7 +18,6 @@ static const char* GetPixelType(int id)
   return "???";
 }
 
-#if 0
 static void
 SaveAsPFM(const char* filename, int width, int height, float* data)
 {
@@ -45,7 +44,37 @@ SaveAsPFM(const char* filename, int width, int height, float* data)
 
   fclose(fp);
 }
-#endif
+
+// Simple tile -> scanline converter. Assumes FLOAT pixel type for all channels.
+void
+TiledImageToScanlineImage(EXRImage* src, const EXRHeader* header)
+{
+  size_t data_width  = header->data_window[2] - header->data_window[0] + 1;
+  size_t data_height = header->data_window[3] - header->data_window[1] + 1;
+
+  src->images = static_cast<unsigned char**>(malloc(sizeof(float*) * header->num_channels));
+  for (size_t c = 0; c < static_cast<size_t>(header->num_channels); c++) {
+    src->images[c] = static_cast<unsigned char*>(malloc(sizeof(float) * data_width * data_height));
+  }
+
+  for (size_t tile_idx = 0; tile_idx < static_cast<size_t>(src->num_tiles); tile_idx++) {
+
+    int sx = src->tiles[tile_idx].offset_x * header->tile_size_x;
+    int sy = src->tiles[tile_idx].offset_x * header->tile_size_x;
+    int ex = src->tiles[tile_idx].offset_x * header->tile_size_x + src->tiles[tile_idx].width;
+    int ey = src->tiles[tile_idx].offset_x * header->tile_size_x + src->tiles[tile_idx].height;
+
+    for (size_t c = 0; c < static_cast<size_t>(header->num_channels); c++) {
+      for (size_t y = 0; y < static_cast<size_t>(ey - sy); y++) {
+        for (size_t x = 0; x < static_cast<size_t>(ex - sx); x++) {
+          src->images[c][(y + sy) * data_width + (x + sx)] = src->tiles[tile_idx].images[c][y * header->tile_size_x + x];
+        }
+      }
+    }
+
+  }
+
+}
 
 int
 main(int argc, char** argv)
@@ -61,8 +90,22 @@ main(int argc, char** argv)
   if (argc > 2) {
     outfilename = argv[2];
   }
+
+#if 0
+  int width, height;
+  float* image;
+  int ret = LoadEXR(&image, &width, &height, argv[1], &err);
+  if (ret != 0) {
+    fprintf(stderr, "Load EXR err: %s\n", err);
+    return ret;
+  }
+  (void)GetPixelType;
+  (void)outfilename;
+  SaveAsPFM("output.pfm", width, height, image);
+#else
     
   EXRHeader exr_header;
+  InitEXRHeader(&exr_header);
 
   int ret = ParseMultiChannelEXRHeaderFromFile(&exr_header, argv[1], &err);
   if (ret != 0) {
@@ -93,9 +136,10 @@ main(int argc, char** argv)
   if (exr_header.num_custom_attributes > 0) {
     printf("# of custom attributes = %d\n", exr_header.num_custom_attributes);
     for (int i = 0; i < exr_header.num_custom_attributes; i++) {
-      printf("  [%d] name = %s, type = %s\n", i,
+      printf("  [%d] name = %s, type = %s, size = %d\n", i,
         exr_header.custom_attributes[i].name,
-        exr_header.custom_attributes[i].type);
+        exr_header.custom_attributes[i].type,
+        exr_header.custom_attributes[i].size);
     }
   }
 
@@ -123,12 +167,6 @@ main(int argc, char** argv)
     printf("requestedPixelType[%d]: %s\n", i, GetPixelType(exr_header.requested_pixel_types[i]));
   }
 
-  // Uncomment if you want to save image as FLOAT pixel type.
-  for (int i = 0; i < exr_header.num_channels; i++) {
-    if (exr_header.pixel_types[i] == TINYEXR_PIXELTYPE_FLOAT) {
-      exr_header.requested_pixel_types[i] = TINYEXR_PIXELTYPE_HALF;
-    }
-  }
 
 #if 0 // example to write custom attribute
   int version_minor = 3;
@@ -140,6 +178,16 @@ main(int argc, char** argv)
   memcpy(exr_header.custom_attributes[0].value, &version_minor, sizeof(int));
 #endif
 
+  if (exr_header.tiled) {
+    TiledImageToScanlineImage(&exr_image, &exr_header);
+  }
+
+  //for (int i = 0; i < exr_header.num_channels; i++) {
+  //  if (exr_header.requested_pixel_types[i] == TINYEXR_PIXELTYPE_FLOAT) {
+  //    exr_header.repixel_types[i] = TINYEXR_PIXELTYPE_FLOAT;
+  //  }
+  //}
+
   exr_header.compression = TINYEXR_COMPRESSIONTYPE_NONE;
   ret = SaveMultiChannelEXRToFile(&exr_image, &exr_header, outfilename, &err);
   if (ret != 0) {
@@ -150,6 +198,7 @@ main(int argc, char** argv)
 
   FreeEXRHeader(&exr_header);
   FreeEXRImage(&exr_image);
+#endif
 
   return ret;
 }
