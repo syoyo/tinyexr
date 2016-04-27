@@ -212,6 +212,25 @@ typedef struct _DeepImage {
 extern int LoadEXR(float **out_rgba, int *width, int *height,
                    const char *filename, const char **err);
 
+// Parse EXR version header of a file.
+// Returns 0 if success.
+// -1 : `version` is NULL or File not found.
+// -2 : Invalid file size.
+// -3 : Bad magic number.
+// -4 : Wrong OpenEXR version.
+extern int ParseEXRVersionFromFile(
+  EXRVersion* version,
+  const char *filename);
+
+// Parse EXR version header from memory-mapped EXR data.
+// Returns 0 if success.
+// -3 : Bad magic number.
+// -4 : Wrong OpenEXR version.
+extern int ParseEXRVersionFromMemory(
+  EXRVersion* version,
+  const unsigned char *memory);
+
+
 // Parse single-frame OpenEXR header from a file and initialize `EXRHeader`
 // struct.
 extern int ParseEXRHeaderFromFile(EXRHeader *header,
@@ -309,20 +328,6 @@ extern int FreeEXRHeader(EXRHeader *exr_header);
 // Free's internal data of EXRImage struct
 // Returns 0 if success.
 extern int FreeEXRImage(EXRImage *exr_image);
-
-// Parse EXR version header of a file.
-// Returns 0 if success.
-// Returns -1 for bad version header or invalid EXR file.
-extern int ParseEXRVersionFromFile(
-  EXRVersion* version,
-  const char *filename);
-
-// Parse EXR version header from memory-mapped EXR data.
-// Returns 0 if success.
-// Returns -1 for bad version header or invalid EXR data.
-extern int CheckEXRHeaderFromMemory(
-  EXRVersion* version,
-  const unsigned char *memory);
 
 // For emscripten.
 // Parse single-frame OpenEXR header from memory.
@@ -10924,16 +10929,16 @@ int ParseEXRHeaderFromFile(EXRHeader *exr_header,
   return ParseEXRHeaderFromMemory(exr_header, &buf.at(0), err);
 }
 
-int ParseEXRHeaderFromMemory(EXRVersion *version, const unsigned char* buf)
+int ParseEXRVersionFromMemory(EXRVersion *version, const unsigned char* memory)
 {
-  const unsigned char* marker = buf;
+  const unsigned char* marker = memory;
 
   // Header check.
   {
     const char header[] = {0x76, 0x2f, 0x31, 0x01};
 
     if (memcmp(marker, header, 4) != 0) {
-      return -1;
+      return -3;
     }
     marker += 4;
   }
@@ -10942,8 +10947,12 @@ int ParseEXRHeaderFromMemory(EXRVersion *version, const unsigned char* buf)
   {
     // must be 2
     if (marker[0] != 2) {
-      return -1;
+      return -4;
     }
+
+		if (version == NULL) {
+			return 0; // May OK
+		}
 
     version->version = 2;
 
@@ -10985,7 +10994,7 @@ int ParseEXRVersionFromFile(
   fseek(fp, 0, SEEK_SET);
 
   if (file_size < 8) {
-    return -1;
+    return -2;
   }
 
   const size_t kHeaderSize = 8;
@@ -10995,10 +11004,10 @@ int ParseEXRVersionFromFile(
   fclose(fp);
 
   if (ret != kHeaderSize) {
-    return -1;
+    return -2;
   }
 
-  return ParseEXRHeaderFromMemory(version, buf);
+  return ParseEXRVersionFromMemory(version, buf);
 }
 
 #ifdef _MSC_VER
