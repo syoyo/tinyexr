@@ -111,7 +111,7 @@ main(int argc, char** argv)
   EXRHeader exr_header;
   InitEXRHeader(&exr_header);
 
-  int ret = ParseMultiChannelEXRHeaderFromFile(&exr_header, argv[1], &err);
+  int ret = ParseEXRHeaderFromFile(&exr_header, argv[1], &err);
   if (ret != 0) {
     fprintf(stderr, "Parse EXR err: %s\n", err);
     return ret;
@@ -160,7 +160,7 @@ main(int argc, char** argv)
   EXRImage exr_image;
   InitEXRImage(&exr_image);
 
-  ret = LoadMultiChannelEXRFromFile(&exr_image, &exr_header, argv[1], &err);
+  ret = LoadEXRImageFromFile(&exr_image, &exr_header, argv[1], &err);
   if (ret != 0) {
     fprintf(stderr, "Load EXR err: %s\n", err);
     return ret;
@@ -195,7 +195,7 @@ main(int argc, char** argv)
   //}
 
   exr_header.compression_type = TINYEXR_COMPRESSIONTYPE_NONE;
-  ret = SaveMultiChannelEXRToFile(&exr_image, &exr_header, outfilename, &err);
+  ret = SaveEXRImageToFile(&exr_image, &exr_header, outfilename, &err);
   if (ret != 0) {
     fprintf(stderr, "Save EXR err: %s\n", err);
     return ret;

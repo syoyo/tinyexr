@@ -158,6 +158,13 @@ typedef struct _EXRHeader {
   int compression_type;       // compression type(TINYEXR_COMPRESSIONTYPE_*)
 } EXRHeader;
 
+typedef struct _EXRMultiPartHeader
+{
+	int num_headers;
+	EXRHeader *headers;
+
+} EXRMultiPartHeader;
+
 typedef struct _EXRImage {
   EXRTile *tiles;  // Tiled pixel data. The application must reconstruct image
                    // from tiles manually. NULL if scanline format.
@@ -171,6 +178,13 @@ typedef struct _EXRImage {
   int num_tiles;
 
 } EXRImage;
+
+typedef struct _EXRMultiPartImage
+{
+	int num_images;
+	EXRImage *images;
+
+} EXRMultiPartImage;
 
 typedef struct _DeepImage {
   int num_channels;
@@ -190,39 +204,33 @@ typedef struct _DeepImage {
 extern int LoadEXR(float **out_rgba, int *width, int *height,
                    const char *filename, const char **err);
 
-// Parse single-frame OpenEXR header from a file and initialize `EXRImage`
+// Parse single-frame OpenEXR header from a file and initialize `EXRHeader`
 // struct.
-// Users then call LoadMultiChannelEXRFromFile to actually load image data into
-// `EXRImage`
-extern int ParseMultiChannelEXRHeaderFromFile(EXRHeader *header,
+extern int ParseEXRHeaderFromFile(EXRHeader *header,
                                               const char *filename,
                                               const char **err);
 
 // Parse single-frame OpenEXR header from a memory and initialize `EXRHeader`
 // struct.
-// Users then call LoadMultiChannelEXRFromMemory to actually load image data
-// into `EXRImage`
-extern int ParseMultiChannelEXRHeaderFromMemory(EXRHeader *header,
+extern int ParseEXRHeaderFromMemory(EXRHeader *header,
                                                 const unsigned char *memory,
                                                 const char **err);
 
 // Loads multi-channel, single-frame OpenEXR image from a file.
-// Application must setup `ParseMultiChannelEXRHeaderFromFile` before calling
-// `LoadMultiChannelEXRFromFile`.
+// Application must setup `ParseEXRHeaderFromFile` before calling this function.
 // Application can free EXRImage using `FreeEXRImage`
 // Return 0 if success
 // Returns error string in `err` when there's an error
-extern int LoadMultiChannelEXRFromFile(EXRImage *image, const EXRHeader *header,
+extern int LoadEXRImageFromFile(EXRImage *image, const EXRHeader *header,
                                        const char *filename, const char **err);
 
 // Loads multi-channel, single-frame OpenEXR image from a memory.
 // Application must setup `EXRHeader` with
-// `ParseMultiChannelEXRHeaderFromMemory`
-// before calling `LoadMultiChannelEXRFromMemory`.
+// `ParseEXRHeaderFromMemory` before calling this function.
 // Application can free EXRImage using `FreeEXRImage`
 // Return 0 if success
 // Returns error string in `err` when there's an error
-extern int LoadMultiChannelEXRFromMemory(EXRImage *image,
+extern int LoadEXRImageFromMemory(EXRImage *image,
                                          const EXRHeader *header,
                                          const unsigned char *memory,
                                          const char **err);
@@ -237,7 +245,8 @@ extern int LoadMultiChannelEXRFromMemory(EXRImage *image,
 // Saves multi-channel, single-frame OpenEXR image to a file.
 // Returns 0 if success
 // Returns error string in `err` when there's an error
-extern int SaveMultiChannelEXRToFile(const EXRImage *image,
+extern int SaveEXRImageToFile(const EXRImage *image,
+                                     const EXRHeader *exr_header,
                                      const char *filename, const char **err);
 
 // Saves multi-channel, single-frame OpenEXR image to a memory.
@@ -245,9 +254,18 @@ extern int SaveMultiChannelEXRToFile(const EXRImage *image,
 // Return the number of bytes if succes.
 // Returns 0 if success, negative number when failed.
 // Returns error string in `err` when there's an error
-extern size_t SaveMultiChannelEXRToMemory(const EXRImage *image,
+extern size_t SaveEXRImageToMemory(const EXRImage *image,
+                                     const EXRHeader *exr_header,
                                           unsigned char **memory,
                                           const char **err);
+
+// Parse multi-part OpenEXR headers from a file and initialize `EXRMultiPartHeader`
+// struct.
+// Users then call LoadEXRFromFile to actually load image data into
+// `EXRImage`
+extern int ParseEXRHeaderFromFile(EXRHeader *header,
+                                              const char *filename,
+                                              const char **err);
 
 // Loads single-frame OpenEXR deep image.
 // Application must free memory of variables in DeepImage(image, offset_table)
@@ -9249,7 +9267,7 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
   InitEXRImage(&exr_image);
 
   {
-    int ret = ParseMultiChannelEXRHeaderFromFile(&exr_header, filename, err);
+    int ret = ParseEXRHeaderFromFile(&exr_header, filename, err);
     if (ret != 0) {
       return ret;
     }
@@ -9264,7 +9282,7 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
 
   {
     int ret =
-        LoadMultiChannelEXRFromFile(&exr_image, &exr_header, filename, err);
+        LoadEXRImageFromFile(&exr_image, &exr_header, filename, err);
     if (ret != 0) {
       return ret;
     }
@@ -9339,7 +9357,7 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
 
 int ParseEXRHeaderFromMemory(EXRHeader *exr_header, const unsigned char *memory,
                              const char **err) {
-  if (memory == NULL) {
+  if (memory == NULL || exr_header == NULL) {
     // Invalid argument
     return -1;
   }
@@ -9464,13 +9482,13 @@ int LoadEXRFromMemory(float *out_rgba, const unsigned char *memory,
   EXRImage exr_image;
   EXRHeader exr_header;
 
-  int ret = ParseMultiChannelEXRHeaderFromMemory(&exr_header, memory, err);
+  int ret = ParseEXRHeaderFromMemory(&exr_header, memory, err);
   if (ret != 0) {
     return ret;
   }
 
   InitEXRImage(&exr_image);
-  ret = LoadMultiChannelEXRFromMemory(&exr_image, &exr_header, memory, err);
+  ret = LoadEXRImageFromMemory(&exr_image, &exr_header, memory, err);
   if (ret != 0) {
     return ret;
   }
@@ -9533,7 +9551,7 @@ int LoadEXRFromMemory(float *out_rgba, const unsigned char *memory,
   return 0;
 }
 
-int LoadMultiChannelEXRFromFile(EXRImage *exr_image,
+int LoadEXRImageFromFile(EXRImage *exr_image,
                                 const EXRHeader *exr_header,
                                 const char *filename, const char **err) {
   if (exr_image == NULL) {
@@ -9566,10 +9584,10 @@ int LoadMultiChannelEXRFromFile(EXRImage *exr_image,
     (void)ret;
   }
 
-  return LoadMultiChannelEXRFromMemory(exr_image, exr_header, &buf.at(0), err);
+  return LoadEXRImageFromMemory(exr_image, exr_header, &buf.at(0), err);
 }
 
-int LoadMultiChannelEXRFromMemory(EXRImage *exr_image,
+int LoadEXRImageFromMemory(EXRImage *exr_image,
                                   const EXRHeader *exr_header,
                                   const unsigned char *memory,
                                   const char **err) {
@@ -9758,7 +9776,7 @@ int LoadMultiChannelEXRFromMemory(EXRImage *exr_image,
   return 0;  // OK
 }
 
-static size_t SaveMultiChannelEXRToMemory(const EXRImage *exr_image,
+size_t SaveEXRImageToMemory(const EXRImage *exr_image,
                                           const EXRHeader *exr_header,
                                           unsigned char **memory_out,
                                           const char **err) {
@@ -10145,7 +10163,7 @@ static size_t SaveMultiChannelEXRToMemory(const EXRImage *exr_image,
   return memory.size();  // OK
 }
 
-static int SaveMultiChannelEXRToFile(const EXRImage *exr_image,
+int SaveEXRImageToFile(const EXRImage *exr_image,
                                      const EXRHeader *exr_header,
                                      const char *filename, const char **err) {
   if (exr_image == NULL || filename == NULL ||
@@ -10167,7 +10185,7 @@ static int SaveMultiChannelEXRToFile(const EXRImage *exr_image,
 
   unsigned char *mem = NULL;
   size_t mem_size =
-      SaveMultiChannelEXRToMemory(exr_image, exr_header, &mem, err);
+      SaveEXRImageToMemory(exr_image, exr_header, &mem, err);
 
   if ((mem_size > 0) && mem) {
     fwrite(mem, 1, mem_size, fp);
@@ -10846,7 +10864,7 @@ int FreeEXRImage(EXRImage *exr_image) {
   return 0;
 }
 
-int ParseMultiChannelEXRHeaderFromFile(EXRHeader *exr_header,
+int ParseEXRHeaderFromFile(EXRHeader *exr_header,
                                        const char *filename, const char **err) {
   if (exr_header == NULL) {
     if (err) {
@@ -10884,22 +10902,7 @@ int ParseMultiChannelEXRHeaderFromFile(EXRHeader *exr_header,
     }
   }
 
-  return ParseMultiChannelEXRHeaderFromMemory(exr_header, &buf.at(0), err);
-}
-
-int ParseMultiChannelEXRHeaderFromMemory(EXRHeader *exr_header,
-                                         const unsigned char *memory,
-                                         const char **err) {
-  if (exr_header == NULL || memory == NULL) {
-    if (err) {
-      (*err) = "Invalid argument.";
-    }
-    return -1;
-  }
-
-  int ret = ParseEXRHeaderFromMemory(exr_header, memory, err);
-
-  return ret;
+  return ParseEXRHeaderFromMemory(exr_header, &buf.at(0), err);
 }
 
 #ifdef _MSC_VER
