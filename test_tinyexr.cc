@@ -108,10 +108,25 @@ main(int argc, char** argv)
   SaveAsPFM("output.pfm", width, height, image);
 #else
     
+  EXRVersion exr_version;
   EXRHeader exr_header;
   InitEXRHeader(&exr_header);
 
-  int ret = ParseEXRHeaderFromFile(&exr_header, argv[1], &err);
+  int ret = ParseEXRVersionFromFile(&exr_version, argv[1]);
+  if (ret != 0) {
+    fprintf(stderr, "Invalid EXR file: %s\n", argv[1]);
+    return -1;
+  }
+
+  printf("version: tiled = %d, long_name = %d, non_image = %d, multipart = %d\n",
+    exr_version.tiled,
+    exr_version.long_name,
+    exr_version.non_image,
+    exr_version.multipart);
+    
+  exit(-1);
+
+  ret = ParseEXRHeaderFromFile(&exr_header, argv[1], &err);
   if (ret != 0) {
     fprintf(stderr, "Parse EXR err: %s\n", err);
     return ret;

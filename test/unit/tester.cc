@@ -31,6 +31,23 @@ TEST_CASE("asakusa", "[Load]") {
   REQUIRE(0 == ret);
 }
 
+TEST_CASE("Tiles/GoldenGate.exr", "[Version]") {
+  EXRVersion exr_version;
+  std::string filepath = GetPath("Tiles/GoldenGate.exr");
+  int ret = ParseEXRVersionFromFile(&exr_version, filepath.c_str());
+  REQUIRE(0 == ret);
+  REQUIRE(true == exr_version.tiled);
+}
+
+TEST_CASE("BeachBall/multipart.0001.exr", "[Version]") {
+  EXRVersion exr_version;
+  std::string filepath = GetPath("BeachBall/multipart.0001.exr");
+  int ret = ParseEXRVersionFromFile(&exr_version, filepath.c_str());
+  REQUIRE(0 == ret);
+  REQUIRE(true == exr_version.multipart);
+}
+
+
 TEST_CASE("GoldenGate", "[TileLoad]") {
   EXRImage exr_image;
   EXRHeader exr_header;

@@ -87,6 +87,14 @@ extern "C" {
 #define TINYEXR_TILE_ROUND_DOWN (0)
 #define TINYEXR_TILE_ROUND_UP (1)
 
+typedef struct _EXRVersion {
+  int  version;   // this must be 2
+  bool tiled;     // tile format image
+  bool long_name; // long name attribute
+  bool non_image; // deep image(EXR 2.0)
+  bool multipart; // multi-part(EXR 2.0)
+} EXRVersion;
+
 typedef struct _EXRAttribute {
   char *name;
   char *type;
@@ -301,6 +309,20 @@ extern int FreeEXRHeader(EXRHeader *exr_header);
 // Free's internal data of EXRImage struct
 // Returns 0 if success.
 extern int FreeEXRImage(EXRImage *exr_image);
+
+// Parse EXR version header of a file.
+// Returns 0 if success.
+// Returns -1 for bad version header or invalid EXR file.
+extern int ParseEXRVersionFromFile(
+  EXRVersion* version,
+  const char *filename);
+
+// Parse EXR version header from memory-mapped EXR data.
+// Returns 0 if success.
+// Returns -1 for bad version header or invalid EXR data.
+extern int CheckEXRHeaderFromMemory(
+  EXRVersion* version,
+  const unsigned char *memory);
 
 // For emscripten.
 // Parse single-frame OpenEXR header from memory.
@@ -9075,41 +9097,11 @@ static unsigned char **AllocateImage(int num_channels,
 static int ParseEXRHeader(HeaderInfo *info, std::string *err,
                           const unsigned char *buf) {
   const char *marker = reinterpret_cast<const char *>(&buf[0]);
-  const unsigned char *version_header = buf;  // first 4 bytes => version header
-
-  // Version, scanline.
-  {
-    // must be [2, 0, 0, 0]
-    if (version_header[0] != 2) {
-      if (err) {
-        std::stringstream ss;
-        ss << "Unsupported version. Expected 2 but got " << version_header[0]
-           << ".";
-        (*err) = ss.str();
-      }
-      return -4;
-    }
-
-    if (version_header[1] & 0x2) {  // 9th bit
-      info->tiled_bit = true;
-    }
-    if (version_header[1] & 0x4) {  // 10th bit
-      info->long_name_bit = true;
-    }
-    if (version_header[1] & 0x8) {  // 11th bit
-      info->non_image_bit = true;
-    }
-    if (version_header[1] & 0x10) {  // 12th bit
-      info->multipart_bit = true;
-    }
-
-    marker += 4;
-  }
 
   info->data_window[0] = -1;
-  info->data_window[0] = -1;
-  info->data_window[0] = -1;
-  info->data_window[0] = -1;
+  info->data_window[1] = -1;
+  info->data_window[2] = -1;
+  info->data_window[3] = -1;
   info->line_order = 0;  // @fixme
   info->display_window[0] = -1;
   info->display_window[1] = -1;
@@ -9247,7 +9239,7 @@ static int ParseEXRHeader(HeaderInfo *info, std::string *err,
   }
 
   info->header_len = static_cast<unsigned int>(
-      reinterpret_cast<const unsigned char *>(marker) - buf);
+      reinterpret_cast<const unsigned char *>(marker) - buf) + 4; // +4 for version field
 
   return 0;  // OK
 }
@@ -9381,6 +9373,33 @@ int ParseEXRHeaderFromMemory(EXRHeader *exr_header, const unsigned char *memory,
 
   tinyexr::HeaderInfo info;
   info.clear();
+
+  // Version, scanline.
+  {
+    // must be [2, 0, 0, 0]
+    if (marker[0] != 2) {
+      if (err) {
+        (*err) = "Unsupported version. ";
+      }
+      return -4;
+    }
+
+    if (marker[1] & 0x2) {  // 9th bit
+      info.tiled_bit = true;
+    }
+    if (marker[1] & 0x4) {  // 10th bit
+      info.long_name_bit = true;
+    }
+    if (marker[1] & 0x8) {  // 11th bit
+      info.non_image_bit = true;
+    }
+    if (marker[1] & 0x10) {  // 12th bit
+      info.multipart_bit = true;
+    }
+
+    marker += 4;
+  }
+
   std::string err_str;
   int ret = ParseEXRHeader(&info, &err_str,
                            reinterpret_cast<const unsigned char *>(marker));
@@ -10903,6 +10922,83 @@ int ParseEXRHeaderFromFile(EXRHeader *exr_header,
   }
 
   return ParseEXRHeaderFromMemory(exr_header, &buf.at(0), err);
+}
+
+int ParseEXRHeaderFromMemory(EXRVersion *version, const unsigned char* buf)
+{
+  const unsigned char* marker = buf;
+
+  // Header check.
+  {
+    const char header[] = {0x76, 0x2f, 0x31, 0x01};
+
+    if (memcmp(marker, header, 4) != 0) {
+      return -1;
+    }
+    marker += 4;
+  }
+
+  // Parse version header.
+  {
+    // must be 2
+    if (marker[0] != 2) {
+      return -1;
+    }
+
+    version->version = 2;
+
+    if (marker[1] & 0x2) {  // 9th bit
+      version->tiled = true;
+    }
+    if (marker[1] & 0x4) {  // 10th bit
+      version->long_name = true;
+    }
+    if (marker[1] & 0x8) {  // 11th bit
+      version->non_image = true; // (deep image)
+    }
+    if (marker[1] & 0x10) {  // 12th bit
+      version->multipart = true;
+    }
+  }
+
+  return 0;  // OK
+}
+
+
+int ParseEXRVersionFromFile(
+  EXRVersion *version,
+  const char *filename)
+{
+  if (filename == NULL) {
+    return -1;
+  }
+
+  FILE *fp = fopen(filename, "rb");
+  if (!fp) {
+    return -1;
+  }
+
+  size_t file_size;
+  // Compute size
+  fseek(fp, 0, SEEK_END);
+  file_size = ftell(fp);
+  fseek(fp, 0, SEEK_SET);
+
+  if (file_size < 8) {
+    return -1;
+  }
+
+  const size_t kHeaderSize = 8;
+
+  unsigned char buf[8];
+  size_t ret = fread(&buf[0], 1, kHeaderSize, fp);
+  fclose(fp);
+
+  if (ret != kHeaderSize) {
+    return -1;
+  }
+
+  return ParseEXRHeaderFromMemory(version, buf);
 }
 
 #ifdef _MSC_VER
