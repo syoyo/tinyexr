@@ -26,7 +26,7 @@ To use `tinyexr`, simply copy `tinyexr.h` into your project.
   * Half, float pixel type.
 * Litte endian machine.
 * Limited support for big endian machine.
-  * read/write normal image.
+  * read/write scalinel image.
 * C interface.
   * You can easily write language bindings(e.g. golang)
 * EXR saving
@@ -72,32 +72,7 @@ Quickly reading RGB(A) EXR file.
 
 Loading EXR from a file.
 
-```
-  const char* input = "asakusa.exr";
-  const char* err;
-
-  EXRImage exrImage;
-  InitEXRImage(&exrImage);
-
-  int ret = ParseMultiChannelEXRHeaderFromFile(&exrImage, input, &err);
-  if (ret != 0) {
-    fprintf(stderr, "Parse EXR err: %s\n", err);
-    return;
-  }
-
-  //// Uncomment if you want reading HALF image as FLOAT.
-  //for (int i = 0; i < exrImage.num_channels; i++) {
-  //  if (exrImage.pixel_types[i] = TINYEXR_PIXELTYPE_HALF) {
-  //    exrImage.requested_pixel_types[i] = TINYEXR_PIXELTYPE_FLOAT;
-  //  }
-  //}
-
-  ret = LoadMultiChannelEXRFromFile(&exrImage, input, &err);
-  if (ret != 0) {
-    fprintf(stderr, "Load EXR err: %s\n", err);
-    return;
-  }
-```
+T.B.W.
 
 Saving EXR file.
 
@@ -200,7 +175,7 @@ See `example/deepview` for actual usage.
 Contribution is welcome!
 
 - [ ] Compression
-  - [ ] NONE("compress" = 0, load)
+  - [x] NONE("compress" = 0, load)
   - [ ] RLE("compress" = 1, load)
   - [x] ZIPS("compress" = 2, load)
   - [x] ZIP("compress" = 3, load)
@@ -214,12 +189,10 @@ Contribution is welcome!
   - [x] Normal image(EXR 1.x)
   - [ ] Deep image(EXR 2.x)
 - [ ] JavaScript library
-  - [x] LoadEXRFromMemory
+  - [ ] LoadEXRFromMemory
   - [ ] SaveMultiChannelEXR
   - [ ] Deep image save/load
 - [ ] Write from/to memory buffer.
-  - [x] SaveMultiChannelEXR
-  - [x] LoadMultiChannelEXR
   - [ ] Deep image save/load
 - [ ] Tile format.
   - [x] Tile format with no LoD(load).
@@ -227,9 +200,11 @@ Contribution is welcome!
   - [ ] Tile format with no LoD(save).
   - [ ] Tile format with LoD(save).
 - [ ] Support for various compression type.
-  - [x] zfp compression(Not in OpenEXR spec, though)
+  - [ ] zfp compression(Not in OpenEXR spec, though)
 - [x] Multi-channel.
 - [ ] Multi-part(EXR2.0)
+  - [x] Load multi-part image
+  - [ ] Load multi-part deep image
 - [ ] Line order.
   - [x] Increasing, decreasing(load)
   - [ ] Random?
@@ -239,9 +214,9 @@ Contribution is welcome!
   - [x] UINT, FLOAT(deep load)
   - [x] UINT, FLOAT(save)
   - [ ] UINT, FLOAT(deep save)
-- [ ] Full support for big endian machine.
-  - [x] Loading multi channel EXR
-  - [x] Saving multi channel EXR
+- [ ] Support for big endian machine.
+  - [ ] Loading multi-part channel EXR
+  - [ ] Saving multi-part channel EXR
   - [ ] Loading deep image
   - [ ] Saving deep image
 - [ ] Optimization
