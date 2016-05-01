@@ -212,9 +212,6 @@ typedef struct _EXRHeader {
                                // can edit it(only valid for HALF pixel type
                                // channel)
 
-  int *original_pixel_types;  // Original pixel types(pixel type stored in a
-                              // file). Users cannot edit this field.
-
   int compression_type;  // compression type(TINYEXR_COMPRESSIONTYPE_*)
 } EXRHeader;
 
@@ -9767,12 +9764,6 @@ static void ConvertHeader(EXRHeader *exr_header, const HeaderInfo &info) {
     exr_header->pixel_types[c] = info.channels[c].pixel_type;
   }
 
-  exr_header->original_pixel_types = static_cast<int *>(
-      malloc(sizeof(int) * static_cast<size_t>(exr_header->num_channels)));
-  for (size_t c = 0; c < static_cast<size_t>(exr_header->num_channels); c++) {
-    exr_header->original_pixel_types[c] = info.channels[c].pixel_type;
-  }
-
   // Initially fill with values of `pixel_types`
   exr_header->requested_pixel_types = static_cast<int *>(
       malloc(sizeof(int) * static_cast<size_t>(exr_header->num_channels)));
@@ -11369,10 +11360,6 @@ int FreeEXRHeader(EXRHeader *exr_header) {
 
   if (exr_header->pixel_types) {
     free(exr_header->pixel_types);
-  }
-
-  if (exr_header->original_pixel_types) {
-    free(exr_header->original_pixel_types);
   }
 
   if (exr_header->requested_pixel_types) {
