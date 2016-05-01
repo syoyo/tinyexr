@@ -315,8 +315,9 @@ Build your app with linking `deps/ZFP/lib/libzfp.a`
 Contribution is welcome!
 
 - [ ] Compression
-  - [ ] b44
-  - [ ] PIZ
+  - [ ] B44?
+  - [ ] B44A?
+  - [ ] PIX24?
 - [ ] Custom attributes
   - [x] Normal image(EXR 1.x)
   - [ ] Deep image(EXR 2.x)
