@@ -53,7 +53,7 @@ extern "C" {
 // Some compiler flags
 #ifndef TINYEXR_USE_MINIZ
 #define TINYEXR_USE_MINIZ \
-  (0)  // Use external zlib if this flag is not set. Linking with zlib required.
+  (1)  // Use internal miniz(if this flag is 0, linking with zlib required).
 #endif
 
 #ifndef TINYEXR_USE_PIZ
@@ -8987,8 +8987,7 @@ static void DecodeTiledPixelData(
 static void ComputeChannelLayout(std::vector<size_t> *channel_offset_list,
                                  int *pixel_data_size, size_t *channel_offset,
                                  int num_channels,
-                                 const EXRChannelInfo *channels,
-                                 const int *requested_pixel_types) {
+                                 const EXRChannelInfo *channels) {
   channel_offset_list->resize(static_cast<size_t>(num_channels));
 
   (*pixel_data_size) = 0;
@@ -9543,7 +9542,12 @@ int LoadMultiChannelEXRFromFile(EXRImage *exr_image,
     return -1;
   }
 
+#ifdef _WIN32
+  FILE *fp = NULL;
+  fopen_s(&fp, filename, "rb");
+#else
   FILE *fp = fopen(filename, "rb");
+#endif
   if (!fp) {
     if (err) {
       (*err) = "Cannot read file.";
@@ -9646,7 +9650,7 @@ int LoadMultiChannelEXRFromMemory(EXRImage *exr_image,
   size_t channel_offset = 0;
   tinyexr::ComputeChannelLayout(
       &channel_offset_list, &pixel_data_size, &channel_offset, num_channels,
-      exr_header->channels, exr_header->requested_pixel_types);
+      exr_header->channels);
 
   if (exr_header->tiled) {
     size_t num_tiles = offsets.size();  // = # of blocks
@@ -10157,7 +10161,12 @@ static int SaveMultiChannelEXRToFile(const EXRImage *exr_image,
     return -1;
   }
 
+#ifdef _WIN32
+  FILE *fp = NULL;
+  fopen_s(&fp, filename, "rb");
+#else
   FILE *fp = fopen(filename, "wb");
+#endif
   if (!fp) {
     if (err) {
       (*err) = "Cannot write a file.";
@@ -10855,7 +10864,12 @@ int ParseMultiChannelEXRHeaderFromFile(EXRHeader *exr_header,
     return -1;
   }
 
+#ifdef _WIN32
+  FILE *fp = NULL;
+  fopen_s(&fp, filename, "rb");
+#else
   FILE *fp = fopen(filename, "rb");
+#endif
   if (!fp) {
     if (err) {
       (*err) = "Cannot read file.";
