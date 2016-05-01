@@ -12,7 +12,12 @@
 static void
 SaveAsPFM(const char* filename, int width, int height, float* data)
 {
+#ifdef _WIN32
+  FILE* fp = NULL;
+  fopen_s(&fp, filename, "wb");
+#else
   FILE* fp = fopen(filename, "wb");
+#endif
   if (!fp) {
     fprintf(stderr, "failed to write a PFM file.\n");
     return;

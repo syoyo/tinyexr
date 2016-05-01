@@ -9,7 +9,6 @@
 #include <fstream>
 
 #define TINYEXR_IMPLEMENTATION
-#define TINYEXR_USE_MINIZ 1
 #include "../../tinyexr.h"
 
 // path to https://github.com/openexr/openexr-images

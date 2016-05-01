@@ -10245,7 +10245,12 @@ int LoadEXRImageFromFile(EXRImage *exr_image, const EXRHeader *exr_header,
     return TINYEXR_ERROR_INVALID_ARGUMENT;
   }
 
+#ifdef _WIN32
+  FILE *fp = NULL;
+  fopen_s(&fp, filename, "rb");
+#else
   FILE *fp = fopen(filename, "rb");
+#endif
   if (!fp) {
     if (err) {
       (*err) = "Cannot read file.";
@@ -10722,7 +10727,12 @@ int SaveEXRImageToFile(const EXRImage *exr_image, const EXRHeader *exr_header,
     return TINYEXR_ERROR_INVALID_ARGUMENT;
   }
 
+#ifdef _WIN32
+  FILE *fp = NULL;
+  fopen_s(&fp, filename, "rb");
+#else
   FILE *fp = fopen(filename, "wb");
+#endif
   if (!fp) {
     if (err) {
       (*err) = "Cannot write a file.";
@@ -11427,7 +11437,12 @@ int ParseEXRHeaderFromFile(EXRHeader *exr_header, const EXRVersion *exr_version,
     return TINYEXR_ERROR_INVALID_ARGUMENT;
   }
 
+#ifdef _WIN32
+  FILE *fp = NULL;
+  fopen_s(&fp, filename, "rb");
+#else
   FILE *fp = fopen(filename, "rb");
+#endif
   if (!fp) {
     if (err) {
       (*err) = "Cannot read file.";
@@ -11476,7 +11491,7 @@ int ParseEXRMultipartHeaderFromMemory(EXRHeader ***exr_headers,
 
   std::vector<tinyexr::HeaderInfo> infos;
 
-  while (true) {
+  for (;;) {
     tinyexr::HeaderInfo info;
     info.clear();
 
@@ -11541,7 +11556,12 @@ int ParseEXRMultipartHeaderFromFile(EXRHeader ***exr_headers, int *num_headers,
     return TINYEXR_ERROR_INVALID_ARGUMENT;
   }
 
+#ifdef _WIN32
+  FILE *fp = NULL;
+  fopen_s(&fp, filename, "rb");
+#else
   FILE *fp = fopen(filename, "rb");
+#endif
   if (!fp) {
     if (err) {
       (*err) = "Cannot read file.";
@@ -11632,7 +11652,12 @@ int ParseEXRVersionFromFile(EXRVersion *version, const char *filename) {
     return TINYEXR_ERROR_INVALID_ARGUMENT;
   }
 
+#ifdef _WIN32
+  FILE *fp = NULL;
+  fopen_s(&fp, filename, "rb");
+#else
   FILE *fp = fopen(filename, "rb");
+#endif
   if (!fp) {
     return TINYEXR_ERROR_CANT_OPEN_FILE;
   }
@@ -11759,7 +11784,12 @@ int LoadEXRMultipartImageFromFile(EXRImage *exr_images,
     return TINYEXR_ERROR_INVALID_ARGUMENT;
   }
 
+#ifdef _WIN32
+  FILE *fp = NULL;
+  fopen_s(&fp, filename, "rb");
+#else
   FILE *fp = fopen(filename, "rb");
+#endif
   if (!fp) {
     if (err) {
       (*err) = "Cannot read file.";

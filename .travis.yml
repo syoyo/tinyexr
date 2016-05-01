@@ -19,7 +19,7 @@ matrix:
         - g++-4.9
         - clang-3.7
     compiler: clang
-    env: DEPLOY_BUILD=1 COMPILER_VERSION=3.7 BUILD_TYPE=Debug CXXFLAGS="-fsanitize=address -g -O0 -Weverything -Werror -Wno-c++11-long-long -Wno-padded -Wno-sign-conversion -DTINYEXR_USE_MINIZ=0 -DTINYEXR_USE_PIZ=0" LDFLAGS="-lz"
+    env: DEPLOY_BUILD=1 COMPILER_VERSION=3.7 BUILD_TYPE=Debug CXXFLAGS="-g -O0 -Weverything -Werror -Wno-c++11-long-long -Wno-padded -Wno-sign-conversion -DTINYEXR_USE_MINIZ=0 -DTINYEXR_USE_PIZ=0" LDFLAGS="-lz"
   - addons: *1
     compiler: clang
     env: COMPILER_VERSION=3.7 BUILD_TYPE=Release
@@ -67,10 +67,7 @@ script:
   - export CXX="${CXX}-${COMPILER_VERSION}"
   - export CXXFLAGS="${CXXFLAGS}"
   - make
-  - cd test/unit
-  - make clean
-  - make check
-  - cd ../../
+  - make test
   - (cd jni; make)
 
 addons:
