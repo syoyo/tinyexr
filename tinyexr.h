@@ -10834,17 +10834,16 @@ int LoadDeepEXR(DeepImage *deep_image, const char *filename, const char **err) {
     }
 
     if (attr_name.compare("compression") == 0) {
-      // must be 0:No compression, 1: RLE, 2: ZIPs or 3: ZIP
-      if (data[0] > 3) {
+      compression_type = data[0];
+      if (compression_type > TINYEXR_COMPRESSIONTYPE_PIZ) {
         if (err) {
           (*err) = "Unsupported compression type.";
         }
         return TINYEXR_ERROR_UNSUPPORTED_FORMAT;
       }
 
-      compression_type = data[0];
 
-      if (compression_type == 3) {  // ZIP
+      if (compression_type == TINYEXR_COMPRESSIONTYPE_ZIP) { 
         num_scanline_blocks = 16;
       }
 
@@ -10922,7 +10921,20 @@ int LoadDeepEXR(DeepImage *deep_image, const char *filename, const char **err) {
     offsets[y] = offset;
   }
 
-  if (compression_type != 0 && compression_type != 2 && compression_type != 3) {
+#if TINYEXR_USE_PIZ
+  if ((compression_type == TINYEXR_COMPRESSIONTYPE_NONE) ||
+      (compression_type == TINYEXR_COMPRESSIONTYPE_RLE) ||
+      (compression_type == TINYEXR_COMPRESSIONTYPE_ZIPS) ||
+      (compression_type == TINYEXR_COMPRESSIONTYPE_ZIP) ||
+      (compression_type == TINYEXR_COMPRESSIONTYPE_PIZ)) {
+#else
+  if ((compression_type == TINYEXR_COMPRESSIONTYPE_NONE) ||
+      (compression_type == TINYEXR_COMPRESSIONTYPE_RLE) ||
+      (compression_type == TINYEXR_COMPRESSIONTYPE_ZIPS) ||
+      (compression_type == TINYEXR_COMPRESSIONTYPE_ZIP)) {
+#endif
+		// OK
+	} else {
     if (err) {
       (*err) = "Unsupported format.";
     }
