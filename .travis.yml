@@ -4,7 +4,55 @@ env:
 
 language: cpp
 
-compiler: gcc
+matrix:
+  include:
+  - addons: &1
+      apt:
+        sources:
+        - george-edison55-precise-backports
+        - ubuntu-toolchain-r-test
+        - llvm-toolchain-precise-3.7
+        packages:
+        - cmake
+        - cmake-data
+        - ninja-build
+        - g++-4.9
+        - clang-3.7
+    compiler: clang
+    env: DEPLOY_BUILD=1 COMPILER_VERSION=3.7 BUILD_TYPE=Debug CXXFLAGS="-fsanitize=address -g -O0 -Weverything -Werror -Wno-c++11-long-long -Wno-padded -Wno-sign-conversion -DTINYEXR_USE_MINIZ=0 -DTINYEXR_USE_PIZ=0" LDFLAGS="-lz"
+  - addons: *1
+    compiler: clang
+    env: COMPILER_VERSION=3.7 BUILD_TYPE=Release
+  - addons: &2
+      apt:
+        sources:
+        - george-edison55-precise-backports
+        - ubuntu-toolchain-r-test
+        packages:
+        - cmake
+        - cmake-data
+        - ninja-build
+        - g++-4.9
+    compiler: gcc
+    env: COMPILER_VERSION=4.9 BUILD_TYPE=Debug
+  - addons: *2
+    compiler: gcc
+    env: COMPILER_VERSION=4.9 BUILD_TYPE=Release
+  - addons: *1
+    compiler: clang
+    env: COMPILER_VERSION=3.7 BUILD_TYPE=Debug
+  - addons: &3
+      apt:
+        sources:
+        - gccgeorge-edison55-precise-backports
+        - ubuntu-toolchain-r-test
+        packages:
+        - g++-4.4
+    compiler: gcc
+    env: COMPILER_VERSION=4.4 BUILD_TYPE=Debug
+  - addons: *3
+    compiler: gcc
+    env: COMPILER_VERSION=4.4 BUILD_TYPE=Release
 
 before_install:
   - sudo apt-get update -qq -y
@@ -15,8 +63,13 @@ before_install:
   - export ANDROID_HOME=$(pwd)/android-sdk-linux
 
 script:
+  - export CC="${CC}-${COMPILER_VERSION}"
+  - export CXX="${CXX}-${COMPILER_VERSION}"
   - make
-  - make test
+  - cd test/unit
+  - make clean
+  - make check
+  - cd ../../
   - (cd jni; make)
 
 addons:
