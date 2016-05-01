@@ -5,20 +5,10 @@
 #define TINYEXR_IMPLEMENTATION
 #include "tinyexr.h"
 
-static const char* GetPixelType(int id)
-{
-  if (id == TINYEXR_PIXELTYPE_HALF) {
-    return "HALF";
-  } else if (id == TINYEXR_PIXELTYPE_FLOAT) {
-    return "FLOAT";
-  } else if (id == TINYEXR_PIXELTYPE_UINT) {
-    return "UINT";
-  }
+//#define SIMPLE_API_EXAMPLE
 
-  return "???";
-}
+#ifdef SIMPLE_API_EXAMPLE
 
-#if 0
 static void
 SaveAsPFM(const char* filename, int width, int height, float* data)
 {
@@ -45,7 +35,22 @@ SaveAsPFM(const char* filename, int width, int height, float* data)
 
   fclose(fp);
 }
-#endif
+
+#else
+
+static const char* GetPixelType(int id)
+{
+  if (id == TINYEXR_PIXELTYPE_HALF) {
+    return "HALF";
+  } else if (id == TINYEXR_PIXELTYPE_FLOAT) {
+    return "FLOAT";
+  } else if (id == TINYEXR_PIXELTYPE_UINT) {
+    return "UINT";
+  }
+
+  return "???";
+}
+
 
 // Simple tile -> scanline converter. Assumes FLOAT pixel type for all channels.
 static void
@@ -81,6 +86,7 @@ TiledImageToScanlineImage(EXRImage* src, const EXRHeader* header)
   }
 
 }
+#endif
 
 int
 main(int argc, char** argv)
@@ -97,7 +103,7 @@ main(int argc, char** argv)
     outfilename = argv[2];
   }
 
-#if 0
+#ifdef SIMPLE_API_EXAMPLE
   int width, height;
   float* image;
   int ret = LoadEXR(&image, &width, &height, argv[1], &err);
@@ -184,7 +190,7 @@ main(int argc, char** argv)
 
     ret = LoadEXRMultipartImageFromFile(&images.at(0), const_cast<const EXRHeader**>(exr_headers), num_exr_headers, argv[1], &err);
     if (ret != 0) {
-      fprintf(stderr, "Parse EXR err: %s\n", err);
+      fprintf(stderr, "Load EXR err: %s\n", err);
       return ret;
     }
 

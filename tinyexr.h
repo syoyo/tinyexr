@@ -139,10 +139,10 @@ extern "C" {
 
 typedef struct _EXRVersion {
   int version;     // this must be 2
-  bool tiled;      // tile format image
-  bool long_name;  // long name attribute
-  bool non_image;  // deep image(EXR 2.0)
-  bool multipart;  // multi-part(EXR 2.0)
+  int tiled;      // tile format image
+  int long_name;  // long name attribute
+  int non_image;  // deep image(EXR 2.0)
+  int multipart;  // multi-part(EXR 2.0)
 } EXRVersion;
 
 typedef struct _EXRAttribute {
@@ -184,15 +184,15 @@ typedef struct _EXRHeader {
   int chunk_count;
 
   // Properties for tiled format(`tiledesc`).
-  bool tiled;
+  int tiled;
   int tile_size_x;
   int tile_size_y;
   int tile_level_mode;
   int tile_rounding_mode;
 
-  bool long_name;
-  bool non_image;
-  bool multipart;
+  int long_name;
+  int non_image;
+  int multipart;
   unsigned int header_len;
 
   // Custom attributes(exludes required attributes(e.g. `channels`,

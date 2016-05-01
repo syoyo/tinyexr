@@ -76,20 +76,43 @@ TEST_CASE("Beachball/multipart.0001.exr", "[Version]") {
   int ret = ParseEXRVersionFromFile(&exr_version, filepath.c_str());
   REQUIRE(TINYEXR_SUCCESS == ret);
   REQUIRE(true == exr_version.multipart);
+
+  EXRHeader *headers;
 }
 
-
-TEST_CASE("GoldenGate", "[TileLoad]") {
+TEST_CASE("Beachball/multipart.0001.exr|Load", "[Load]") {
   EXRVersion exr_version;
-  EXRImage exr_image;
-  EXRHeader exr_header;
-  const char* err = NULL;
-  std::string filepath = GetPath("Tiles/GoldenGate.exr");
+  std::string filepath = GetPath("Beachball/multipart.0001.exr");
   int ret = ParseEXRVersionFromFile(&exr_version, filepath.c_str());
   REQUIRE(TINYEXR_SUCCESS == ret);
-  REQUIRE(true == exr_version.tiled);
-  ret = ParseEXRHeaderFromFile(&exr_header, &exr_version, filepath.c_str(), &err);
-  REQUIRE(NULL == err);
+  REQUIRE(true == exr_version.multipart);
+
+  EXRHeader **exr_headers; // list of EXRHeader pointers.
+  int num_exr_headers;
+  const char* err;
+
+  ret = ParseEXRMultipartHeaderFromFile(&exr_headers, &num_exr_headers, &exr_version, filepath.c_str(), &err);
   REQUIRE(TINYEXR_SUCCESS == ret);
+
+  REQUIRE(10 == num_exr_headers);
+
+  std::vector<EXRImage> images(num_exr_headers);
+  for (int i =0; i < num_exr_headers; i++) {
+    InitEXRImage(&images[i]);
+  }
+
+  ret = LoadEXRMultipartImageFromFile(&images.at(0), const_cast<const EXRHeader**>(exr_headers), num_exr_headers, filepath.c_str(), &err);
+  REQUIRE(TINYEXR_SUCCESS == ret);
+
+  for (int i =0; i < num_exr_headers; i++) {
+    FreeEXRImage(&images.at(i));
+  }
+
+  for (int i =0; i < num_exr_headers; i++) {
+    FreeEXRHeader(exr_headers[i]);
+    free(exr_headers[i]);
+  }
+  free(exr_headers);
 }
+
 

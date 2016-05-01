@@ -17,7 +17,7 @@ To use `tinyexr`, simply copy `tinyexr.h` into your project.
 * OpenEXR version 1.x.
 * Normal image
   * Scanline format.
-  * Uncompress("compress" = 0), ZIPS("compress" = 2), ZIP compression("compress" = 3) and PIZ compression("compress" = 4).
+  * Uncompress("compress" = 0), RLE("compress" = 1), ZIPS("compress" = 2), ZIP compression("compress" = 3) and PIZ compression("compress" = 4).
   * Half/Uint/Float pixel type.
   * Custom attributes(up to 128)
 * Deep image
@@ -58,7 +58,7 @@ Include `tinyexr.h` with `TINYEXR_IMPLEMENTATION` flag(do this only for **one** 
 #include "tinyexr.h"
 ```
 
-Quickly reading RGB(A) EXR file.
+### Quickly reading RGB(A) EXR file.
 
 ```
   const char* input = "asakusa.exr";
@@ -70,11 +70,126 @@ Quickly reading RGB(A) EXR file.
   int ret = LoadEXR(&out, &width, &height, input, &err);
 ```
 
-Loading EXR from a file.
+### Loading Singlepart EXR from a file.
 
-T.B.W.
+Scanline and tiled format are supported.
 
-Saving EXR file.
+```
+  // 1. Read EXR version.
+  EXRVersion exr_version;
+
+  int ret = ParseEXRVersionFromFile(&exr_version, argv[1]);
+  if (ret != 0) {
+    fprintf(stderr, "Invalid EXR file: %s\n", argv[1]);
+    return -1;
+  }
+
+  if (exr_version.multipart) {
+    // must be multipart flag is false.
+    return -1;
+  }
+
+  // 2. Read EXR header
+  EXRHeader exr_header;
+  InitEXRHeader(&exr_header);
+
+  ret = ParseEXRHeaderFromFile(&exr_header, &exr_version, argv[1], &err);
+  if (ret != 0) {
+    fprintf(stderr, "Parse EXR err: %s\n", err);
+    return ret;
+  }
+
+  // // Read HALF channel as FLOAT.
+  // for (int i = 0; i < exr_header.num_channels; i++) {
+  //   if (exr_header.pixel_types[i] == TINYEXR_PIXELTYPE_HALF) {
+  //     exr_header.requested_pixel_types[i] = TINYEXR_PIXELTYPE_FLOAT;
+  //   }
+  // }
+
+  EXRImage exr_image;
+  InitEXRImage(&exr_image);
+
+  ret = LoadEXRImageFromFile(&exr_image, &exr_header, argv[1], &err);
+  if (ret != 0) {
+    fprintf(stderr, "Load EXR err: %s\n", err);
+    return ret;
+  }
+
+  // 3. Access image data
+  // `exr_image.images` will be filled when EXR is scanline format.
+  // `exr_image.tiled` will be filled when EXR is tiled format.
+
+  // 4. Free image data
+  FreeEXRImage(&exr_image);
+```
+
+### Loading Multipart EXR from a file.
+
+Scanline and tiled format are supported.
+
+```
+  // 1. Read EXR version.
+  EXRVersion exr_version;
+
+  int ret = ParseEXRVersionFromFile(&exr_version, argv[1]);
+  if (ret != 0) {
+    fprintf(stderr, "Invalid EXR file: %s\n", argv[1]);
+    return -1;
+  }
+
+  if (!exr_version.multipart) {
+    // must be multipart flag is true.
+    return -1;
+  }
+
+  // 2. Read EXR headers in the EXR.
+  EXRHeader **exr_headers; // list of EXRHeader pointers.
+  int num_exr_headers;
+
+  // Memory for EXRHeader is allocated inside of ParseEXRMultipartHeaderFromFile,
+  ret = ParseEXRMultipartHeaderFromFile(&exr_headers, &num_exr_headers, &exr_version, argv[1], &err);
+  if (ret != 0) {
+    fprintf(stderr, "Parse EXR err: %s\n", err);
+    return ret;
+  }
+
+  printf("num parts = %d\n", num_exr_headers);
+
+
+  // 3. Load images.
+
+  // Prepare array of EXRImage.
+  std::vector<EXRImage> images(num_exr_headers);
+  for (int i =0; i < num_exr_headers; i++) {
+    InitEXRImage(&images[i]);
+  }
+
+  ret = LoadEXRMultipartImageFromFile(&images.at(0), const_cast<const EXRHeader**>(exr_headers), num_exr_headers, argv[1], &err);
+  if (ret != 0) {
+    fprintf(stderr, "Parse EXR err: %s\n", err);
+    return ret;
+  }
+
+  printf("Loaded %d part images\n", num_exr_headers);
+
+  // 4. Access image data
+  // `exr_image.images` will be filled when EXR is scanline format.
+  // `exr_image.tiled` will be filled when EXR is tiled format.
+
+  // 5. Free images
+  for (int i =0; i < num_exr_headers; i++) {
+    FreeEXRImage(&images.at(i));
+  }
+
+  // 6. Free headers.
+  for (int i =0; i < num_exr_headers; i++) {
+    FreeEXRHeader(exr_headers[i]);
+    free(exr_headers[i]);
+  }
+  free(exr_headers);
+
+
+Saving Scanline EXR file.
 
 ```
   bool SaveEXR(const float* rgb, int width, int height, const char* outfilename) {
@@ -194,16 +309,8 @@ Build your app with linking `deps/ZFP/lib/libzfp.a`
 Contribution is welcome!
 
 - [ ] Compression
-  - [x] NONE("compress" = 0, load)
-  - [ ] RLE("compress" = 1, load)
-  - [x] ZIPS("compress" = 2, load)
-  - [x] ZIP("compress" = 3, load)
-  - [x] PIZ("compress" = 4, load)
-  - [x] NONE("compress" = 0, save)
-  - [ ] RLE("compress" = 1, save)
-  - [x] ZIPS("compress" = 2, save)
-  - [x] ZIP("compress" = 3, save)
-  - [x] PIZ("compress" = 4, save)
+  - [ ] b44
+  - [ ] PIZ
 - [ ] Custom attributes
   - [x] Normal image(EXR 1.x)
   - [ ] Deep image(EXR 2.x)
@@ -218,7 +325,7 @@ Contribution is welcome!
   - [ ] Tile format with LoD(load).
   - [ ] Tile format with no LoD(save).
   - [ ] Tile format with LoD(save).
-- [ ] Support for various compression type.
+- [ ] Support for custom compression type.
   - [ ] zfp compression(Not in OpenEXR spec, though)
 - [x] Multi-channel.
 - [ ] Multi-part(EXR2.0)
