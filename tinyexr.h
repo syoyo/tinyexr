@@ -24,6 +24,45 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
+
+// TinyEXR contains some OpenEXR code, which is licensed under ------------
+
+///////////////////////////////////////////////////////////////////////////
+//
+// Copyright (c) 2002, Industrial Light & Magic, a division of Lucas
+// Digital Ltd. LLC
+// 
+// All rights reserved.
+// 
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are
+// met:
+// *       Redistributions of source code must retain the above copyright
+// notice, this list of conditions and the following disclaimer.
+// *       Redistributions in binary form must reproduce the above
+// copyright notice, this list of conditions and the following disclaimer
+// in the documentation and/or other materials provided with the
+// distribution.
+// *       Neither the name of Industrial Light & Magic nor the names of
+// its contributors may be used to endorse or promote products derived
+// from this software without specific prior written permission. 
+// 
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+//
+///////////////////////////////////////////////////////////////////////////
+
+// End of OpenEXR license -------------------------------------------------
+
 #ifndef TINYEXR_H_
 #define TINYEXR_H_
 
@@ -86,7 +125,7 @@ extern "C" {
 #define TINYEXR_MAX_ATTRIBUTES (128)
 
 #define TINYEXR_COMPRESSIONTYPE_NONE (0)
-//#define TINYEXR_COMPRESSIONTYPE_RLE  (1)  // not supported yet
+#define TINYEXR_COMPRESSIONTYPE_RLE  (1)
 #define TINYEXR_COMPRESSIONTYPE_ZIPS (2)
 #define TINYEXR_COMPRESSIONTYPE_ZIP (3)
 #define TINYEXR_COMPRESSIONTYPE_PIZ (4)
@@ -7222,20 +7261,237 @@ static void CompressZip(unsigned char *dst, unsigned long long &compressedSize,
 #endif
 }
 
-static void DecompressZip(unsigned char *dst, unsigned long &uncompressedSize,
+static void DecompressZip(unsigned char *dst, unsigned long *uncompressedSize /* inout */,
                           const unsigned char *src, unsigned long srcSize) {
-  std::vector<unsigned char> tmpBuf(uncompressedSize);
+  std::vector<unsigned char> tmpBuf(*uncompressedSize);
 
 #if TINYEXR_USE_MINIZ
   int ret =
-      miniz::mz_uncompress(&tmpBuf.at(0), &uncompressedSize, src, srcSize);
+      miniz::mz_uncompress(&tmpBuf.at(0), uncompressedSize, src, srcSize);
   assert(ret == miniz::MZ_OK);
   (void)ret;
 #else
-  int ret = uncompress(&tmpBuf.at(0), &uncompressedSize, src, srcSize);
+  int ret = uncompress(&tmpBuf.at(0), uncompressedSize, src, srcSize);
   assert(ret == Z_OK);
   (void)ret;
 #endif
+
+  //
+  // Apply EXR-specific? postprocess. Grabbed from OpenEXR's
+  // ImfZipCompressor.cpp
+  //
+
+  // Predictor.
+  {
+    unsigned char *t = &tmpBuf.at(0) + 1;
+    unsigned char *stop = &tmpBuf.at(0) + (*uncompressedSize);
+
+    while (t < stop) {
+      int d = int(t[-1]) + int(t[0]) - 128;
+      t[0] = static_cast<unsigned char>(d);
+      ++t;
+    }
+  }
+
+  // Reorder the pixel data.
+  {
+    const char *t1 = reinterpret_cast<const char *>(&tmpBuf.at(0));
+    const char *t2 = reinterpret_cast<const char *>(&tmpBuf.at(0)) +
+                     (*uncompressedSize + 1) / 2;
+    char *s = reinterpret_cast<char *>(dst);
+    char *stop = s + (*uncompressedSize);
+
+    for (;;) {
+      if (s < stop)
+        *(s++) = *(t1++);
+      else
+        break;
+
+      if (s < stop)
+        *(s++) = *(t2++);
+      else
+        break;
+    }
+  }
+}
+
+// RLE code from OpenEXR --------------------------------------
+
+const int MIN_RUN_LENGTH = 3;
+const int MAX_RUN_LENGTH = 127;
+
+//
+// Compress an array of bytes, using run-length encoding,
+// and return the length of the compressed data.
+//
+
+static int
+rleCompress (int inLength, const char in[], signed char out[])
+{
+    const char *inEnd = in + inLength;
+    const char *runStart = in;
+    const char *runEnd = in + 1;
+    signed char *outWrite = out;
+
+    while (runStart < inEnd)
+    {
+	while (runEnd < inEnd &&
+	       *runStart == *runEnd &&
+	       runEnd - runStart - 1 < MAX_RUN_LENGTH)
+	{
+	    ++runEnd;
+	}
+
+	if (runEnd - runStart >= MIN_RUN_LENGTH)
+	{
+	    //
+	    // Compressable run
+	    //
+
+	    *outWrite++ = static_cast<char>(runEnd - runStart) - 1;
+	    *outWrite++ = *(reinterpret_cast<const signed char *>(runStart));
+	    runStart = runEnd;
+	}
+	else
+	{
+	    //
+	    // Uncompressable run
+	    //
+
+	    while (runEnd < inEnd &&
+		   ((runEnd + 1 >= inEnd ||
+		     *runEnd != *(runEnd + 1)) ||
+		    (runEnd + 2 >= inEnd ||
+		     *(runEnd + 1) != *(runEnd + 2))) &&
+		   runEnd - runStart < MAX_RUN_LENGTH)
+	    {
+		++runEnd;
+	    }
+
+	    *outWrite++ = static_cast<char>(runStart - runEnd);
+
+	    while (runStart < runEnd)
+	    {
+		*outWrite++ = *(reinterpret_cast<const signed char *>(runStart++));
+	    }
+	}
+
+	++runEnd;
+    }
+
+    return static_cast<int>(outWrite - out);
+}
+
+
+//
+// Uncompress an array of bytes compressed with rleCompress().
+// Returns the length of the oncompressed data, or 0 if the
+// length of the uncompressed data would be more than maxLength.
+//
+
+static int
+rleUncompress (int inLength, int maxLength, const signed char in[], char out[])
+{
+    char *outStart = out;
+
+    while (inLength > 0)
+    {
+	if (*in < 0)
+	{
+	    int count = -(static_cast<int>(*in++));
+	    inLength -= count + 1;
+
+	    if (0 > (maxLength -= count))
+		return 0;
+
+        memcpy(out, in, count);
+        out += count;
+        in  += count;
+	}
+	else
+	{
+	    int count = *in++;
+	    inLength -= 2;
+
+	    if (0 > (maxLength -= count + 1))
+		return 0;
+
+        memset(out, *reinterpret_cast<const char*>(in), count+1);
+        out += count+1;
+
+	    in++;
+	}
+    }
+
+    return static_cast<int>(out - outStart);
+}
+
+// End of RLE code from OpenEXR -----------------------------------
+
+static void CompressRle(unsigned char *dst, unsigned long long &compressedSize,
+                        const unsigned char *src, unsigned long srcSize) {
+  std::vector<unsigned char> tmpBuf(srcSize);
+
+  //
+  // Apply EXR-specific? postprocess. Grabbed from OpenEXR's
+  // ImfZipCompressor.cpp
+  //
+
+  //
+  // Reorder the pixel data.
+  //
+
+  const char *srcPtr = reinterpret_cast<const char *>(src);
+
+  {
+    char *t1 = reinterpret_cast<char *>(&tmpBuf.at(0));
+    char *t2 = reinterpret_cast<char *>(&tmpBuf.at(0)) + (srcSize + 1) / 2;
+    const char *stop = srcPtr + srcSize;
+
+    for (;;) {
+      if (srcPtr < stop)
+        *(t1++) = *(srcPtr++);
+      else
+        break;
+
+      if (srcPtr < stop)
+        *(t2++) = *(srcPtr++);
+      else
+        break;
+    }
+  }
+
+  //
+  // Predictor.
+  //
+
+  {
+    unsigned char *t = &tmpBuf.at(0) + 1;
+    unsigned char *stop = &tmpBuf.at(0) + srcSize;
+    int p = t[-1];
+
+    while (t < stop) {
+      int d = int(t[0]) - p + (128 + 256);
+      p = t[0];
+      t[0] = static_cast<unsigned char>(d);
+      ++t;
+    }
+  }
+
+  // outSize will be (srcSiz * 3) / 2 at max.
+  int outSize = rleCompress(static_cast<int>(srcSize), reinterpret_cast<const char*>(&tmpBuf.at(0)), reinterpret_cast<signed char*>(dst));
+  assert(outSize > 0);
+
+  compressedSize = outSize;
+}
+
+static void DecompressRle(unsigned char *dst, const unsigned long uncompressedSize,
+                          const unsigned char *src, unsigned long srcSize) {
+  std::vector<unsigned char> tmpBuf(uncompressedSize);
+
+  int ret = rleUncompress(static_cast<int>(srcSize), static_cast<int>(uncompressedSize), reinterpret_cast<const signed char*>(src), reinterpret_cast<char*>(dst));
+  assert(ret == static_cast<int>(uncompressedSize));
+  (void)ret;
 
   //
   // Apply EXR-specific? postprocess. Grabbed from OpenEXR's
@@ -7275,6 +7531,7 @@ static void DecompressZip(unsigned char *dst, unsigned long &uncompressedSize,
     }
   }
 }
+
 
 #if TINYEXR_USE_PIZ
 //
@@ -8753,7 +9010,7 @@ static void DecodePixelData(/* out */ unsigned char **out_images,
                             int num_lines, size_t pixel_data_size,
                             size_t num_channels, const EXRChannelInfo *channels,
                             const std::vector<size_t> &channel_offset_list) {
-  if (compression_type == 4) {  // PIZ
+  if (compression_type == TINYEXR_COMPRESSIONTYPE_PIZ) {  // PIZ
 #if TINYEXR_USE_PIZ
     // Allocate original data size.
     std::vector<unsigned char> outBuf(
@@ -8860,7 +9117,7 @@ static void DecodePixelData(/* out */ unsigned char **out_images,
     assert(0 && "PIZ is enabled in this build");
 #endif
 
-  } else if (compression_type == 2 || compression_type == 3) {  // ZIP
+  } else if (compression_type == TINYEXR_COMPRESSIONTYPE_ZIPS || compression_type == TINYEXR_COMPRESSIONTYPE_ZIP) {
     // Allocate original data size.
     std::vector<unsigned char> outBuf(static_cast<size_t>(width) *
                                       static_cast<size_t>(num_lines) *
@@ -8869,6 +9126,129 @@ static void DecodePixelData(/* out */ unsigned char **out_images,
     unsigned long dstLen = outBuf.size();
     assert(dstLen > 0);
     tinyexr::DecompressZip(reinterpret_cast<unsigned char *>(&outBuf.at(0)),
+                           &dstLen, data_ptr,
+                           static_cast<unsigned long>(data_len));
+
+    // For ZIP_COMPRESSION:
+    //   pixel sample data for channel 0 for scanline 0
+    //   pixel sample data for channel 1 for scanline 0
+    //   pixel sample data for channel ... for scanline 0
+    //   pixel sample data for channel n for scanline 0
+    //   pixel sample data for channel 0 for scanline 1
+    //   pixel sample data for channel 1 for scanline 1
+    //   pixel sample data for channel ... for scanline 1
+    //   pixel sample data for channel n for scanline 1
+    //   ...
+    for (size_t c = 0; c < static_cast<size_t>(num_channels); c++) {
+      if (channels[c].pixel_type == TINYEXR_PIXELTYPE_HALF) {
+        for (size_t v = 0; v < static_cast<size_t>(num_lines); v++) {
+          const unsigned short *line_ptr = reinterpret_cast<unsigned short *>(
+              &outBuf.at(v * static_cast<size_t>(pixel_data_size) *
+                             static_cast<size_t>(width) +
+                         channel_offset_list[c] * static_cast<size_t>(width)));
+          for (size_t u = 0; u < static_cast<size_t>(width); u++) {
+            tinyexr::FP16 hf;
+
+            hf.u = line_ptr[u];
+
+            tinyexr::swap2(reinterpret_cast<unsigned short *>(&hf.u));
+
+            if (requested_pixel_types[c] == TINYEXR_PIXELTYPE_HALF) {
+              unsigned short *image =
+                  reinterpret_cast<unsigned short **>(out_images)[c];
+              if (line_order == 0) {
+                image += (static_cast<size_t>(line_no) + v) *
+                             static_cast<size_t>(x_stride) +
+                         u;
+              } else {
+                image += (static_cast<size_t>(height) - 1U -
+                          (static_cast<size_t>(line_no) + v)) *
+                             static_cast<size_t>(x_stride) +
+                         u;
+              }
+              *image = hf.u;
+            } else {  // HALF -> FLOAT
+              tinyexr::FP32 f32 = half_to_float(hf);
+              float *image = reinterpret_cast<float **>(out_images)[c];
+              if (line_order == 0) {
+                image += (static_cast<size_t>(line_no) + v) *
+                             static_cast<size_t>(x_stride) +
+                         u;
+              } else {
+                image += (static_cast<size_t>(height) - 1U -
+                          (static_cast<size_t>(line_no) + v)) *
+                             static_cast<size_t>(x_stride) +
+                         u;
+              }
+              *image = f32.f;
+            }
+          }
+        }
+      } else if (channels[c].pixel_type == TINYEXR_PIXELTYPE_UINT) {
+        assert(requested_pixel_types[c] == TINYEXR_PIXELTYPE_UINT);
+
+        for (size_t v = 0; v < static_cast<size_t>(num_lines); v++) {
+          const unsigned int *line_ptr = reinterpret_cast<unsigned int *>(
+              &outBuf.at(v * pixel_data_size * static_cast<size_t>(width) +
+                         channel_offset_list[c] * static_cast<size_t>(width)));
+          for (size_t u = 0; u < static_cast<size_t>(width); u++) {
+            unsigned int val = line_ptr[u];
+
+            tinyexr::swap4(&val);
+
+            unsigned int *image =
+                reinterpret_cast<unsigned int **>(out_images)[c];
+            if (line_order == 0) {
+              image += (static_cast<size_t>(line_no) + v) *
+                           static_cast<size_t>(x_stride) +
+                       u;
+            } else {
+              image += (static_cast<size_t>(height) - 1U -
+                        (static_cast<size_t>(line_no) + v)) *
+                           static_cast<size_t>(x_stride) +
+                       u;
+            }
+            *image = val;
+          }
+        }
+      } else if (channels[c].pixel_type == TINYEXR_PIXELTYPE_FLOAT) {
+        assert(requested_pixel_types[c] == TINYEXR_PIXELTYPE_FLOAT);
+        for (size_t v = 0; v < static_cast<size_t>(num_lines); v++) {
+          const float *line_ptr = reinterpret_cast<float *>(
+              &outBuf.at(v * pixel_data_size * static_cast<size_t>(width) +
+                         channel_offset_list[c] * static_cast<size_t>(width)));
+          for (size_t u = 0; u < static_cast<size_t>(width); u++) {
+            float val = line_ptr[u];
+
+            tinyexr::swap4(reinterpret_cast<unsigned int *>(&val));
+
+            float *image = reinterpret_cast<float **>(out_images)[c];
+            if (line_order == 0) {
+              image += (static_cast<size_t>(line_no) + v) *
+                           static_cast<size_t>(x_stride) +
+                       u;
+            } else {
+              image += (static_cast<size_t>(height) - 1U -
+                        (static_cast<size_t>(line_no) + v)) *
+                           static_cast<size_t>(x_stride) +
+                       u;
+            }
+            *image = val;
+          }
+        }
+      } else {
+        assert(0);
+      }
+    }
+  } else if (compression_type == TINYEXR_COMPRESSIONTYPE_RLE) {
+    // Allocate original data size.
+    std::vector<unsigned char> outBuf(static_cast<size_t>(width) *
+                                      static_cast<size_t>(num_lines) *
+                                      pixel_data_size);
+
+    unsigned long dstLen = outBuf.size();
+    assert(dstLen > 0);
+    tinyexr::DecompressRle(reinterpret_cast<unsigned char *>(&outBuf.at(0)),
                            dstLen, data_ptr,
                            static_cast<unsigned long>(data_len));
 
@@ -8983,7 +9363,7 @@ static void DecodePixelData(/* out */ unsigned char **out_images,
         assert(0);
       }
     }
-  } else if (compression_type == 0) {  // No compression
+  } else if (compression_type == TINYEXR_COMPRESSIONTYPE_NONE) {
     for (size_t c = 0; c < num_channels; c++) {
       if (channels[c].pixel_type == TINYEXR_PIXELTYPE_HALF) {
         const unsigned short *line_ptr =
@@ -10255,6 +10635,31 @@ size_t SaveEXRImageToMemory(const EXRImage *exr_image,
       data_list[i].insert(data_list[i].end(), block.begin(),
                           block.begin() + data_len);
 
+    } else if (exr_header->compression_type == TINYEXR_COMPRESSIONTYPE_RLE) {
+      // (buf.size() * 3) / 2 would be enough.
+      std::vector<unsigned char> block((buf.size() * 3) / 2);
+
+      unsigned long long outSize = block.size();
+
+      tinyexr::CompressRle(&block.at(0), outSize,
+                           reinterpret_cast<const unsigned char *>(&buf.at(0)),
+                           buf.size());
+
+      // 4 byte: scan line
+      // 4 byte: data size
+      // ~     : pixel data(compressed)
+      std::vector<unsigned char> header(8);
+      unsigned int data_len = static_cast<unsigned int>(outSize);  // truncate
+      memcpy(&header.at(0), &start_y, sizeof(int));
+      memcpy(&header.at(4), &data_len, sizeof(unsigned int));
+
+      tinyexr::swap4(reinterpret_cast<unsigned int *>(&header.at(0)));
+      tinyexr::swap4(reinterpret_cast<unsigned int *>(&header.at(4)));
+
+      data_list[i].insert(data_list[i].end(), header.begin(), header.end());
+      data_list[i].insert(data_list[i].end(), block.begin(),
+                          block.begin() + data_len);
+
     } else if (exr_header->compression_type == TINYEXR_COMPRESSIONTYPE_PIZ) {
 #if TINYEXR_USE_PIZ
       unsigned int bufLen =
@@ -10582,7 +10987,7 @@ int LoadDeepEXR(DeepImage *deep_image, const char *filename, const char **err) {
     {
       unsigned long dstLen = pixelOffsetTable.size() * sizeof(int);
       tinyexr::DecompressZip(
-          reinterpret_cast<unsigned char *>(&pixelOffsetTable.at(0)), dstLen,
+          reinterpret_cast<unsigned char *>(&pixelOffsetTable.at(0)), &dstLen,
           data_ptr + 28, packedOffsetTableSize);
 
       assert(dstLen == pixelOffsetTable.size() * sizeof(int));
@@ -10597,7 +11002,7 @@ int LoadDeepEXR(DeepImage *deep_image, const char *filename, const char **err) {
     {
       unsigned long dstLen = unpackedSampleDataSize;
       tinyexr::DecompressZip(
-          reinterpret_cast<unsigned char *>(&sample_data.at(0)), dstLen,
+          reinterpret_cast<unsigned char *>(&sample_data.at(0)), &dstLen,
           data_ptr + 28 + packedOffsetTableSize, packedSampleDataSize);
       assert(dstLen == static_cast<unsigned long>(unpackedSampleDataSize));
     }

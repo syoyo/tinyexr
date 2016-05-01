@@ -170,6 +170,25 @@ See `example/deepview` for actual usage.
 
 ![DeepViewExample](https://github.com/syoyo/tinyexr/blob/master/examples/deepview/deepview_screencast.gif?raw=true)
 
+## TinyEXR extension
+
+### ZFP
+
+TinyEXR adds ZFP compression as an experimemtal support(Linux and MacOSX only).
+
+
+    $ git submodule update --init
+
+Then build ZFP
+
+    $ cd dep/ZFP
+    $ mkdir -p lib   # Create `lib` directory if not exist
+    $ make
+
+Set `1` to TINYEXT_USE_ZFP define in `tinyexr.h`
+
+Build your app with linking `deps/ZFP/lib/libzfp.a`
+
 ## TODO
 
 Contribution is welcome!
