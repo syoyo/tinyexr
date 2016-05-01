@@ -67,7 +67,7 @@ script:
   - export CXX="${CXX}-${COMPILER_VERSION}"
   - export CXXFLAGS="${CXXFLAGS}"
   - make
-  - make check
+  - make test
   - cd ../../
   - (cd jni; make)
 
