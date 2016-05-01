@@ -68,7 +68,6 @@ script:
   - export CXXFLAGS="${CXXFLAGS}"
   - make
   - make test
-  - cd ../../
   - (cd jni; make)
 
 addons:
