@@ -1,5 +1,10 @@
 # Build&Test
 
+## Prepare
+
+Clone `https://github.com/openexr/openexr-images` to `../../../` directory.
+(Or edit path to openexr-images in `tester.cc`)
+
 ## Use makefile
 
     $ make check

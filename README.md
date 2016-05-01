@@ -17,7 +17,7 @@ To use `tinyexr`, simply copy `tinyexr.h` into your project.
 * OpenEXR version 1.x.
 * Normal image
   * Scanline format.
-  * Uncompress("compress" = 0), ZIPS("compress" = 2), ZIP compression("compress" = 3) and PIZ compression("compress" = 4).
+  * Uncompress("compress" = 0), RLE("compress" = 1), ZIPS("compress" = 2), ZIP compression("compress" = 3) and PIZ compression("compress" = 4).
   * Half/Uint/Float pixel type.
   * Custom attributes(up to 128)
 * Deep image
@@ -26,7 +26,7 @@ To use `tinyexr`, simply copy `tinyexr.h` into your project.
   * Half, float pixel type.
 * Litte endian machine.
 * Limited support for big endian machine.
-  * read/write normal image.
+  * read/write scalinel image.
 * C interface.
   * You can easily write language bindings(e.g. golang)
 * EXR saving
@@ -58,7 +58,7 @@ Include `tinyexr.h` with `TINYEXR_IMPLEMENTATION` flag(do this only for **one** 
 #include "tinyexr.h"
 ```
 
-Quickly reading RGB(A) EXR file.
+### Quickly reading RGB(A) EXR file.
 
 ```
   const char* input = "asakusa.exr";
@@ -70,55 +70,145 @@ Quickly reading RGB(A) EXR file.
   int ret = LoadEXR(&out, &width, &height, input, &err);
 ```
 
-Loading EXR from a file.
+### Loading Singlepart EXR from a file.
+
+Scanline and tiled format are supported.
 
 ```
-  const char* input = "asakusa.exr";
-  const char* err;
+  // 1. Read EXR version.
+  EXRVersion exr_version;
 
-  EXRImage exrImage;
-  InitEXRImage(&exrImage);
+  int ret = ParseEXRVersionFromFile(&exr_version, argv[1]);
+  if (ret != 0) {
+    fprintf(stderr, "Invalid EXR file: %s\n", argv[1]);
+    return -1;
+  }
 
-  int ret = ParseMultiChannelEXRHeaderFromFile(&exrImage, input, &err);
+  if (exr_version.multipart) {
+    // must be multipart flag is false.
+    return -1;
+  }
+
+  // 2. Read EXR header
+  EXRHeader exr_header;
+  InitEXRHeader(&exr_header);
+
+  ret = ParseEXRHeaderFromFile(&exr_header, &exr_version, argv[1], &err);
   if (ret != 0) {
     fprintf(stderr, "Parse EXR err: %s\n", err);
-    return;
+    return ret;
   }
 
-  //// Uncomment if you want reading HALF image as FLOAT.
-  //for (int i = 0; i < exrImage.num_channels; i++) {
-  //  if (exrImage.pixel_types[i] = TINYEXR_PIXELTYPE_HALF) {
-  //    exrImage.requested_pixel_types[i] = TINYEXR_PIXELTYPE_FLOAT;
-  //  }
-  //}
+  // // Read HALF channel as FLOAT.
+  // for (int i = 0; i < exr_header.num_channels; i++) {
+  //   if (exr_header.pixel_types[i] == TINYEXR_PIXELTYPE_HALF) {
+  //     exr_header.requested_pixel_types[i] = TINYEXR_PIXELTYPE_FLOAT;
+  //   }
+  // }
 
-  ret = LoadMultiChannelEXRFromFile(&exrImage, input, &err);
+  EXRImage exr_image;
+  InitEXRImage(&exr_image);
+
+  ret = LoadEXRImageFromFile(&exr_image, &exr_header, argv[1], &err);
   if (ret != 0) {
     fprintf(stderr, "Load EXR err: %s\n", err);
-    return;
+    return ret;
   }
+
+  // 3. Access image data
+  // `exr_image.images` will be filled when EXR is scanline format.
+  // `exr_image.tiled` will be filled when EXR is tiled format.
+
+  // 4. Free image data
+  FreeEXRImage(&exr_image);
 ```
 
-Saving EXR file.
+### Loading Multipart EXR from a file.
+
+Scanline and tiled format are supported.
 
 ```
+  // 1. Read EXR version.
+  EXRVersion exr_version;
+
+  int ret = ParseEXRVersionFromFile(&exr_version, argv[1]);
+  if (ret != 0) {
+    fprintf(stderr, "Invalid EXR file: %s\n", argv[1]);
+    return -1;
+  }
+
+  if (!exr_version.multipart) {
+    // must be multipart flag is true.
+    return -1;
+  }
+
+  // 2. Read EXR headers in the EXR.
+  EXRHeader **exr_headers; // list of EXRHeader pointers.
+  int num_exr_headers;
+
+  // Memory for EXRHeader is allocated inside of ParseEXRMultipartHeaderFromFile,
+  ret = ParseEXRMultipartHeaderFromFile(&exr_headers, &num_exr_headers, &exr_version, argv[1], &err);
+  if (ret != 0) {
+    fprintf(stderr, "Parse EXR err: %s\n", err);
+    return ret;
+  }
+
+  printf("num parts = %d\n", num_exr_headers);
+
+
+  // 3. Load images.
+
+  // Prepare array of EXRImage.
+  std::vector<EXRImage> images(num_exr_headers);
+  for (int i =0; i < num_exr_headers; i++) {
+    InitEXRImage(&images[i]);
+  }
+
+  ret = LoadEXRMultipartImageFromFile(&images.at(0), const_cast<const EXRHeader**>(exr_headers), num_exr_headers, argv[1], &err);
+  if (ret != 0) {
+    fprintf(stderr, "Parse EXR err: %s\n", err);
+    return ret;
+  }
+
+  printf("Loaded %d part images\n", num_exr_headers);
+
+  // 4. Access image data
+  // `exr_image.images` will be filled when EXR is scanline format.
+  // `exr_image.tiled` will be filled when EXR is tiled format.
+
+  // 5. Free images
+  for (int i =0; i < num_exr_headers; i++) {
+    FreeEXRImage(&images.at(i));
+  }
+
+  // 6. Free headers.
+  for (int i =0; i < num_exr_headers; i++) {
+    FreeEXRHeader(exr_headers[i]);
+    free(exr_headers[i]);
+  }
+  free(exr_headers);
+
+
+Saving Scanline EXR file.
+
+```
+  // See `examples/rgbe2exr/` for more details.
   bool SaveEXR(const float* rgb, int width, int height, const char* outfilename) {
 
-    float* channels[3];
+    EXRHeader header;
+    InitEXRHeader(&header);
 
     EXRImage image;
     InitEXRImage(&image);
 
     image.num_channels = 3;
 
-    // Must be BGR(A) order, since most of EXR viewers expect this channel order.
-    const char* channel_names[] = {"B", "G", "R"}; // "B", "G", "R", "A" for RGBA image
-
     std::vector<float> images[3];
     images[0].resize(width * height);
     images[1].resize(width * height);
     images[2].resize(width * height);
 
+    // Split RGBRGBRGB... into R, G and B layer
     for (int i = 0; i < width * height; i++) {
       images[0][i] = rgb[3*i+0];
       images[1][i] = rgb[3*i+1];
@@ -130,31 +220,37 @@ Saving EXR file.
     image_ptr[1] = &(images[1].at(0)); // G
     image_ptr[2] = &(images[0].at(0)); // R
 
-    image.channel_names = channel_names;
     image.images = (unsigned char**)image_ptr;
     image.width = width;
     image.height = height;
-    image.compression = TINYEXR_COMPRESSIONTYPE_ZIP;
 
-    image.pixel_types = (int *)malloc(sizeof(int) * image.num_channels);
-    image.requested_pixel_types = (int *)malloc(sizeof(int) * image.num_channels);
-    for (int i = 0; i < image.num_channels; i++) {
-      image.pixel_types[i] = TINYEXR_PIXELTYPE_FLOAT; // pixel type of input image
-      image.requested_pixel_types[i] = TINYEXR_PIXELTYPE_HALF; // pixel type of output image to be stored in .EXR
+    header.num_channels = 3;
+    header.channels = (EXRChannelInfo *)malloc(sizeof(EXRChannelInfo) * header.num_channels); 
+    // Must be BGR(A) order, since most of EXR viewers expect this channel order.
+    strncpy(header.channels[0].name, "B", 255); header.channels[0].name[strlen("B")] = '\0';
+    strncpy(header.channels[1].name, "G", 255); header.channels[1].name[strlen("G")] = '\0';
+    strncpy(header.channels[2].name, "R", 255); header.channels[2].name[strlen("R")] = '\0';
+
+    header.pixel_types = (int *)malloc(sizeof(int) * header.num_channels); 
+    header.requested_pixel_types = (int *)malloc(sizeof(int) * header.num_channels);
+    for (int i = 0; i < header.num_channels; i++) {
+      header.pixel_types[i] = TINYEXR_PIXELTYPE_FLOAT; // pixel type of input image
+      header.requested_pixel_types[i] = TINYEXR_PIXELTYPE_HALF; // pixel type of output image to be stored in .EXR
     }
 
     const char* err;
-    int ret = SaveMultiChannelEXRToFile(&image, outfilename, &err);
-    if (ret != 0) {
+    int ret = SaveEXRImageToFile(&image, &header, argv[2], &err);
+    if (ret != TINYEXR_SUCCESS) {
       fprintf(stderr, "Save EXR err: %s\n", err);
       return ret;
     }
-    printf("Saved exr file. [ %s ] \n", outfilename);
+    printf("Saved exr file. [ %s ] \n", argv[2]);
 
-    free(image.pixel_types);
-    free(image.requested_pixel_types);
+    free(rgb);
 
-    return ret;
+    free(header.channels);
+    free(header.pixel_types);
+    free(header.requested_pixel_types);
 
   }
 ```
@@ -195,41 +291,52 @@ See `example/deepview` for actual usage.
 
 ![DeepViewExample](https://github.com/syoyo/tinyexr/blob/master/examples/deepview/deepview_screencast.gif?raw=true)
 
+## TinyEXR extension
+
+### ZFP
+
+TinyEXR adds ZFP compression as an experimemtal support(Linux and MacOSX only).
+
+
+    $ git submodule update --init
+
+Then build ZFP
+
+    $ cd dep/ZFP
+    $ mkdir -p lib   # Create `lib` directory if not exist
+    $ make
+
+Set `1` to TINYEXT_USE_ZFP define in `tinyexr.h`
+
+Build your app with linking `deps/ZFP/lib/libzfp.a`
+
 ## TODO
 
 Contribution is welcome!
 
 - [ ] Compression
-  - [ ] NONE("compress" = 0, load)
-  - [ ] RLE("compress" = 1, load)
-  - [x] ZIPS("compress" = 2, load)
-  - [x] ZIP("compress" = 3, load)
-  - [x] PIZ("compress" = 4, load)
-  - [x] NONE("compress" = 0, save)
-  - [ ] RLE("compress" = 1, save)
-  - [x] ZIPS("compress" = 2, save)
-  - [x] ZIP("compress" = 3, save)
-  - [x] PIZ("compress" = 4, save)
+  - [ ] b44
+  - [ ] PIZ
 - [ ] Custom attributes
   - [x] Normal image(EXR 1.x)
   - [ ] Deep image(EXR 2.x)
 - [ ] JavaScript library
-  - [x] LoadEXRFromMemory
+  - [ ] LoadEXRFromMemory
   - [ ] SaveMultiChannelEXR
   - [ ] Deep image save/load
 - [ ] Write from/to memory buffer.
-  - [x] SaveMultiChannelEXR
-  - [x] LoadMultiChannelEXR
   - [ ] Deep image save/load
 - [ ] Tile format.
   - [x] Tile format with no LoD(load).
   - [ ] Tile format with LoD(load).
   - [ ] Tile format with no LoD(save).
   - [ ] Tile format with LoD(save).
-- [ ] Support for various compression type.
-  - [x] zfp compression(Not in OpenEXR spec, though)
+- [ ] Support for custom compression type.
+  - [ ] zfp compression(Not in OpenEXR spec, though)
 - [x] Multi-channel.
 - [ ] Multi-part(EXR2.0)
+  - [x] Load multi-part image
+  - [ ] Load multi-part deep image
 - [ ] Line order.
   - [x] Increasing, decreasing(load)
   - [ ] Random?
@@ -239,9 +346,9 @@ Contribution is welcome!
   - [x] UINT, FLOAT(deep load)
   - [x] UINT, FLOAT(save)
   - [ ] UINT, FLOAT(deep save)
-- [ ] Full support for big endian machine.
-  - [x] Loading multi channel EXR
-  - [x] Saving multi channel EXR
+- [ ] Support for big endian machine.
+  - [ ] Loading multi-part channel EXR
+  - [ ] Saving multi-part channel EXR
   - [ ] Loading deep image
   - [ ] Saving deep image
 - [ ] Optimization
