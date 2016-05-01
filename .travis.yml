@@ -65,6 +65,7 @@ before_install:
 script:
   - export CC="${CC}-${COMPILER_VERSION}"
   - export CXX="${CXX}-${COMPILER_VERSION}"
+  - export CXXFLAGS="${CXXFLAGS}"
   - make
   - cd test/unit
   - make clean
