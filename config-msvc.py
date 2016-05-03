@@ -1,4 +1,4 @@
-exe = "test.exe"
+exe = "test_tinyexr.exe"
 
 # "gnu" or "msvc" are provided as predefined toolchain
 toolchain = "msvc"

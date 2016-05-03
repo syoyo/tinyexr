@@ -151,7 +151,7 @@ main(int argc, char** argv)
     for (size_t i = 0; i < static_cast<size_t>(num_exr_headers); i++) { 
       const EXRHeader &exr_header = *(exr_headers[i]);
 
-      printf("Part: %lu\n", i);
+      printf("Part: %lu\n", static_cast<unsigned long>(i));
 
       printf("dataWindow = %d, %d, %d, %d\n",
         exr_header.data_window[0],

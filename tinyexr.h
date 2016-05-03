@@ -129,6 +129,7 @@ extern "C" {
 #define TINYEXR_COMPRESSIONTYPE_ZIPS (2)
 #define TINYEXR_COMPRESSIONTYPE_ZIP (3)
 #define TINYEXR_COMPRESSIONTYPE_PIZ (4)
+#define TINYEXR_COMPRESSIONTYPE_ZFP	(128)	// TinyEXR extension
 
 #define TINYEXR_TILE_ONE_LEVEL (0)
 #define TINYEXR_TILE_MIPMAP_LEVELS (1)
@@ -435,6 +436,10 @@ extern int LoadEXRFromMemory(float *out_rgba, const unsigned char *memory,
 #if TINYEXR_USE_MINIZ
 #else
 #include "zlib.h"
+#endif
+
+#if TINYEXR_USE_ZFP
+#include "zfp.h"
 #endif
 
 namespace tinyexr {
@@ -8799,9 +8804,8 @@ bool CompressPiz(unsigned char *outPtr, unsigned int &outSize,
   std::vector<PIZChannelData> channelData(channelInfo.size());
   unsigned short *tmpBufferEnd = &tmpBuffer.at(0);
 
-  int i = 0;
-  for (size_t c = 0; c < channelData.size(); c++, i++) {
-    PIZChannelData &cd = channelData[i];
+  for (size_t c = 0; c < channelData.size(); c++) {
+    PIZChannelData &cd = channelData[c];
 
     cd.start = tmpBufferEnd;
     cd.end = cd.start;
@@ -8811,7 +8815,7 @@ bool CompressPiz(unsigned char *outPtr, unsigned int &outSize,
     // cd.ys = c.channel().ySampling;
 
     int pixelSize = sizeof(int);  // UINT and FLOAT
-    if (channelInfo[i].pixel_type == TINYEXR_PIXELTYPE_HALF) {
+    if (channelInfo[c].pixel_type == TINYEXR_PIXELTYPE_HALF) {
       pixelSize = sizeof(short);
     }
 
@@ -8914,42 +8918,42 @@ bool DecompressPiz(unsigned char *outPtr, const unsigned char *inPtr,
     return false;
   }
 
-  if (minNonZero <= maxNonZero) {
+if (minNonZero <= maxNonZero) {
     memcpy((char *)&bitmap[0] + minNonZero, ptr, maxNonZero - minNonZero + 1);
     ptr += maxNonZero - minNonZero + 1;
-  }
+}
 
-  unsigned short lut[USHORT_RANGE];
-  memset(lut, 0, sizeof(unsigned short) * USHORT_RANGE);
-  unsigned short maxValue = reverseLutFromBitmap(bitmap, lut);
+unsigned short lut[USHORT_RANGE];
+memset(lut, 0, sizeof(unsigned short) * USHORT_RANGE);
+unsigned short maxValue = reverseLutFromBitmap(bitmap, lut);
 
-  //
-  // Huffman decoding
-  //
+//
+// Huffman decoding
+//
 
-  int length;
+int length;
 
-  length = *(reinterpret_cast<const int *>(ptr));
-  ptr += sizeof(int);
+length = *(reinterpret_cast<const int *>(ptr));
+ptr += sizeof(int);
 
-  std::vector<unsigned short> tmpBuffer(tmpBufSize);
-  hufUncompress(reinterpret_cast<const char *>(ptr), length, &tmpBuffer.at(0),
-                tmpBufSize);
+std::vector<unsigned short> tmpBuffer(tmpBufSize);
+hufUncompress(reinterpret_cast<const char *>(ptr), length, &tmpBuffer.at(0),
+    tmpBufSize);
 
-  //
-  // Wavelet decoding
-  //
+//
+// Wavelet decoding
+//
 
-  std::vector<PIZChannelData> channelData(num_channels);
+std::vector<PIZChannelData> channelData(num_channels);
 
-  unsigned short *tmpBufferEnd = &tmpBuffer.at(0);
+unsigned short *tmpBufferEnd = &tmpBuffer.at(0);
 
-  for (size_t i = 0; i < static_cast<size_t>(num_channels); ++i) {
+for (size_t i = 0; i < static_cast<size_t>(num_channels); ++i) {
     const EXRChannelInfo &chan = channels[i];
 
     int pixelSize = sizeof(int);  // UINT and FLOAT
     if (chan.pixel_type == TINYEXR_PIXELTYPE_HALF) {
-      pixelSize = sizeof(short);
+        pixelSize = sizeof(short);
     }
 
     channelData[i].start = tmpBufferEnd;
@@ -8960,40 +8964,167 @@ bool DecompressPiz(unsigned char *outPtr, const unsigned char *inPtr,
     channelData[i].size = pixelSize / sizeof(short);
 
     tmpBufferEnd += channelData[i].nx * channelData[i].ny * channelData[i].size;
-  }
+}
 
-  for (size_t i = 0; i < channelData.size(); ++i) {
+for (size_t i = 0; i < channelData.size(); ++i) {
     PIZChannelData &cd = channelData[i];
 
     for (int j = 0; j < cd.size; ++j) {
-      wav2Decode(cd.start + j, cd.nx, cd.size, cd.ny, cd.nx * cd.size,
-                 maxValue);
+        wav2Decode(cd.start + j, cd.nx, cd.size, cd.ny, cd.nx * cd.size,
+            maxValue);
     }
-  }
+}
 
-  //
-  // Expand the pixel data to their original range
-  //
+//
+// Expand the pixel data to their original range
+//
 
-  applyLut(lut, &tmpBuffer.at(0), tmpBufSize);
+applyLut(lut, &tmpBuffer.at(0), tmpBufSize);
 
-  for (int y = 0; y < num_lines; y++) {
+for (int y = 0; y < num_lines; y++) {
     for (size_t i = 0; i < channelData.size(); ++i) {
-      PIZChannelData &cd = channelData[i];
+        PIZChannelData &cd = channelData[i];
 
-      // if (modp (y, cd.ys) != 0)
-      //    continue;
+        // if (modp (y, cd.ys) != 0)
+        //    continue;
 
-      int n = cd.nx * cd.size;
-      memcpy(outPtr, cd.end, n * sizeof(unsigned short));
-      outPtr += n * sizeof(unsigned short);
-      cd.end += n;
+        int n = cd.nx * cd.size;
+        memcpy(outPtr, cd.end, n * sizeof(unsigned short));
+        outPtr += n * sizeof(unsigned short);
+        cd.end += n;
     }
-  }
+}
 
-  return true;
+return true;
 }
 #endif  // TINYEXR_USE_PIZ
+
+#if TINYEXR_USE_ZFP
+typedef struct _ZFPCompressionParam
+{
+    int rate;
+    int precision;
+    float tolerance;
+    int type; // 0: rate, 1: precision, 2: tolerance
+
+    struct _ZFPCompressionParam() {
+        type = 0;
+        rate = 2;
+        precision = 0;
+        tolerance = 0.0f;
+    }
+} ZFPCompressionParam;
+
+bool FindZFPCompressionParam(ZFPCompressionParam* param, const EXRAttribute* attributes, int num_attributes)
+{
+    bool foundType = false;
+
+    for (int i = 0; i < num_attributes; i++) {
+        if ((strcmp(attributes[i].name, "zfpCompressionType") == 0) &&
+            (attributes[i].size == 1)) { 
+            param->type = static_cast<int>(attributes[i].value[0]);
+
+            foundType = true;
+        }
+    }
+
+    if (!foundType) {
+        return false;
+    }
+
+    if (param->type == 0) { // rate
+        for (int i = 0; i < num_attributes; i++) {
+            if ((strcmp(attributes[i].name, "zfpCompressionRate") == 0) &&
+                (attributes[i].size == 4)) {
+                param->rate = *(reinterpret_cast<int *>(attributes[i].value));
+                return true;
+            }
+        }
+    } else if (param->type == 1) { // precision
+        for (int i = 0; i < num_attributes; i++) {
+            if ((strcmp(attributes[i].name, "zfpCompressionPrecision") == 0) &&
+                (attributes[i].size == 4)) {
+                param->rate = *(reinterpret_cast<int *>(attributes[i].value));
+                return true;
+            }
+        }
+    }
+    else if (param->type == 2) { // accuracy
+        for (int i = 0; i < num_attributes; i++) {
+            if ((strcmp(attributes[i].name, "zfpCompressionTolerance") == 0) &&
+                (attributes[i].size == 4)) {
+                param->tolerance = *(reinterpret_cast<float *>(attributes[i].value));
+                return true;
+            }
+        }
+    }
+    else {
+        assert(0);
+    }
+
+    return false;
+}
+
+bool CompressZfp(std::vector<unsigned char> *outBuf, unsigned int *outSize,
+	const float *inPtr, int width, int num_lines,
+	const ZFPCompressionParam& param)
+{
+
+	zfp_stream* zfp = NULL;
+    zfp_field* field = NULL;
+
+	assert((width % 4) == 0);
+	assert((num_lines % 4) == 0);
+
+	if ((width & 3U) || (num_lines & 3U)) {
+		return false;
+	}
+
+	// create input array.
+	field = zfp_field_2d(reinterpret_cast<void*>(const_cast<float*>(inPtr)), zfp_type_float, width, num_lines);
+
+	zfp = zfp_stream_open(NULL);
+
+	if (param.type == 0) { // use rate
+		zfp_stream_set_rate(zfp, param.rate, zfp_type_float, 2, 0);
+	}
+	else if (param.type == 1) { // use precision
+		zfp_stream_set_precision(zfp, param.precision, zfp_type_float);
+	}
+	else { // use accuarcy
+		zfp_stream_set_accuracy(zfp, param.tolerance, zfp_type_float);
+	}
+
+    size_t bufSize = zfp_stream_maximum_size(zfp, field);
+
+    outBuf->resize(bufSize);
+
+    bitstream* stream = stream_open(&outBuf->at(0), bufSize);
+    zfp_stream_set_bit_stream(zfp, stream);
+    zfp_field_free(field);
+
+	// compress 4x4 pixel block.
+	for (int y = 0; y < num_lines; y+=4) {
+		for (int x = 0; x < width; x+=4) {
+            float fblock[16];
+            for (int j = 0; j < 4; j++) {
+                for (int i = 0; i < 4; i++) {
+                    fblock[j * 4 + i] = inPtr[(y + j) * width + (x + i)];
+                }
+            }
+            zfp_encode_block_float_2(zfp, fblock);
+		}
+	}
+
+    zfp_stream_flush(zfp);
+    (*outSize) = zfp_stream_compressed_size(zfp);
+
+	zfp_stream_close(zfp);
+
+	return true;
+}
+
+#endif
 
 //
 // -----------------------------------------------------------------
@@ -9692,9 +9823,10 @@ static int ParseEXRHeader(HeaderInfo *info, bool *empty_header,
       tinyexr::swap4(
           reinterpret_cast<unsigned int *>(&info->screen_window_width));
 
-    } else if (attr_name.compare("chunkCount") == 0) {
-      memcpy(&info->chunk_count, &data.at(0), sizeof(int));
-      tinyexr::swap4(reinterpret_cast<unsigned int *>(&info->chunk_count));
+	}
+	else if (attr_name.compare("chunkCount") == 0) {
+		memcpy(&info->chunk_count, &data.at(0), sizeof(int));
+		tinyexr::swap4(reinterpret_cast<unsigned int *>(&info->chunk_count));
     } else {
       // Custom attribute(up to TINYEXR_MAX_ATTRIBUTES)
       if (info->attributes.size() < TINYEXR_MAX_ATTRIBUTES) {
@@ -9795,7 +9927,10 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
     num_scanline_blocks = 16;
   } else if (exr_header->compression_type == TINYEXR_COMPRESSIONTYPE_PIZ) {
     num_scanline_blocks = 32;
+  } else if (exr_header->compression_type == TINYEXR_COMPRESSIONTYPE_ZFP) {
+	num_scanline_blocks = 16;
   }
+
   int data_width = exr_header->data_window[2] - exr_header->data_window[0] + 1;
   int data_height = exr_header->data_window[3] - exr_header->data_window[1] + 1;
 
@@ -9948,7 +10083,11 @@ static int DecodeEXRImage(EXRImage *exr_image, const EXRHeader *exr_header,
   } else if (exr_header->compression_type == TINYEXR_COMPRESSIONTYPE_PIZ) {
     num_scanline_blocks = 32;
   }
-  int data_width = exr_header->data_window[2] - exr_header->data_window[0] + 1;
+  else if (exr_header->compression_type == TINYEXR_COMPRESSIONTYPE_ZFP) {
+    num_scanline_blocks = 16;
+  }
+
+  int      data_width = exr_header->data_window[2] - exr_header->data_window[0] + 1;
   int data_height = exr_header->data_window[3] - exr_header->data_window[1] + 1;
 
   // Read offset tables.
@@ -10303,13 +10442,32 @@ size_t SaveEXRImageToMemory(const EXRImage *exr_image,
                             const EXRHeader *exr_header,
                             unsigned char **memory_out, const char **err) {
   if (exr_image == NULL || memory_out == NULL ||
-      exr_header->compression_type < 0 ||
-      exr_header->compression_type > TINYEXR_COMPRESSIONTYPE_PIZ) {
+      exr_header->compression_type < 0) {
     if (err) {
       (*err) = "Invalid argument.";
     }
     return 0;  // @fixme
   }
+
+#if !TINYEXR_USE_PIZ
+  if (exr_header->compression_type == TINYEXR_COMPRESSIONTYPE_PIZ)
+  {
+      if (err) {
+          (*err) = "PIZ compression is not supported in this build.";
+      }
+      return 0;
+  }
+#endif
+
+#if !TINYEXR_USE_ZFP
+  if (exr_header->compression_type == TINYEXR_COMPRESSIONTYPE_ZFP)
+  {
+      if (err) {
+          (*err) = "ZFP compression is not supported in this build.";
+      }
+      return 0;
+  }
+#endif
 
   std::vector<unsigned char> memory;
 
@@ -10344,6 +10502,9 @@ size_t SaveEXRImageToMemory(const EXRImage *exr_image,
     num_scanlines = 16;
   } else if (exr_header->compression_type == TINYEXR_COMPRESSIONTYPE_PIZ) {
     num_scanlines = 32;
+  }
+  else if (exr_header->compression_type == TINYEXR_COMPRESSIONTYPE_ZFP) {
+      num_scanlines = 16;
   }
 
   // Write attributes.
@@ -10475,6 +10636,22 @@ size_t SaveEXRImageToMemory(const EXRImage *exr_image,
       assert(0);
     }
   }
+
+#if TINYEXR_USE_ZFP
+  tinyexr::ZFPCompressionParam zfp_compression_param;
+
+  // Use ZFP compression parameter from custom attributes(if such a parameter exists)
+  {
+      bool ret = tinyexr::FindZFPCompressionParam(&zfp_compression_param, exr_header->custom_attributes, exr_header->num_custom_attributes);
+
+      if (!ret) {
+          // Use predefined compression parameter.
+          zfp_compression_param.type = 0;
+          zfp_compression_param.rate = 2;
+      }
+  }
+#endif
+
 
 // Use signed int since some OpenMP compiler doesn't allow unsigned type for
 // `parallel for`
@@ -10685,6 +10862,34 @@ size_t SaveEXRImageToMemory(const EXRImage *exr_image,
 
 #else
       assert(0);
+#endif
+    }
+    else if (exr_header->compression_type == TINYEXR_COMPRESSIONTYPE_ZFP) {
+#if TINYEXR_USE_ZFP
+        std::vector<unsigned char> block;
+        unsigned int outSize;
+        
+        tinyexr::CompressZfp(&block, &outSize,
+            reinterpret_cast<const float *>(&buf.at(0)),
+            exr_image->width, h, zfp_compression_param);
+
+        // 4 byte: scan line
+        // 4 byte: data size
+        // ~     : pixel data(compressed)
+        std::vector<unsigned char> header(8);
+        unsigned int data_len = outSize;
+        memcpy(&header.at(0), &start_y, sizeof(int));
+        memcpy(&header.at(4), &data_len, sizeof(unsigned int));
+
+        tinyexr::swap4(reinterpret_cast<unsigned int *>(&header.at(0)));
+        tinyexr::swap4(reinterpret_cast<unsigned int *>(&header.at(4)));
+
+        data_list[i].insert(data_list[i].end(), header.begin(), header.end());
+        data_list[i].insert(data_list[i].end(), block.begin(),
+            block.begin() + data_len);
+
+#else
+        assert(0);
 #endif
     } else {
       assert(0);
