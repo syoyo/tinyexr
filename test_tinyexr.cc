@@ -6,6 +6,7 @@
 #include "tinyexr.h"
 
 //#define SIMPLE_API_EXAMPLE
+//#define TEST_ZFP_COMPRESSION
 
 #ifdef SIMPLE_API_EXAMPLE
 
@@ -219,7 +220,7 @@ main(int argc, char** argv)
 
     ret = ParseEXRHeaderFromFile(&exr_header, &exr_version, argv[1], &err);
     if (ret != 0) {
-      fprintf(stderr, "Parse EXR err: %s\n", err);
+      fprintf(stderr, "Parse single-part EXR err: %s\n", err);
       return ret;
     }
 
@@ -294,9 +295,17 @@ main(int argc, char** argv)
       TiledImageToScanlineImage(&exr_image, &exr_header);
     }
 
-#if TINYEXR_USE_ZFP
+    exr_header.compression_type = TINYEXR_COMPRESSIONTYPE_NONE;
+
+#ifdef TEST_ZFP_COMPRESSION
+    // Assume input image is FLOAT pixel type.
+    for (int i = 0; i < exr_header.num_channels; i++) {
+      exr_header.channels[i].pixel_type = TINYEXR_PIXELTYPE_FLOAT;
+      exr_header.requested_pixel_types[i] = TINYEXR_PIXELTYPE_FLOAT;
+    }
+
     unsigned char zfp_compression_type = TINYEXR_ZFP_COMPRESSIONTYPE_RATE;
-    int zfp_compression_rate = 1;
+    int zfp_compression_rate = 4;
     exr_header.num_custom_attributes = 2;
     strcpy(exr_header.custom_attributes[0].name, "zfpCompressionType"); exr_header.custom_attributes[0].name[strlen("zfpCompressionType")] = '\0';
     exr_header.custom_attributes[0].size = 1;
@@ -307,10 +316,9 @@ main(int argc, char** argv)
     exr_header.custom_attributes[1].size = 4;
     exr_header.custom_attributes[1].value = (unsigned char*)malloc(sizeof(unsigned int));
     memcpy(exr_header.custom_attributes[1].value, &zfp_compression_rate, sizeof(unsigned int));
+    exr_header.compression_type = TINYEXR_COMPRESSIONTYPE_ZFP;
 #endif
 
-    //exr_header.compression_type = TINYEXR_COMPRESSIONTYPE_NONE;
-    exr_header.compression_type = TINYEXR_COMPRESSIONTYPE_ZFP;
     ret = SaveEXRImageToFile(&exr_image, &exr_header, outfilename, &err);
     if (ret != 0) {
       fprintf(stderr, "Save EXR err: %s\n", err);
