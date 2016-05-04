@@ -294,7 +294,23 @@ main(int argc, char** argv)
       TiledImageToScanlineImage(&exr_image, &exr_header);
     }
 
-    exr_header.compression_type = TINYEXR_COMPRESSIONTYPE_NONE;
+#if TINYEXR_USE_ZFP
+    unsigned char zfp_compression_type = TINYEXR_ZFP_COMPRESSIONTYPE_RATE;
+    int zfp_compression_rate = 1;
+    exr_header.num_custom_attributes = 2;
+    strcpy(exr_header.custom_attributes[0].name, "zfpCompressionType"); exr_header.custom_attributes[0].name[strlen("zfpCompressionType")] = '\0';
+    exr_header.custom_attributes[0].size = 1;
+    exr_header.custom_attributes[0].value = (unsigned char*)malloc(sizeof(unsigned char));
+    exr_header.custom_attributes[0].value[0] = zfp_compression_type;
+
+    strcpy(exr_header.custom_attributes[1].name, "zfpCompressionRate"); exr_header.custom_attributes[1].name[strlen("zfpCompressionRate")] = '\0';
+    exr_header.custom_attributes[1].size = 4;
+    exr_header.custom_attributes[1].value = (unsigned char*)malloc(sizeof(unsigned int));
+    memcpy(exr_header.custom_attributes[1].value, &zfp_compression_rate, sizeof(unsigned int));
+#endif
+
+    //exr_header.compression_type = TINYEXR_COMPRESSIONTYPE_NONE;
+    exr_header.compression_type = TINYEXR_COMPRESSIONTYPE_ZFP;
     ret = SaveEXRImageToFile(&exr_image, &exr_header, outfilename, &err);
     if (ret != 0) {
       fprintf(stderr, "Save EXR err: %s\n", err);

@@ -9024,6 +9024,7 @@ bool FindZFPCompressionParam(ZFPCompressionParam* param, const EXRAttribute* att
     bool foundType = false;
 
     for (int i = 0; i < num_attributes; i++) {
+				printf("attributes[%d] = %s\n", i, attributes[i].name);
         if ((strcmp(attributes[i].name, "zfpCompressionType") == 0) &&
             (attributes[i].size == 1)) { 
             param->type = static_cast<int>(attributes[i].value[0]);
@@ -9126,8 +9127,9 @@ static bool DecompressZfp(float *dst,
 
 }
 
+// Assume pixel format is FLOAT for all channels.
 bool CompressZfp(std::vector<unsigned char> *outBuf, unsigned int *outSize,
-	const float *inPtr, int width, int num_lines,
+	const float *inPtr, int width, int num_lines, int num_channels,
 	const ZFPCompressionParam& param)
 {
 
@@ -9142,7 +9144,7 @@ bool CompressZfp(std::vector<unsigned char> *outBuf, unsigned int *outSize,
 	}
 
 	// create input array.
-	field = zfp_field_2d(reinterpret_cast<void*>(const_cast<float*>(inPtr)), zfp_type_float, width, num_lines);
+	field = zfp_field_2d(reinterpret_cast<void*>(const_cast<float*>(inPtr)), zfp_type_float, width, num_lines * num_channels);
 
 	zfp = zfp_stream_open(NULL);
 
@@ -9166,16 +9168,20 @@ bool CompressZfp(std::vector<unsigned char> *outBuf, unsigned int *outSize,
     zfp_stream_set_bit_stream(zfp, stream);
     zfp_field_free(field);
 
-	// compress 4x4 pixel block.
-	for (int y = 0; y < num_lines; y+=4) {
-		for (int x = 0; x < width; x+=4) {
-            float fblock[16];
-            for (int j = 0; j < 4; j++) {
-                for (int i = 0; i < 4; i++) {
-                    fblock[j * 4 + i] = inPtr[(y + j) * width + (x + i)];
-                }
-            }
-            zfp_encode_block_float_2(zfp, fblock);
+	size_t image_size = width * num_lines;
+
+	for (int c = 0; c < num_channels; c++) {
+		// compress 4x4 pixel block.
+		for (int y = 0; y < num_lines; y+=4) {
+			for (int x = 0; x < width; x+=4) {
+							float fblock[16];
+							for (int j = 0; j < 4; j++) {
+									for (int i = 0; i < 4; i++) {
+											fblock[j * 4 + i] = inPtr[c * image_size + ((y + j) * width + (x + i))];
+									}
+							}
+							zfp_encode_block_float_2(zfp, fblock);
+			}
 		}
 	}
 
@@ -10512,6 +10518,7 @@ size_t SaveEXRImageToMemory(const EXRImage *exr_image,
     return 0;  // @fixme
   }
 
+
 #if !TINYEXR_USE_PIZ
   if (exr_header->compression_type == TINYEXR_COMPRESSIONTYPE_PIZ)
   {
@@ -10530,6 +10537,17 @@ size_t SaveEXRImageToMemory(const EXRImage *exr_image,
       }
       return 0;
   }
+#endif
+
+#if TINYEXR_USE_ZFP
+	for (size_t i = 0; i < static_cast<size_t>(exr_header->num_channels); i++) {
+		if (exr_header->requested_pixel_types[i] != TINYEXR_PIXELTYPE_FLOAT) {
+      if (err) {
+          (*err) = "Pixel type must be FLOAT for ZFP compression.";
+      }
+      return 0;
+		}
+	}
 #endif
 
   std::vector<unsigned char> memory;
@@ -10711,7 +10729,7 @@ size_t SaveEXRImageToMemory(const EXRImage *exr_image,
           // Use predefined compression parameter.
           zfp_compression_param.type = 0;
           zfp_compression_param.rate = 2;
-      }
+			}
   }
 #endif
 
@@ -10934,7 +10952,7 @@ size_t SaveEXRImageToMemory(const EXRImage *exr_image,
         
         tinyexr::CompressZfp(&block, &outSize,
             reinterpret_cast<const float *>(&buf.at(0)),
-            exr_image->width, h, zfp_compression_param);
+            exr_image->width, h, exr_header->num_channels, zfp_compression_param);
 
         // 4 byte: scan line
         // 4 byte: data size
@@ -10987,13 +11005,32 @@ size_t SaveEXRImageToMemory(const EXRImage *exr_image,
 int SaveEXRImageToFile(const EXRImage *exr_image, const EXRHeader *exr_header,
                        const char *filename, const char **err) {
   if (exr_image == NULL || filename == NULL ||
-      exr_header->compression_type < 0 ||
-      exr_header->compression_type > TINYEXR_COMPRESSIONTYPE_PIZ) {
+      exr_header->compression_type < 0) {
     if (err) {
       (*err) = "Invalid argument.";
     }
     return TINYEXR_ERROR_INVALID_ARGUMENT;
   }
+
+#if !TINYEXR_USE_PIZ
+  if (exr_header->compression_type == TINYEXR_COMPRESSIONTYPE_PIZ)
+  {
+      if (err) {
+          (*err) = "PIZ compression is not supported in this build.";
+      }
+      return 0;
+  }
+#endif
+
+#if !TINYEXR_USE_ZFP
+  if (exr_header->compression_type == TINYEXR_COMPRESSIONTYPE_ZFP)
+  {
+      if (err) {
+          (*err) = "ZFP compression is not supported in this build.";
+      }
+      return 0;
+  }
+#endif
 
 #ifdef _WIN32
   FILE *fp = NULL;
