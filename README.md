@@ -295,10 +295,19 @@ See `example/deepview` for actual usage.
 
 ### ZFP
 
+#### NOTE
+
 TinyEXR adds ZFP compression as an experimemtal support(Linux and MacOSX only).
 
+ZFP only supports FLOAT format pixel, and its image width and height must be the multiple of 4, since ZFP compresses pixels with 4x4 pixel block.
+
+#### Setup
+
+Checkout zfp repo as an submodule.
 
     $ git submodule update --init
+
+#### Build
 
 Then build ZFP
 
@@ -306,9 +315,31 @@ Then build ZFP
     $ mkdir -p lib   # Create `lib` directory if not exist
     $ make
 
-Set `1` to TINYEXT_USE_ZFP define in `tinyexr.h`
+Set `1` to `TINYEXT_USE_ZFP` define in `tinyexr.h`
 
 Build your app with linking `deps/ZFP/lib/libzfp.a`
+
+#### ZFP attribute
+
+For ZFP EXR image, the following attribute must exist in its EXR image.
+
+* `zfpCompressionType` (uchar).
+  * 0 = fixed rate compression
+  * 1 = precision based vaiable rate compression
+  * 2 = accuracy based variable rate compression
+
+And the one of following attributes must exist, depending on the `zfpCompressionType` value.
+
+* `zfpCompressionRate` (int32)
+  * Specifies compression rate for fixed rate compression.
+* `zfpCompressionPrecision` (int32)
+  * Specifies the number of bits for precision based variable rate compression.
+* `zfpCompressionTolerance` (float)
+  * Specifies the tolerance value for accuracy based variable rate compression.
+
+#### Note on ZFP compression.
+
+At least ZFP code itself works well on big endian machine.
 
 ## TODO
 
@@ -333,7 +364,8 @@ Contribution is welcome!
   - [ ] Tile format with no LoD(save).
   - [ ] Tile format with LoD(save).
 - [ ] Support for custom compression type.
-  - [ ] zfp compression(Not in OpenEXR spec, though)
+  - [x] zfp compression(Not in OpenEXR spec, though)
+  - [ ] zstd?
 - [x] Multi-channel.
 - [ ] Multi-part(EXR2.0)
   - [x] Load multi-part image
