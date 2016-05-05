@@ -330,11 +330,11 @@ For ZFP EXR image, the following attribute must exist in its EXR image.
 
 And the one of following attributes must exist, depending on the `zfpCompressionType` value.
 
-* `zfpCompressionRate` (int32)
+* `zfpCompressionRate` (double)
   * Specifies compression rate for fixed rate compression.
 * `zfpCompressionPrecision` (int32)
   * Specifies the number of bits for precision based variable rate compression.
-* `zfpCompressionTolerance` (float)
+* `zfpCompressionTolerance` (double)
   * Specifies the tolerance value for accuracy based variable rate compression.
 
 #### Note on ZFP compression.

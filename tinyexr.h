@@ -8991,14 +8991,14 @@ bool DecompressPiz(unsigned char *outPtr, const unsigned char *inPtr,
 
 #if TINYEXR_USE_ZFP
 struct ZFPCompressionParam {
-  int rate;
+  double rate;
   int precision;
-  float tolerance;
+  double tolerance;
   int type;  // TINYEXR_ZFP_COMPRESSIONTYPE_*
 
   ZFPCompressionParam() {
     type = TINYEXR_ZFP_COMPRESSIONTYPE_RATE;
-    rate = 2;
+    rate = 2.0;
     precision = 0;
     tolerance = 0.0f;
   }
@@ -9025,8 +9025,8 @@ bool FindZFPCompressionParam(ZFPCompressionParam *param,
   if (param->type == TINYEXR_ZFP_COMPRESSIONTYPE_RATE) {
     for (int i = 0; i < num_attributes; i++) {
       if ((strcmp(attributes[i].name, "zfpCompressionRate") == 0) &&
-          (attributes[i].size == 4)) {
-        param->rate = *(reinterpret_cast<int *>(attributes[i].value));
+          (attributes[i].size == 8)) {
+        param->rate = *(reinterpret_cast<double *>(attributes[i].value));
         return true;
       }
     }
@@ -9041,8 +9041,8 @@ bool FindZFPCompressionParam(ZFPCompressionParam *param,
   } else if (param->type == TINYEXR_ZFP_COMPRESSIONTYPE_ACCURACY) {
     for (int i = 0; i < num_attributes; i++) {
       if ((strcmp(attributes[i].name, "zfpCompressionTolerance") == 0) &&
-          (attributes[i].size == 4)) {
-        param->tolerance = *(reinterpret_cast<float *>(attributes[i].value));
+          (attributes[i].size == 8)) {
+        param->tolerance = *(reinterpret_cast<double *>(attributes[i].value));
         return true;
       }
     }
@@ -9077,7 +9077,7 @@ static bool DecompressZfp(float *dst, int dst_width, int dst_num_lines,
 
   if (param.type == TINYEXR_ZFP_COMPRESSIONTYPE_RATE) {
     zfp_stream_set_rate(zfp, param.rate, zfp_type_float, /* dimention */ 2,
-                        /* wrap */ 0);
+                        /* write random access */ 0);
   } else if (param.type == TINYEXR_ZFP_COMPRESSIONTYPE_PRECISION) {
     zfp_stream_set_precision(zfp, param.precision, zfp_type_float);
   } else if (param.type == TINYEXR_ZFP_COMPRESSIONTYPE_ACCURACY) {
@@ -9616,6 +9616,8 @@ static void DecodePixelData(/* out */ unsigned char **out_images,
       }
     }
 #else
+    (void)attributes;
+    (void)num_channels;
     assert(0);
 #endif
   } else if (compression_type == TINYEXR_COMPRESSIONTYPE_NONE) {

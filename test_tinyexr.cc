@@ -305,7 +305,7 @@ main(int argc, char** argv)
     }
 
     unsigned char zfp_compression_type = TINYEXR_ZFP_COMPRESSIONTYPE_RATE;
-    int zfp_compression_rate = 4;
+    double zfp_compression_rate = 4;
     exr_header.num_custom_attributes = 2;
     strcpy(exr_header.custom_attributes[0].name, "zfpCompressionType"); exr_header.custom_attributes[0].name[strlen("zfpCompressionType")] = '\0';
     exr_header.custom_attributes[0].size = 1;
@@ -313,9 +313,9 @@ main(int argc, char** argv)
     exr_header.custom_attributes[0].value[0] = zfp_compression_type;
 
     strcpy(exr_header.custom_attributes[1].name, "zfpCompressionRate"); exr_header.custom_attributes[1].name[strlen("zfpCompressionRate")] = '\0';
-    exr_header.custom_attributes[1].size = 4;
-    exr_header.custom_attributes[1].value = (unsigned char*)malloc(sizeof(unsigned int));
-    memcpy(exr_header.custom_attributes[1].value, &zfp_compression_rate, sizeof(unsigned int));
+    exr_header.custom_attributes[1].size = sizeof(double);
+    exr_header.custom_attributes[1].value = (unsigned char*)malloc(sizeof(double));
+    memcpy(exr_header.custom_attributes[1].value, &zfp_compression_rate, sizeof(double));
     exr_header.compression_type = TINYEXR_COMPRESSIONTYPE_ZFP;
 #endif
 
