@@ -187,6 +187,7 @@ Scanline and tiled format are supported.
     free(exr_headers[i]);
   }
   free(exr_headers);
+```
 
 
 Saving Scanline EXR file.
