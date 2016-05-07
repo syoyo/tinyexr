@@ -292,6 +292,11 @@ See `example/deepview` for actual usage.
 
 ![DeepViewExample](https://github.com/syoyo/tinyexr/blob/master/examples/deepview/deepview_screencast.gif?raw=true)
 
+## Defines
+
+* TINYEXR_USE_MINIZ  Set `1`(default) to use embedded miniz compression. If you want zlib or custom zlib compatible library, set `0` and link zlib library.
+* TINYEXR_USE_ZFP    Set `1` to use ZFP compression.  
+
 ## TinyEXR extension
 
 ### ZFP
@@ -326,7 +331,7 @@ For ZFP EXR image, the following attribute must exist in its EXR image.
 
 * `zfpCompressionType` (uchar).
   * 0 = fixed rate compression
-  * 1 = precision based vaiable rate compression
+  * 1 = precision based variable rate compression
   * 2 = accuracy based variable rate compression
 
 And the one of following attributes must exist, depending on the `zfpCompressionType` value.
