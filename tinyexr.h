@@ -9617,6 +9617,7 @@ static void DecodePixelData(/* out */ unsigned char **out_images,
     }
 #else
     (void)attributes;
+    (void)num_attributes;
     (void)num_channels;
     assert(0);
 #endif
