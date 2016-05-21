@@ -21,6 +21,9 @@ NK_API struct nk_context*   nk_btgui_init(b3gDefaultOpenGLWindow *win, enum nk_b
 NK_API void                 nk_btgui_font_stash_begin(struct nk_font_atlas **atlas);
 NK_API void                 nk_btgui_font_stash_end(void);
 
+NK_API void                 nk_btgui_update_mouse_pos(int x, int y);
+NK_API void                 nk_btgui_update_mouse_state(int left_button_state, int middle_button_state, int right_button_state);
+
 NK_API void                 nk_btgui_new_frame(void);
 NK_API void                 nk_btgui_render(enum nk_anti_aliasing , int max_vertex_buffer, int max_element_buffer);
 NK_API void                 nk_btgui_shutdown(void);
@@ -60,6 +63,12 @@ static struct nk_btgui {
     unsigned int text[NK_BTGUI_TEXT_MAX];
     int text_len;
     float scroll;
+  
+    int left_button_state;
+    int middle_button_state;
+    int right_button_state;
+
+    int mouse_pos[2];
 } btgui;
 
 NK_INTERN void
@@ -74,6 +83,22 @@ nk_btgui_device_upload_atlas(const void *image, int width, int height)
                 GL_RGBA, GL_UNSIGNED_BYTE, image);
     assert(glGetError() == GL_NO_ERROR);
 }
+
+NK_API void
+nk_btgui_update_mouse_state(int left_button_state, int middle_button_state, int right_button_state)
+{
+    btgui.left_button_state = left_button_state;
+    btgui.middle_button_state = middle_button_state;
+    btgui.right_button_state = right_button_state;
+}
+
+NK_API void
+nk_btgui_update_mouse_pos(int x, int y)
+{
+    btgui.mouse_pos[0] = x;
+    btgui.mouse_pos[1] = y;
+}
+
 
 NK_API void
 nk_btgui_render(enum nk_anti_aliasing AA, int max_vertex_buffer, int max_element_buffer)
@@ -255,20 +280,30 @@ NK_API void
 nk_btgui_new_frame(void)
 {
     int i;
-    double x, y;
+    //double x, y;
     struct nk_context *ctx = &btgui.ctx;
     b3gDefaultOpenGLWindow *win = btgui.win;
 
     btgui.width = win->getWidth();
     btgui.height = win->getHeight();
-    // @fixme
-    btgui.display_width = win->getWidth();
-    btgui.display_height = win->getHeight();
+
+    float fbscale = 1.0;
+#ifdef __APPLE__
+    //fbscale = win->getRetinaScale();
+#endif
+    btgui.display_width  = fbscale * btgui.width;
+    btgui.display_height = fbscale * btgui.height;
+
     btgui.fb_scale.x = (float)btgui.display_width/(float)btgui.width;
     btgui.fb_scale.y = (float)btgui.display_height/(float)btgui.height;
 
-#if 0
+    // HACK
+    btgui.fb_scale.x = 1.0;
+    btgui.fb_scale.y = 1.0;
+
+
     nk_input_begin(ctx);
+#if 0
     for (i = 0; i < btgui.text_len; ++i)
         nk_input_unicode(ctx, btgui.text[i]);
 
@@ -309,8 +344,12 @@ nk_btgui_new_frame(void)
     nk_input_button(ctx, NK_BUTTON_MIDDLE, (int)x, (int)y, btguiGetMouseButton(win, BTGUI_MOUSE_BUTTON_MIDDLE) == BTGUI_PRESS);
     nk_input_button(ctx, NK_BUTTON_RIGHT, (int)x, (int)y, btguiGetMouseButton(win, BTGUI_MOUSE_BUTTON_RIGHT) == BTGUI_PRESS);
     nk_input_scroll(ctx, btgui.scroll);
-    nk_input_end(&btgui.ctx);
 #endif
+    nk_input_motion(ctx, btgui.mouse_pos[0], btgui.mouse_pos[1]);
+    nk_input_button(ctx, NK_BUTTON_LEFT,   btgui.mouse_pos[0], btgui.mouse_pos[1], btgui.left_button_state);
+    nk_input_button(ctx, NK_BUTTON_MIDDLE, btgui.mouse_pos[0], btgui.mouse_pos[1], btgui.middle_button_state);
+    nk_input_button(ctx, NK_BUTTON_RIGHT,  btgui.mouse_pos[0], btgui.mouse_pos[1], btgui.right_button_state);
+    nk_input_end(&btgui.ctx);
     btgui.text_len = 0;
     btgui.scroll = 0;
 }

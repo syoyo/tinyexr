@@ -1,5 +1,6 @@
 sources = {
    "main.cc",
+   "exr-io.cc",
    }
 
 -- premake4.lua
@@ -20,7 +21,7 @@ solution "EXRViewSolution"
       language "C++"
       files { sources }
 
-      includedirs { "./" }
+      includedirs { "./", "../../" }
 
       if os.is("Windows") then
          files{
