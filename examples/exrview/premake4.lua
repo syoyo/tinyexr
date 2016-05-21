@@ -32,15 +32,15 @@ solution "EXRViewSolution"
       end
       if os.is("Linux") then
          files {
-            "btgui/OpenGLWindow/X11OpenGLWindow.cpp",
-            "btgui/OpenGLWindow/X11OpenGLWindows.h"
+            "OpenGLWindow/X11OpenGLWindow.cpp",
+            "OpenGLWindow/X11OpenGLWindows.h"
             }
       end
       if os.is("MacOSX") then
          links {"Cocoa.framework"}
          files {
-                "btgui/OpenGLWindow/MacOpenGLWindow.h",
-                "btgui/OpenGLWindow/MacOpenGLWindow.mm",
+                "OpenGLWindow/MacOpenGLWindow.h",
+                "OpenGLWindow/MacOpenGLWindow.mm",
                }
       end
 
