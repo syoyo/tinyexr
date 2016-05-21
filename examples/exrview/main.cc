@@ -42,6 +42,7 @@ b3gDefaultOpenGLWindow* window = 0;
 int gWidth = 512;
 int gHeight = 512;
 GLuint gTexId;
+float gIntensityScale = 1.0;
 
 struct nk_context* ctx;
 
@@ -183,6 +184,11 @@ Render(GLuint prog_id, int w, int h)
   GLint texLoc = glGetUniformLocation(prog_id, "tex");
   assert(texLoc >= 0);
   glUniform1i(texLoc, 0); // TEXTURE0
+
+  GLint intensityScaleLoc = glGetUniformLocation(prog_id, "intensity_scale");
+  if (intensityScaleLoc >= 0) {
+    glUniform1f(intensityScaleLoc, gIntensityScale);
+  }
 
   GLint pos_id = glGetAttribLocation(prog_id, "in_position");
   assert(pos_id >= 0);
@@ -350,20 +356,15 @@ int main(int argc, char** argv) {
     /* GUI */
     {
       struct nk_panel layout;
-      if (nk_begin(ctx, &layout, "Demo", nk_rect(50, 50, 230, 250),
+      if (nk_begin(ctx, &layout, "Demo", nk_rect(50, 50, 300, 250),
                    NK_WINDOW_BORDER | NK_WINDOW_MOVABLE | NK_WINDOW_SCALABLE |
                        NK_WINDOW_MINIMIZABLE | NK_WINDOW_TITLE)) {
-        enum { EASY, HARD };
-        static int op = EASY;
-        static int property = 20;
-        nk_layout_row_static(ctx, 30, 80, 1);
+        nk_layout_row_static(ctx, 30, 200, 1);
         if (nk_button_label(ctx, "button", NK_BUTTON_DEFAULT))
           fprintf(stdout, "button pressed\n");
 
-        nk_layout_row_dynamic(ctx, 30, 2);
-        if (nk_option_label(ctx, "easy", op == EASY)) op = EASY;
-        if (nk_option_label(ctx, "hard", op == HARD)) op = HARD;
-
+        nk_label(ctx, "Intensity", NK_TEXT_LEFT);
+        nk_slider_float(ctx, 0, &gIntensityScale, 10.0, 0.1f);
 #if 0
         nk_layout_row_dynamic(ctx, 25, 1);
         nk_property_int(ctx, "Compression:", 0, &property, 100, 10, 1);
