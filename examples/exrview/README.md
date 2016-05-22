@@ -1,6 +1,7 @@
 # exrview
 
-Simple OpenEXR viewer using TinyEXR.
+Simple cross-platform OpenEXR viewer using TinyEXR, bullet3's windows library and nukler UI library.
+Currently only EXR image with RGB channels can be displayed.
 
 ## Requirements
 
@@ -16,7 +17,17 @@ Simple OpenEXR viewer using TinyEXR.
 
     $ premake5 gmake
 
-## Licenses
+## Usage
+
+    $ ./bin/native/Release/exrview input.exr
+
+## TODO
+
+* [ ] Retina resolution
+* [ ] Display arbitrary channel EXR
+* [ ] Zoom and pan image
+
+## Third party licenses
 
 `OpenGLWindow` and `CommonInterfaces` is grabbed from bullet3, which is licensed under zlib lince.
 

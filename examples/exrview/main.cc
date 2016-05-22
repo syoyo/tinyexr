@@ -43,6 +43,9 @@ int gWidth = 512;
 int gHeight = 512;
 GLuint gTexId;
 float gIntensityScale = 1.0;
+int gExrWidth, gExrHeight;
+float* gExrRGBA;
+int gMousePosX, gMousePosY;
 
 struct nk_context* ctx;
 
@@ -66,6 +69,9 @@ void keyboardCallback(int keycode, int state) {
 
 void mouseMoveCallback(float x, float y) {
   // printf("Mouse Move: %f, %f\n", x, y);
+
+  gMousePosX = (int)x;
+  gMousePosY = (int)y;
 
   // @todo { move to nuklear_btgui_gl2.h }
   nk_btgui_update_mouse_pos((int)x, (int)y);
@@ -96,7 +102,10 @@ GLuint GenTexture(int w, int h, const float* rgba)
   glBindTexture(GL_TEXTURE_2D, texHandle);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+  // @todo { Use GL_RGBA32F for internal texture format. }
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_FLOAT, rgba);
+  checkErrors("GenTexture");
 
   return texHandle;
 }
@@ -218,6 +227,19 @@ Render(GLuint prog_id, int w, int h)
   glDisable(GL_TEXTURE_2D);
 }
 
+void InspectPixel(float rgba[4], int x, int y) {
+  if (x < 0) x = 0;
+  if (x > (gExrWidth-1)) x = gExrWidth - 1;
+
+  if (y < 0) y = 0;
+  if (y > (gExrHeight-1)) y = gExrHeight - 1;
+
+  rgba[0] = gExrRGBA[4 * (y * gExrWidth + x) + 0];
+  rgba[1] = gExrRGBA[4 * (y * gExrWidth + x) + 1];
+  rgba[2] = gExrRGBA[4 * (y * gExrWidth + x) + 2];
+  rgba[3] = gExrRGBA[4 * (y * gExrWidth + x) + 3];
+}
+
 int main(int argc, char** argv) {
 
   if (argc < 2) {
@@ -225,15 +247,25 @@ int main(int argc, char** argv) {
     exit(-1);
   }
 
+  {
+    bool ret = exrio::LoadEXRRGBA(&gExrRGBA, &gExrWidth, &gExrHeight, argv[1]);
+    if (!ret) {
+      exit(-1);
+    }
+  }
+
   window = new b3gDefaultOpenGLWindow;
   b3gWindowConstructionInfo ci;
 #ifdef USE_OPENGL2
   ci.m_openglVersion = 2;
 #endif
-  ci.m_width = 1024;
-  ci.m_height = 800;
+  ci.m_width = gExrWidth;
+  ci.m_height = gExrHeight;
   window->createWindow(ci);
-  window->setWindowTitle("EXR Viewer");
+
+  char title[1024];
+  sprintf(title, "%s (%d x %d)", argv[1], gExrWidth, gExrHeight);
+  window->setWindowTitle(title);
 
   checkErrors("init");
 
@@ -248,15 +280,14 @@ int main(int argc, char** argv) {
   struct nk_color background;
   background = nk_rgb(28,48,62);
 
+
   {
-    int exr_width, exr_height;
-    float* exr_rgba;
-    bool ret = exrio::LoadEXRRGBA(&exr_rgba, &exr_width, &exr_height, argv[1]);
-    if (!ret) {
+    // Upload EXR image to OpenGL texture.
+    gTexId = GenTexture(gExrWidth, gExrHeight, gExrRGBA);
+    if (gTexId == 0) {
+      fprintf(stderr, "OpenGL texture error\n");
       exit(-1);
     }
-
-    gTexId = GenTexture(exr_width, exr_height, exr_rgba);
   }
 
 
@@ -353,18 +384,29 @@ int main(int argc, char** argv) {
     checkErrors("begin frame");
     nk_btgui_new_frame();
 
+    float pixel[4];
+    InspectPixel(pixel, gMousePosX, gMousePosY);
+
     /* GUI */
     {
       struct nk_panel layout;
-      if (nk_begin(ctx, &layout, "Demo", nk_rect(50, 50, 300, 250),
+      if (nk_begin(ctx, &layout, "UI", nk_rect(50, 50, 300, 250),
                    NK_WINDOW_BORDER | NK_WINDOW_MOVABLE | NK_WINDOW_SCALABLE |
                        NK_WINDOW_MINIMIZABLE | NK_WINDOW_TITLE)) {
-        nk_layout_row_static(ctx, 30, 200, 1);
-        if (nk_button_label(ctx, "button", NK_BUTTON_DEFAULT))
-          fprintf(stdout, "button pressed\n");
+        nk_layout_row_static(ctx, 30, 300, 1);
+        //if (nk_button_label(ctx, "button", NK_BUTTON_DEFAULT))
+        //  fprintf(stdout, "button pressed\n");
 
         nk_label(ctx, "Intensity", NK_TEXT_LEFT);
-        nk_slider_float(ctx, 0, &gIntensityScale, 10.0, 0.1f);
+        if (nk_slider_float(ctx, 0, &gIntensityScale, 10.0, 0.1f)) {
+            fprintf(stdout, "Intensity: %f\n", gIntensityScale);
+        }
+
+        nk_label(ctx, "RAW pixel value", NK_TEXT_LEFT);
+        char txt[1024];
+        sprintf(txt, "(%d, %d) = %f, %f, %f, %f", gMousePosX, gMousePosY, pixel[0], pixel[1], pixel[2], pixel[3]);
+        nk_text(ctx, txt, strlen(txt), NK_TEXT_LEFT);
+
 #if 0
         nk_layout_row_dynamic(ctx, 25, 1);
         nk_property_int(ctx, "Compression:", 0, &property, 100, 10, 1);
