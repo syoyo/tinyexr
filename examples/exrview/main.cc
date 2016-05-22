@@ -267,6 +267,23 @@ int main(int argc, char** argv) {
   sprintf(title, "%s (%d x %d)", argv[1], gExrWidth, gExrHeight);
   window->setWindowTitle(title);
 
+#ifndef __APPLE__
+#ifndef _WIN32
+  //some Linux implementations need the 'glewExperimental' to be true
+  glewExperimental = GL_TRUE;
+#endif
+  if (glewInit() != GLEW_OK) {
+	  fprintf(stderr, "Failed to initialize GLEW\n");
+	  exit(-1);
+  }
+
+  if (!GLEW_VERSION_2_1) {
+	  fprintf(stderr, "OpenGL 2.1 is not available\n");
+	  exit(-1);
+  }
+#endif
+
+
   checkErrors("init");
 
   window->setMouseButtonCallback(mouseButtonCallback);
@@ -351,7 +368,7 @@ int main(int argc, char** argv) {
 
   checkErrors("start");
 
-  GLuint vert_id, frag_id, prog_id;
+  GLuint vert_id = 0, frag_id = 0, prog_id = 0;
   {
     bool ret = LoadShader(GL_VERTEX_SHADER, vert_id, "shader.vert");
     if (!ret) {
@@ -359,6 +376,7 @@ int main(int argc, char** argv) {
       exit(-1);
     }
   }
+  checkErrors("vertex shader load");
 
   {
     bool ret = LoadShader(GL_FRAGMENT_SHADER, frag_id, "shader.frag");
@@ -367,6 +385,7 @@ int main(int argc, char** argv) {
       exit(-1);
     }
   }
+  checkErrors("fragment shader load");
 
   {
     bool ret = LinkShader(prog_id, vert_id, frag_id);
@@ -375,6 +394,8 @@ int main(int argc, char** argv) {
       exit(-1);
     }
   }
+  checkErrors("link shader");
+
 
   while (!window->requestedExit()) {
     window->startRendering();
