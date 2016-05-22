@@ -1,5 +1,7 @@
 # exrview
 
+![ScreenShot](screenshots/exrview.png)
+
 Simple cross-platform OpenEXR viewer using TinyEXR, bullet3's windows library and nukler UI library.
 Currently only EXR image with RGB channels can be displayed.
 
@@ -26,6 +28,7 @@ Currently only EXR image with RGB channels can be displayed.
 * [ ] Retina resolution
 * [ ] Display arbitrary channel EXR
 * [ ] Zoom and pan image
+* [ ] Tone mapping
 
 ## Third party licenses
 
