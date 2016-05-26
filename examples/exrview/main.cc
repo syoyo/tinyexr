@@ -24,6 +24,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <string>
+#include <cstring>
 
 #define NK_INCLUDE_FIXED_TYPES
 #define NK_INCLUDE_STANDARD_IO

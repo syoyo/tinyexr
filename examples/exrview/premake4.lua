@@ -36,6 +36,7 @@ solution "EXRViewSolution"
             "OpenGLWindow/X11OpenGLWindow.cpp",
             "OpenGLWindow/X11OpenGLWindows.h"
             }
+         links {"X11", "pthread", "dl"}
       end
       if os.is("MacOSX") then
          links {"Cocoa.framework"}
