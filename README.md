@@ -46,6 +46,8 @@ To use `tinyexr`, simply copy `tinyexr.h` into your project.
 * [examples/deepview/](examples/deepview) Deep image view
 * [examples/rgbe2exr/](examples/rgbe2exr) .hdr to EXR converter
 * [examples/exr2rgbe/](examples/exr2rgbe) EXR to .hdr converter
+* [examples/ldr2exr/](examples/exr2rgbe) LDR to EXR converter
+* [examples/exr2ldr/](examples/exr2ldr) EXR to LDR converter
 
 ## Usage
 
