@@ -36,6 +36,12 @@ To use `tinyexr`, simply copy `tinyexr.h` into your project.
 
 # Use case 
 
+## New TinyEXR(v0.9.5+)
+
+* Your project here!
+
+## Older TinyEXR(v0.9.0)
+
 * mallie https://github.com/lighttransport/mallie
 * Cinder 0.9.0 https://libcinder.org/notes/v0.9.0
 * Piccante(develop branch) http://piccantelib.net/
@@ -59,6 +65,12 @@ Include `tinyexr.h` with `TINYEXR_IMPLEMENTATION` flag(do this only for **one** 
 #define TINYEXR_IMPLEMENTATION
 #include "tinyexr.h"
 ```
+
+### Compile flags
+
+* `TINYEXR_USE_MINIZ` Use embedded miniz(default = 1)
+* `TINYEXR_USE_PIZ` Enable PIZ compression support(default = 1)
+* `TINYEXR_USE_ZFP` Enable ZFP compression supoort(TinyEXR extension, default = 0)
 
 ### Quickly reading RGB(A) EXR file.
 
