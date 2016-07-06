@@ -1,4 +1,4 @@
-exe = "test.exe"
+exe = "test_tinyexr.exe"
 
 # "gnu" or "msvc" are provided as predefined toolchain
 toolchain = "msvc"
@@ -49,7 +49,7 @@ ldflags = {
     }
 
 # optionsl
-cxx_files = [ "test.cc" ]
+cxx_files = [ "test_tinyexr.cc" ]
 c_files = [ ]
 
 # You can register your own toolchain through register_toolchain function

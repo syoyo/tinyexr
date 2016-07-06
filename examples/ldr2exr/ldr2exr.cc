@@ -10,13 +10,17 @@
 int main(int argc, char** argv)
 {
   if (argc < 3) {
-    printf("Usage: rgbe2exr input.hdr output.exr\n");
+    printf("Usage: ldr2exr input.[png|bmp|tga|jpg|...] output.exr\n");
+    printf("   NOTE: Supported LDR image format = stb_image can load.\n");
+    printf("   NOTE: Input pixel value [0, 255] is mapped to [0.0, 1.0] in output EXR file.\n");
+    printf("   NOTE: Only supports RGB pixel format.\n");
+
     exit(-1);
   }
 
   int width, height;
   int n;
-  float *rgb = stbi_loadf(argv[1], &width, &height, &n, 0);
+  unsigned char *rgb = stbi_load(argv[1], &width, &height, &n, 0);
   if (!rgb || n != 3) {
     return -1;
   }
@@ -35,9 +39,9 @@ int main(int argc, char** argv)
   images[2].resize(width * height);
 
   for (int i = 0; i < width * height; i++) {
-    images[0][i] = rgb[3*i+0];
-    images[1][i] = rgb[3*i+1];
-    images[2][i] = rgb[3*i+2];
+    images[0][i] = rgb[3*i+0] / 255.0f;
+    images[1][i] = rgb[3*i+1] / 255.0f;
+    images[2][i] = rgb[3*i+2] / 255.0f;
   }
 
   float* image_ptr[3];
