@@ -41,7 +41,7 @@ TEST_CASE("ScanLines", "[Load]") {
   //inputs.push_back("ScanLines/Cannon.exr"); // Cannon.exr will fail since it uses b44 compression which is not yet supported on TinyEXR.
   inputs.push_back("ScanLines/Desk.exr");
   inputs.push_back("ScanLines/MtTamWest.exr");
-  inputs.push_back("ScanLines/PrismLenses.exr");
+  inputs.push_back("ScanLines/PrismsLenses.exr");
   inputs.push_back("ScanLines/StillLife.exr");
   inputs.push_back("ScanLines/Tree.exr");
 
@@ -115,13 +115,13 @@ TEST_CASE("TestImages", "[Load]") {
   inputs.push_back("TestImages/AllHalfValues.exr");
   inputs.push_back("TestImages/BrightRings.exr");
   inputs.push_back("TestImages/BrightRingsNanInf.exr");
-  inputs.push_back("TestImages/GammaChart.exr");
-  inputs.push_back("TestImages/GrayRampsDiagonal.exr");
-  inputs.push_back("TestImages/GrayRampsHorizontal.exr");
-  inputs.push_back("TestImages/RgbRampsDiagonal.exr");
-  inputs.push_back("TestImages/SquaresSwirls.exr");
+  //inputs.push_back("TestImages/GammaChart.exr"); // disable since this uses pxr24 compression
+  //inputs.push_back("TestImages/GrayRampsDiagonal.exr"); // pxr24
+  //inputs.push_back("TestImages/GrayRampsHorizontal.exr"); // pxr24
+  //inputs.push_back("TestImages/RgbRampsDiagonal.exr"); // pxr24
+  //inputs.push_back("TestImages/SquaresSwirls.exr"); // pxr24
   inputs.push_back("TestImages/WideColorGamut.exr");
-  inputs.push_back("TestImages/WideFloatRange.exr");
+  //inputs.push_back("TestImages/WideFloatRange.exr"); // pxr24
 
   for (size_t i = 0; i < inputs.size(); i++) {
     EXRVersion exr_version;
@@ -154,9 +154,9 @@ TEST_CASE("TestImages", "[Load]") {
 
 TEST_CASE("LuminanceChroma", "[Load]") {
   std::vector<std::string> inputs;
-  inputs.push_back("LuminanceChroma/CrissyField.exr");
-  inputs.push_back("LuminanceChroma/Flowers.exr");
-  inputs.push_back("LuminanceChroma/Garden.exr");
+  //inputs.push_back("LuminanceChroma/CrissyField.exr"); // b44
+  //inputs.push_back("LuminanceChroma/Flowers.exr"); // b44
+  //inputs.push_back("LuminanceChroma/Garden.exr"); // tiled
   inputs.push_back("LuminanceChroma/MtTamNorth.exr");
   inputs.push_back("LuminanceChroma/StarField.exr");
 
@@ -166,7 +166,7 @@ TEST_CASE("LuminanceChroma", "[Load]") {
     std::cout << "Loading" << filepath << std::endl;
     int ret = ParseEXRVersionFromFile(&exr_version, filepath.c_str());
     REQUIRE(TINYEXR_SUCCESS == ret);
-    REQUIRE(true == exr_version.tiled);
+    REQUIRE(false == exr_version.tiled);
     REQUIRE(false == exr_version.non_image);
     REQUIRE(false == exr_version.multipart);
 
@@ -271,6 +271,34 @@ TEST_CASE("Tiles/GoldenGate.exr|Load", "[Load]") {
   FreeEXRImage(&image);
 }
 
+TEST_CASE("LuminanceChroma/Garden.exr|Load", "[Load]") {
+  EXRVersion exr_version;
+  std::string filepath = GetPath("LuminanceChroma/Garden.exr");
+  int ret = ParseEXRVersionFromFile(&exr_version, filepath.c_str());
+  REQUIRE(TINYEXR_SUCCESS == ret);
+  REQUIRE(true == exr_version.tiled);
+  REQUIRE(false == exr_version.non_image);
+  REQUIRE(false == exr_version.multipart);
+
+  EXRVersion version;
+  EXRHeader header;
+  EXRImage image;
+  InitEXRHeader(&header);
+  InitEXRImage(&image);
+
+  const char* err;
+  ret = ParseEXRHeaderFromFile(&header, &exr_version, filepath.c_str(), &err);
+  REQUIRE(TINYEXR_SUCCESS == ret);
+
+
+  ret= LoadEXRImageFromFile(&image, &header, filepath.c_str(), &err);
+  REQUIRE(TINYEXR_SUCCESS == ret);
+
+  FreeEXRHeader(&header);
+  FreeEXRImage(&image);
+}
+
+
 TEST_CASE("Tiles/Ocean.exr", "[Load]") {
   EXRVersion exr_version;
   std::string filepath = GetPath("Tiles/Ocean.exr");
@@ -298,6 +326,7 @@ TEST_CASE("Tiles/Ocean.exr", "[Load]") {
   FreeEXRImage(&image);
 }
 
+#if 0 // Spirals.exr uses pxr24 compression
 TEST_CASE("Tiles/Spirals.exr", "[Load]") {
   EXRVersion exr_version;
   std::string filepath = GetPath("Tiles/Spirals.exr");
@@ -324,6 +353,7 @@ TEST_CASE("Tiles/Spirals.exr", "[Load]") {
   FreeEXRHeader(&header);
   FreeEXRImage(&image);
 }
+#endif
 
 TEST_CASE("Beachball/multipart.0001.exr", "[Version]") {
   EXRVersion exr_version;
