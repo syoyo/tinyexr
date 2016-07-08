@@ -392,6 +392,10 @@ And the one of following attributes must exist, depending on the `zfpCompression
 
 At least ZFP code itself works well on big endian machine.
 
+## Unit tests
+
+See `test/unit` directory.
+
 ## TODO
 
 Contribution is welcome!
