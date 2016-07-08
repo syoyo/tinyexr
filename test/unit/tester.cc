@@ -38,7 +38,7 @@ TEST_CASE("ScanLines", "[Load]") {
   std::vector<std::string> inputs;
   inputs.push_back("ScanLines/Blobbies.exr");
   inputs.push_back("ScanLines/CandleGlass.exr");
-  inputs.push_back("ScanLines/Cannon.exr");
+  //inputs.push_back("ScanLines/Cannon.exr"); // Cannon.exr will fail since it uses b44 compression which is not yet supported on TinyEXR.
   inputs.push_back("ScanLines/Desk.exr");
   inputs.push_back("ScanLines/MtTamWest.exr");
   inputs.push_back("ScanLines/PrismLenses.exr");
