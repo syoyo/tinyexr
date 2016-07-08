@@ -12,27 +12,58 @@
 `tinyexr` is written in portable C++(no library dependency except for STL), thus `tinyexr` is good to embed into your application.
 To use `tinyexr`, simply copy `tinyexr.h` into your project.
 
-`tinyexr` currently supports:
+Current status of `tinyexr` is:
 
-* OpenEXR version 1.x.
-* Normal image
-  * Scanline format.
-  * Uncompress("compress" = 0), RLE("compress" = 1), ZIPS("compress" = 2), ZIP compression("compress" = 3) and PIZ compression("compress" = 4).
-  * Half/Uint/Float pixel type.
-  * Custom attributes(up to 128)
-* Deep image
-  * Scanline format.
-  * ZIPS compression("compress" = 2).
-  * Half, float pixel type.
-* Litte endian machine.
-* Limited support for big endian machine.
-  * read/write scalinel image.
+- OpenEXR v1 image
+  - [x] Scanline format
+  - [ ] Tiled format
+    - [x] Tile format with no LoD(load).
+    - [ ] Tile format with LoD(load).
+    - [ ] Tile format with no LoD(save).
+    - [ ] Tile format with LoD(save).
+  - [x] Custom attributes
+- OpenEXR v2 image
+  - [ ] Multipart format 
+    - [x] Load multi-part image
+    - [ ] Save multi-part image
+    - [ ] Load multi-part deep image
+    - [ ] Save multi-part deep image
+- OpenEXR v2 deep image
+  - [x] Loading scanline + ZIPS + HALF or FLOAT pixel type.
+- Compression
+  - [x] NONE
+  - [x] RLE
+  - [x] ZIP
+  - [x] ZIPS
+  - [x] PIZ
+  - [x] ZFP(tinyexr extension)
+  - [ ] B44?
+  - [ ] B44A?
+  - [ ] PIX24?
+- Line order.
+  - [x] Increasing, decreasing(load)
+  - [ ] Random?
+  - [ ] Increasing, decreasing(save)
+- Pixel format(UINT, FLOAT).
+  - [x] UINT, FLOAT(load)
+  - [x] UINT, FLOAT(deep load)
+  - [x] UINT, FLOAT(save)
+  - [ ] UINT, FLOAT(deep save)
+- Support for big endian machine.
+  - [x] Loading scanline image
+  - [x] Saving scanline image
+  - [ ] Loading multi-part channel EXR
+  - [ ] Saving multi-part channel EXR
+  - [ ] Loading deep image
+  - [ ] Saving deep image
+- Optimization
+  - [ ] ISPC?
+  - [x] OpenMP multi-threading in EXR loading.
+  - [x] OpenMP multi-threading in EXR saving.
+  - [ ] OpenMP multi-threading in deep image loading.
+  - [ ] OpenMP multi-threading in deep image saving.
 * C interface.
   * You can easily write language bindings(e.g. golang)
-* EXR saving
-  * with ZIP compression.
-* JavaScript library
-  * Through emscripten.
 
 # Use case 
 
