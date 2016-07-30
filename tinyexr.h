@@ -433,6 +433,7 @@ extern int LoadEXRFromMemory(float *out_rgba, const unsigned char *memory,
 #include <string>
 #include <vector>
 
+// @todo { remove including tinyexr.h }
 #include "tinyexr.h"
 
 #ifdef _OPENMP
@@ -449,6 +450,21 @@ extern int LoadEXRFromMemory(float *out_rgba, const unsigned char *memory,
 #endif
 
 namespace tinyexr {
+
+#if __cplusplus > 199711L
+// C++11
+#include <cstdint>
+typedef uint64_t tinyexr_uint64;
+typedef int64_t tinyexr_int64;
+#else
+// Although `long long` is not a standard type pre C++11, assume it is defined
+// as a compiler's extension.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wc++11-long-long"
+typedef unsigned long long tinyexr_uint64;
+typedef long long tinyexr_int64;
+#pragma clang diagnostic pop
+#endif
 
 #if TINYEXR_USE_MINIZ
 namespace miniz {
@@ -6890,11 +6906,11 @@ static void swap4(unsigned int *val) {
 #endif
 }
 
-static void swap8(unsigned long long *val) {
+static void swap8(tinyexr::tinyexr_uint64 *val) {
 #ifdef MINIZ_LITTLE_ENDIAN
   (void)val;
 #else
-  unsigned long long tmp = (*val);
+  tinyexr::tinyexr_uint64 tmp = (*val);
   unsigned char *dst = reinterpret_cast<unsigned char *>(val);
   unsigned char *src = reinterpret_cast<unsigned char *>(&tmp);
 
@@ -7203,7 +7219,8 @@ static void WriteChannelInfo(std::vector<unsigned char> &data,
   (*p) = '\0';
 }
 
-static void CompressZip(unsigned char *dst, unsigned long long &compressedSize,
+static void CompressZip(unsigned char *dst,
+                        tinyexr::tinyexr_uint64 &compressedSize,
                         const unsigned char *src, unsigned long src_size) {
   std::vector<unsigned char> tmpBuf(src_size);
 
@@ -7427,7 +7444,8 @@ static int rleUncompress(int inLength, int maxLength, const signed char in[],
 #pragma clang diagnostic pop
 // End of RLE code from OpenEXR -----------------------------------
 
-static void CompressRle(unsigned char *dst, unsigned long long &compressedSize,
+static void CompressRle(unsigned char *dst,
+                        tinyexr::tinyexr_uint64 &compressedSize,
                         const unsigned char *src, unsigned long src_size) {
   std::vector<unsigned char> tmpBuf(src_size);
 
@@ -7483,7 +7501,7 @@ static void CompressRle(unsigned char *dst, unsigned long long &compressedSize,
                             reinterpret_cast<signed char *>(dst));
   assert(outSize > 0);
 
-  compressedSize = static_cast<unsigned long long>(outSize);
+  compressedSize = static_cast<tinyexr::tinyexr_uint64>(outSize);
 }
 
 static void DecompressRle(unsigned char *dst,
@@ -10082,7 +10100,7 @@ static void ConvertHeader(EXRHeader *exr_header, const HeaderInfo &info) {
 }
 
 static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
-                       const std::vector<unsigned long long> &offsets,
+                       const std::vector<tinyexr::tinyexr_uint64> &offsets,
                        const unsigned char *head) {
   int num_channels = exr_header->num_channels;
 
@@ -10284,13 +10302,13 @@ static int DecodeEXRImage(EXRImage *exr_image, const EXRHeader *exr_header,
     }
   }
 
-  std::vector<unsigned long long> offsets(num_blocks);
+  std::vector<tinyexr::tinyexr_uint64> offsets(num_blocks);
 
   for (size_t y = 0; y < num_blocks; y++) {
-    unsigned long long offset;
-    memcpy(&offset, marker, sizeof(unsigned long long));
+    tinyexr::tinyexr_uint64 offset;
+    memcpy(&offset, marker, sizeof(tinyexr::tinyexr_uint64));
     tinyexr::swap8(&offset);
-    marker += sizeof(unsigned long long);  // = 8
+    marker += sizeof(tinyexr::tinyexr_uint64);  // = 8
     offsets[y] = offset;
   }
 
@@ -10778,13 +10796,14 @@ size_t SaveEXRImageToMemory(const EXRImage *exr_image,
     num_blocks++;
   }
 
-  std::vector<unsigned long long> offsets(static_cast<size_t>(num_blocks));
+  std::vector<tinyexr::tinyexr_uint64> offsets(static_cast<size_t>(num_blocks));
 
   size_t headerSize = memory.size();
-  unsigned long long offset =
+  tinyexr::tinyexr_uint64 offset =
       headerSize +
       static_cast<size_t>(num_blocks) *
-          sizeof(long long);  // sizeof(header) + sizeof(offsetTable)
+          sizeof(
+              tinyexr::tinyexr_int64);  // sizeof(header) + sizeof(offsetTable)
 
   std::vector<unsigned char> data;
 
@@ -10972,7 +10991,7 @@ size_t SaveEXRImageToMemory(const EXRImage *exr_image,
 #else
       std::vector<unsigned char> block(compressBound(buf.size()));
 #endif
-      unsigned long long outSize = block.size();
+      tinyexr::tinyexr_uint64 outSize = block.size();
 
       tinyexr::CompressZip(&block.at(0), outSize,
                            reinterpret_cast<const unsigned char *>(&buf.at(0)),
@@ -10997,7 +11016,7 @@ size_t SaveEXRImageToMemory(const EXRImage *exr_image,
       // (buf.size() * 3) / 2 would be enough.
       std::vector<unsigned char> block((buf.size() * 3) / 2);
 
-      unsigned long long outSize = block.size();
+      tinyexr::tinyexr_uint64 outSize = block.size();
 
       tinyexr::CompressRle(&block.at(0), outSize,
                            reinterpret_cast<const unsigned char *>(&buf.at(0)),
@@ -11084,7 +11103,7 @@ size_t SaveEXRImageToMemory(const EXRImage *exr_image,
     data.insert(data.end(), data_list[i].begin(), data_list[i].end());
 
     offsets[i] = offset;
-    tinyexr::swap8(reinterpret_cast<unsigned long long *>(&offsets[i]));
+    tinyexr::swap8(reinterpret_cast<tinyexr::tinyexr_uint64 *>(&offsets[i]));
     offset += data_list[i].size();
   }
 
@@ -11092,7 +11111,7 @@ size_t SaveEXRImageToMemory(const EXRImage *exr_image,
     memory.insert(
         memory.end(), reinterpret_cast<unsigned char *>(&offsets.at(0)),
         reinterpret_cast<unsigned char *>(&offsets.at(0)) +
-            sizeof(unsigned long long) * static_cast<size_t>(num_blocks));
+            sizeof(tinyexr::tinyexr_uint64) * static_cast<size_t>(num_blocks));
   }
 
   { memory.insert(memory.end(), data.begin(), data.end()); }
@@ -11327,13 +11346,13 @@ int LoadDeepEXR(DeepImage *deep_image, const char *filename, const char **err) {
     num_blocks++;
   }
 
-  std::vector<long long> offsets(static_cast<size_t>(num_blocks));
+  std::vector<tinyexr::tinyexr_int64> offsets(static_cast<size_t>(num_blocks));
 
   for (size_t y = 0; y < static_cast<size_t>(num_blocks); y++) {
-    long long offset;
-    memcpy(&offset, marker, sizeof(long long));
-    tinyexr::swap8(reinterpret_cast<unsigned long long *>(&offset));
-    marker += sizeof(long long);  // = 8
+    tinyexr::tinyexr_int64 offset;
+    memcpy(&offset, marker, sizeof(tinyexr::tinyexr_int64));
+    tinyexr::swap8(reinterpret_cast<tinyexr::tinyexr_uint64 *>(&offset));
+    marker += sizeof(tinyexr::tinyexr_int64);  // = 8
     offsets[y] = offset;
   }
 
@@ -11384,21 +11403,24 @@ int LoadDeepEXR(DeepImage *deep_image, const char *filename, const char **err) {
     // compressed pixel offset table
     // compressed sample data
     int line_no;
-    long long packedOffsetTableSize;
-    long long packedSampleDataSize;
-    long long unpackedSampleDataSize;
+    tinyexr::tinyexr_int64 packedOffsetTableSize;
+    tinyexr::tinyexr_int64 packedSampleDataSize;
+    tinyexr::tinyexr_int64 unpackedSampleDataSize;
     memcpy(&line_no, data_ptr, sizeof(int));
-    memcpy(&packedOffsetTableSize, data_ptr + 4, sizeof(long long));
-    memcpy(&packedSampleDataSize, data_ptr + 12, sizeof(long long));
-    memcpy(&unpackedSampleDataSize, data_ptr + 20, sizeof(long long));
+    memcpy(&packedOffsetTableSize, data_ptr + 4,
+           sizeof(tinyexr::tinyexr_int64));
+    memcpy(&packedSampleDataSize, data_ptr + 12,
+           sizeof(tinyexr::tinyexr_int64));
+    memcpy(&unpackedSampleDataSize, data_ptr + 20,
+           sizeof(tinyexr::tinyexr_int64));
 
     tinyexr::swap4(reinterpret_cast<unsigned int *>(&line_no));
     tinyexr::swap8(
-        reinterpret_cast<unsigned long long *>(&packedOffsetTableSize));
+        reinterpret_cast<tinyexr::tinyexr_uint64 *>(&packedOffsetTableSize));
     tinyexr::swap8(
-        reinterpret_cast<unsigned long long *>(&packedSampleDataSize));
+        reinterpret_cast<tinyexr::tinyexr_uint64 *>(&packedSampleDataSize));
     tinyexr::swap8(
-        reinterpret_cast<unsigned long long *>(&unpackedSampleDataSize));
+        reinterpret_cast<tinyexr::tinyexr_uint64 *>(&unpackedSampleDataSize));
 
     std::vector<int> pixelOffsetTable(static_cast<size_t>(data_width));
 
@@ -11463,7 +11485,7 @@ int LoadDeepEXR(DeepImage *deep_image, const char *filename, const char **err) {
     // pixel data is stored as image[channels][pixel_samples]
     //
     {
-      unsigned long long data_offset = 0;
+      tinyexr::tinyexr_uint64 data_offset = 0;
       for (size_t c = 0; c < static_cast<size_t>(num_channels); c++) {
         deep_image->image[c][y] = static_cast<float *>(
             malloc(sizeof(float) * static_cast<size_t>(samples_per_line)));
@@ -11892,13 +11914,13 @@ int LoadEXRMultipartImageFromMemory(EXRImage *exr_images,
   //   http://www.openexr.com/openexrfilelayout.pdf
 
   // Load chunk offset table.
-  std::vector<std::vector<unsigned long long> > chunk_offset_table_list;
+  std::vector<std::vector<tinyexr::tinyexr_uint64> > chunk_offset_table_list;
   for (size_t i = 0; i < static_cast<size_t>(num_parts); i++) {
-    std::vector<unsigned long long> offset_table(
+    std::vector<tinyexr::tinyexr_uint64> offset_table(
         static_cast<size_t>(exr_headers[i]->chunk_count));
 
     for (size_t c = 0; c < offset_table.size(); c++) {
-      unsigned long long offset;
+      tinyexr::tinyexr_uint64 offset;
       memcpy(&offset, marker, 8);
       tinyexr::swap8(&offset);
 
@@ -11911,7 +11933,8 @@ int LoadEXRMultipartImageFromMemory(EXRImage *exr_images,
 
   // Decode image.
   for (size_t i = 0; i < static_cast<size_t>(num_parts); i++) {
-    std::vector<unsigned long long> &offset_table = chunk_offset_table_list[i];
+    std::vector<tinyexr::tinyexr_uint64> &offset_table =
+        chunk_offset_table_list[i];
 
     // First check 'part number' is identitical to 'i'
     for (size_t c = 0; c < offset_table.size(); c++) {
