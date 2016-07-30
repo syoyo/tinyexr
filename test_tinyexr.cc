@@ -62,10 +62,12 @@ static const char* GetPixelType(int id)
 static void
 TiledImageToScanlineImage(EXRImage* src, const EXRHeader* header)
 {
-  size_t data_width  = header->data_window[2] - header->data_window[0] + 1;
-  size_t data_height = header->data_window[3] - header->data_window[1] + 1;
+  assert(header->data_window[2] - header->data_window[0] + 1 >= 0);
+  assert(header->data_window[3] - header->data_window[1] + 1 >= 0);
+  size_t data_width  = static_cast<size_t>(header->data_window[2] - header->data_window[0] + 1);
+  size_t data_height = static_cast<size_t>(header->data_window[3] - header->data_window[1] + 1);
 
-  src->images = static_cast<unsigned char**>(malloc(sizeof(float*) * header->num_channels));
+  src->images = static_cast<unsigned char**>(malloc(sizeof(float*) * static_cast<size_t>(header->num_channels)));
   for (size_t c = 0; c < static_cast<size_t>(header->num_channels); c++) {
     assert(header->pixel_types[c] == TINYEXR_PIXELTYPE_FLOAT);
     src->images[c] = static_cast<unsigned char*>(malloc(sizeof(float) * data_width * data_height));
@@ -74,17 +76,17 @@ TiledImageToScanlineImage(EXRImage* src, const EXRHeader* header)
 
   for (size_t tile_idx = 0; tile_idx < static_cast<size_t>(src->num_tiles); tile_idx++) {
 
-    int sx = src->tiles[tile_idx].offset_x * header->tile_size_x;
-    int sy = src->tiles[tile_idx].offset_y * header->tile_size_y;
-    int ex = src->tiles[tile_idx].offset_x * header->tile_size_x + src->tiles[tile_idx].width;
-    int ey = src->tiles[tile_idx].offset_y * header->tile_size_y + src->tiles[tile_idx].height;
+    size_t sx = static_cast<size_t>(src->tiles[tile_idx].offset_x * header->tile_size_x);
+    size_t sy = static_cast<size_t>(src->tiles[tile_idx].offset_y * header->tile_size_y);
+    size_t ex = static_cast<size_t>(src->tiles[tile_idx].offset_x * header->tile_size_x + src->tiles[tile_idx].width);
+    size_t ey = static_cast<size_t>(src->tiles[tile_idx].offset_y * header->tile_size_y + src->tiles[tile_idx].height);
 
     for (size_t c = 0; c < static_cast<size_t>(header->num_channels); c++) {
       float *dst_image = reinterpret_cast<float*>(src->images[c]);
       const float *src_image = reinterpret_cast<const float*>(src->tiles[tile_idx].images[c]);
       for (size_t y = 0; y < static_cast<size_t>(ey - sy); y++) {
         for (size_t x = 0; x < static_cast<size_t>(ex - sx); x++) {
-          dst_image[(y + sy) * data_width + (x + sx)] = src_image[y * header->tile_size_x + x];
+          dst_image[(y + sy) * data_width + (x + sx)] = src_image[y * static_cast<size_t>(header->tile_size_x) + x];
         }
       }
     }
@@ -189,12 +191,12 @@ main(int argc, char** argv)
     }
 
 
-    std::vector<EXRImage> images(num_exr_headers);
-    for (int i =0; i < num_exr_headers; i++) {
+    std::vector<EXRImage> images(static_cast<size_t>(num_exr_headers));
+    for (size_t i =0; i < static_cast<size_t>(num_exr_headers); i++) {
       InitEXRImage(&images[i]);
     }
 
-    ret = LoadEXRMultipartImageFromFile(&images.at(0), const_cast<const EXRHeader**>(exr_headers), num_exr_headers, argv[1], &err);
+    ret = LoadEXRMultipartImageFromFile(&images.at(0), const_cast<const EXRHeader**>(exr_headers), static_cast<unsigned int>(num_exr_headers), argv[1], &err);
     if (ret != 0) {
       fprintf(stderr, "Load EXR err: %s\n", err);
       return ret;
@@ -203,11 +205,11 @@ main(int argc, char** argv)
     printf("Loaded %d part images\n", num_exr_headers);
     printf("There is no saving feature for multi-part images, thus just exit an application...\n");
 
-    for (int i =0; i < num_exr_headers; i++) {
+    for (size_t i =0; i < static_cast<size_t>(num_exr_headers); i++) {
       FreeEXRImage(&images.at(i));
     }
 
-    for (int i =0; i < num_exr_headers; i++) {
+    for (size_t i =0; i < static_cast<size_t>(num_exr_headers); i++) {
       FreeEXRHeader(exr_headers[i]);
       free(exr_headers[i]);
     }
