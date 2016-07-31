@@ -459,11 +459,15 @@ typedef int64_t tinyexr_int64;
 #else
 // Although `long long` is not a standard type pre C++11, assume it is defined
 // as a compiler's extension.
+#ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wc++11-long-long"
+#endif
 typedef unsigned long long tinyexr_uint64;
 typedef long long tinyexr_int64;
+#ifdef __clang__
 #pragma clang diagnostic pop
+#endif
 #endif
 
 #if TINYEXR_USE_MINIZ
@@ -6943,8 +6947,10 @@ union FP32 {
   } s;
 };
 
+#ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wpadded"
+#endif
 
 union FP16 {
   unsigned short u;
@@ -6961,7 +6967,9 @@ union FP16 {
   } s;
 };
 
+#ifdef __clang__
 #pragma clang diagnostic pop
+#endif
 
 static FP32 half_to_float(FP16 h) {
   static const FP32 magic = {113 << 23};
@@ -7349,8 +7357,10 @@ static void DecompressZip(unsigned char *dst,
 
 // RLE code from OpenEXR --------------------------------------
 
+#ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wsign-conversion"
+#endif
 
 const int MIN_RUN_LENGTH = 3;
 const int MAX_RUN_LENGTH = 127;
@@ -7441,7 +7451,9 @@ static int rleUncompress(int inLength, int maxLength, const signed char in[],
   return static_cast<int>(out - outStart);
 }
 
+#ifdef __clang__
 #pragma clang diagnostic pop
+#endif
 // End of RLE code from OpenEXR -----------------------------------
 
 static void CompressRle(unsigned char *dst,
