@@ -294,7 +294,7 @@ int main(int argc, char** argv) {
   window->createWindow(ci);
 
   char title[1024];
-  sprintf(title, "%s (%d x %d)", argv[1], gExrWidth, gExrHeight);
+  sprintf(title, "%s (%d x %d)", filename, gExrWidth, gExrHeight);
   window->setWindowTitle(title);
 
 #ifndef __APPLE__
