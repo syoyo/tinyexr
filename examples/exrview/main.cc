@@ -9,8 +9,6 @@
 #include "OpenGLWindow/X11OpenGLWindow.h"
 #endif
 
-#include "CommonInterfaces/CommonRenderInterface.h"
-
 #ifdef _WIN32
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -25,6 +23,10 @@
 #include <cstdlib>
 #include <string>
 #include <cstring>
+
+#ifdef USE_NATIVEFILEDIALOG
+#include <nfd.h>
+#endif
 
 #define NK_INCLUDE_FIXED_TYPES
 #define NK_INCLUDE_STANDARD_IO
@@ -243,13 +245,40 @@ void InspectPixel(float rgba[4], int x, int y) {
 
 int main(int argc, char** argv) {
 
+  const char *filename = NULL;
+
+#ifdef USE_NATIVEFILEDIALOG
+  if (argc < 2) {
+    nfdchar_t *outPath = NULL;
+    nfdresult_t result = NFD_OpenDialog( "exr", NULL, &outPath );
+    if ( result == NFD_OKAY )
+    {
+        puts("Success!");
+        filename = strdup(outPath);
+    }
+    else if ( result == NFD_CANCEL )
+    {
+        puts("User pressed cancel.");
+        exit(-1);
+    }
+    else 
+    {
+        printf("Error: %s\n", NFD_GetError() );
+        exit(-1);
+    }
+  } else {
+    filename = argv[1];
+  }
+#else
   if (argc < 2) {
     printf("Usage: exrview input.exr\n");
     exit(-1);
   }
+  filename = argv[1];
+#endif
 
   {
-    bool ret = exrio::LoadEXRRGBA(&gExrRGBA, &gExrWidth, &gExrHeight, argv[1]);
+    bool ret = exrio::LoadEXRRGBA(&gExrRGBA, &gExrWidth, &gExrHeight, filename);
     if (!ret) {
       exit(-1);
     }
