@@ -46,6 +46,7 @@ int gWidth = 512;
 int gHeight = 512;
 GLuint gTexId;
 float gIntensityScale = 1.0;
+float gGamma = 1.0;
 int gExrWidth, gExrHeight;
 float* gExrRGBA;
 int gMousePosX, gMousePosY;
@@ -200,6 +201,11 @@ Render(GLuint prog_id, int w, int h)
   GLint intensityScaleLoc = glGetUniformLocation(prog_id, "intensity_scale");
   if (intensityScaleLoc >= 0) {
     glUniform1f(intensityScaleLoc, gIntensityScale);
+  }
+
+  GLint gammaLoc = glGetUniformLocation(prog_id, "gamma");
+  if (gammaLoc >= 0) {
+    glUniform1f(gammaLoc, gGamma);
   }
 
   GLint pos_id = glGetAttribLocation(prog_id, "in_position");
@@ -451,6 +457,10 @@ int main(int argc, char** argv) {
         nk_label(ctx, "Intensity", NK_TEXT_LEFT);
         if (nk_slider_float(ctx, 0, &gIntensityScale, 10.0, 0.1f)) {
             fprintf(stdout, "Intensity: %f\n", gIntensityScale);
+        }
+        nk_label(ctx, "Display gamma", NK_TEXT_LEFT);
+        if (nk_slider_float(ctx, 0, &gGamma, 10.0, 0.01f)) {
+            fprintf(stdout, "Gamma: %f\n", gGamma);
         }
 
         nk_label(ctx, "RAW pixel value", NK_TEXT_LEFT);
