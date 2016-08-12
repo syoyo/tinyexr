@@ -10443,6 +10443,7 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
   (*height) = exr_image.height;
 
   FreeEXRHeader(&exr_header);
+  FreeEXRImage(&exr_image);
 
   return TINYEXR_SUCCESS;
 }

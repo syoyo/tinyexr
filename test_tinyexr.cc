@@ -5,7 +5,7 @@
 #define TINYEXR_IMPLEMENTATION
 #include "tinyexr.h"
 
-//#define SIMPLE_API_EXAMPLE
+#define SIMPLE_API_EXAMPLE
 //#define TEST_ZFP_COMPRESSION
 
 #ifdef SIMPLE_API_EXAMPLE
@@ -29,15 +29,15 @@ SaveAsPFM(const char* filename, int width, int height, float* data)
   fprintf(fp, "-1\n"); // -1: little endian, 1: big endian
 
   // RGBA -> RGB
-  std::vector<float> rgb(width*height*3);
+  std::vector<float> rgb(static_cast<size_t>(width*height*3));
 
-  for (int i = 0; i < width * height; i++) {
+  for (size_t i = 0; i < static_cast<size_t>(width * height); i++) {
     rgb[3*i+0] = data[4*i+0];
     rgb[3*i+1] = data[4*i+1];
     rgb[3*i+2] = data[4*i+2];
   }
   
-  fwrite(&rgb.at(0), sizeof(float), width * height * 3, fp);
+  fwrite(&rgb.at(0), sizeof(float), static_cast<size_t>(width * height * 3), fp);
 
   fclose(fp);
 }
@@ -119,9 +119,8 @@ main(int argc, char** argv)
     fprintf(stderr, "Load EXR err: %s\n", err);
     return ret;
   }
-  (void)GetPixelType;
-  (void)outfilename;
   SaveAsPFM("output.pfm", width, height, image);
+  free(image);
 #else
     
   EXRVersion exr_version;
