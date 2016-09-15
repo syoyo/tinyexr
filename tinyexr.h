@@ -283,7 +283,8 @@ extern int ParseEXRVersionFromFile(EXRVersion *version, const char *filename);
 
 // Parse EXR version header from memory-mapped EXR data.
 extern int ParseEXRVersionFromMemory(EXRVersion *version,
-                                     const unsigned char *memory);
+                                     const unsigned char *memory,
+                                     size_t size);
 
 // Parse single-part OpenEXR header from a file and initialize `EXRHeader`.
 extern int ParseEXRHeaderFromFile(EXRHeader *header, const EXRVersion *version,
@@ -415,7 +416,7 @@ extern int ParseEXRHeaderFromMemory(EXRHeader *exr_header,
 // hight)
 // Returns negative value and may set error string in `err` when there's an
 // error
-extern int LoadEXRFromMemory(float *out_rgba, const unsigned char *memory,
+extern int LoadEXRFromMemory(float *out_rgba, const unsigned char *memory, size_t size,
                              const char **err);
 
 #ifdef __cplusplus
@@ -10484,7 +10485,7 @@ int ParseEXRHeaderFromMemory(EXRHeader *exr_header, const EXRVersion *version,
   return ret;
 }
 
-int LoadEXRFromMemory(float *out_rgba, const unsigned char *memory,
+int LoadEXRFromMemory(float *out_rgba, const unsigned char *memory, size_t size,
                       const char **err) {
   if (out_rgba == NULL || memory == NULL) {
     if (err) {
@@ -10499,7 +10500,7 @@ int LoadEXRFromMemory(float *out_rgba, const unsigned char *memory,
 
   InitEXRHeader(&exr_header);
 
-  int ret = ParseEXRVersionFromMemory(&exr_version, memory);
+  int ret = ParseEXRVersionFromMemory(&exr_version, memory, size);
   if (ret != TINYEXR_SUCCESS) {
     return ret;
   }
@@ -11793,10 +11794,17 @@ int ParseEXRMultipartHeaderFromFile(EXRHeader ***exr_headers, int *num_headers,
                                            exr_version, &buf.at(0), err);
 }
 
+static const int kVersionSize = 8;
+
 int ParseEXRVersionFromMemory(EXRVersion *version,
-                              const unsigned char *memory) {
+                              const unsigned char *memory,
+                              size_t size) {
   if (version == NULL || memory == NULL) {
     return TINYEXR_ERROR_INVALID_ARGUMENT;
+  }
+
+  if (size < kVersionSize) {
+    return TINYEXR_ERROR_INVALID_DATA;
   }
 
   const unsigned char *marker = memory;
@@ -11867,21 +11875,19 @@ int ParseEXRVersionFromFile(EXRVersion *version, const char *filename) {
   file_size = static_cast<size_t>(ftell(fp));
   fseek(fp, 0, SEEK_SET);
 
-  if (file_size < 8) {
+  if (file_size < kVersionSize) {
     return TINYEXR_ERROR_INVALID_FILE;
   }
 
-  const size_t kHeaderSize = 8;
-
-  unsigned char buf[8];
-  size_t ret = fread(&buf[0], 1, kHeaderSize, fp);
+  unsigned char buf[kVersionSize];
+  size_t ret = fread(&buf[0], 1, kVersionSize, fp);
   fclose(fp);
 
-  if (ret != kHeaderSize) {
+  if (ret != kVersionSize) {
     return TINYEXR_ERROR_INVALID_FILE;
   }
 
-  return ParseEXRVersionFromMemory(version, buf);
+  return ParseEXRVersionFromMemory(version, buf, kVersionSize);
 }
 
 int LoadEXRMultipartImageFromMemory(EXRImage *exr_images,
