@@ -294,6 +294,7 @@ extern int ParseEXRHeaderFromFile(EXRHeader *header, const EXRVersion *version,
 extern int ParseEXRHeaderFromMemory(EXRHeader *header,
                                     const EXRVersion *version,
                                     const unsigned char *memory,
+                                    size_t size,
                                     const char **err);
 
 // Parse multi-part OpenEXR headers from a file and initialize `EXRHeader*`
@@ -310,6 +311,7 @@ extern int ParseEXRMultipartHeaderFromMemory(EXRHeader ***headers,
                                              int *num_headers,
                                              const EXRVersion *version,
                                              const unsigned char *memory,
+                                             size_t size,
                                              const char **err);
 
 // Loads single-part OpenEXR image from a file.
@@ -399,25 +401,14 @@ extern int LoadDeepEXR(DeepImage *out_image, const char *filename,
 //                       const char **err);
 
 // For emscripten.
-// Parse single-frame OpenEXR header from memory.
-// Returns negative value and may set error string in `err` when there's an
-// error
-// The application must call `free()` to release `err` string(if there was an
-// error).
-extern int ParseEXRHeaderFromMemory(EXRHeader *exr_header,
-                                    const EXRVersion *exr_version,
-                                    const unsigned char *memory,
-                                    const char **err);
-
-// For emscripten.
 // Loads single-frame OpenEXR image from memory. Assume EXR image contains
 // RGB(A) channels.
 // `out_rgba` must have enough memory(at least sizeof(float) x 4(RGBA) x width x
 // hight)
 // Returns negative value and may set error string in `err` when there's an
 // error
-extern int LoadEXRFromMemory(float *out_rgba, const unsigned char *memory, size_t size,
-                             const char **err);
+extern int LoadEXRFromMemory(float *out_rgba, const unsigned char *memory,
+                             size_t size, const char **err);
 
 #ifdef __cplusplus
 }
@@ -7057,29 +7048,48 @@ static const char *ReadString(std::string *s, const char *ptr) {
   return q + 1;  // skip '\0'
 }
 
-static const char *ReadAttribute(std::string *name, std::string *ty,
-                                 std::vector<unsigned char> *data,
-                                 const char *ptr) {
-  if ((*ptr) == 0) {
-    // end of attribute.
-    return NULL;
+static bool ReadAttribute(std::string *name, std::string *type,
+                          std::vector<unsigned char> *data, size_t* marker_size,
+                          const char *marker, size_t size) {
+  size_t name_len = strnlen(marker, size);
+  if (name_len == size) {
+    // String does not have a terminating character.
+    return false;
+  }
+  *name = std::string(marker, name_len);
+
+  marker += name_len + 1;
+  size -= name_len + 1;
+
+  size_t type_len = strnlen(marker, size);
+  if (type_len == size) {
+    return false;
+  }
+  *type = std::string(marker, type_len);
+
+  marker += type_len + 1;
+  size -= type_len + 1;
+
+  if (size < sizeof(uint32_t)) {
+    return false;
   }
 
-  const char *p = ReadString(name, ptr);
-
-  p = ReadString(ty, p);
-
-  int data_len;
-  memcpy(&data_len, p, sizeof(int));
-  p += 4;
-
+  uint32_t data_len;
+  memcpy(&data_len, marker, sizeof(uint32_t));
   tinyexr::swap4(reinterpret_cast<unsigned int *>(&data_len));
 
-  data->resize(static_cast<size_t>(data_len));
-  memcpy(&data->at(0), p, static_cast<size_t>(data_len));
-  p += data_len;
+  marker += sizeof(uint32_t);
+  size -= sizeof(uint32_t);
 
-  return p;
+  if (size < data_len) {
+    return false;
+  }
+
+  data->resize(static_cast<size_t>(data_len));
+  memcpy(&data->at(0), marker, static_cast<size_t>(data_len));
+
+  *marker_size = name_len + 1 + type_len + 1 + sizeof(uint32_t) + data_len;
+  return true;
 }
 
 static void WriteAttributeToMemory(std::vector<unsigned char> *out,
@@ -9857,7 +9867,7 @@ static unsigned char **AllocateImage(int num_channels,
 
 static int ParseEXRHeader(HeaderInfo *info, bool *empty_header,
                           const EXRVersion *version, std::string *err,
-                          const unsigned char *buf) {
+                          const unsigned char *buf, size_t size) {
   const char *marker = reinterpret_cast<const char *>(&buf[0]);
 
   if (empty_header) {
@@ -9865,7 +9875,7 @@ static int ParseEXRHeader(HeaderInfo *info, bool *empty_header,
   }
 
   if (version->multipart) {
-    if (marker[0] == '\0') {
+    if (size > 0 && marker[0] == '\0') {
       // End of header list.
       if (empty_header) {
         (*empty_header) = true;
@@ -9896,16 +9906,25 @@ static int ParseEXRHeader(HeaderInfo *info, bool *empty_header,
   info->attributes.clear();
 
   // Read attributes
+  size_t orig_size = size;
   for (;;) {
+    if (0 == size) {
+      return TINYEXR_ERROR_INVALID_DATA;
+    } else if (marker[0] == '\0') {
+      size--;
+      break;
+    }
+
     std::string attr_name;
     std::string attr_type;
     std::vector<unsigned char> data;
-    const char *marker_next =
-        tinyexr::ReadAttribute(&attr_name, &attr_type, &data, marker);
-    if (marker_next == NULL) {
-      marker++;  // skip '\0'
-      break;
+    size_t marker_size;
+    if (!tinyexr::ReadAttribute(&attr_name, &attr_type, &data, &marker_size,
+                                marker, size)) {
+      return TINYEXR_ERROR_INVALID_DATA;
     }
+    marker += marker_size;
+    size -= marker_size;
 
     if (version->tiled && attr_name.compare("tiles") == 0) {
       unsigned int x_size, y_size;
@@ -10037,12 +10056,9 @@ static int ParseEXRHeader(HeaderInfo *info, bool *empty_header,
         info->attributes.push_back(attrib);
       }
     }
-
-    marker = marker_next;
   }
 
-  info->header_len = static_cast<unsigned int>(
-      reinterpret_cast<const unsigned char *>(marker) - buf);
+  info->header_len = static_cast<unsigned int>(orig_size - size);
 
   return TINYEXR_SUCCESS;
 }
@@ -10449,8 +10465,11 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
   return TINYEXR_SUCCESS;
 }
 
+static const int kVersionSize = 8;
+
 int ParseEXRHeaderFromMemory(EXRHeader *exr_header, const EXRVersion *version,
-                             const unsigned char *memory, const char **err) {
+                             const unsigned char *memory, size_t size,
+                             const char **err) {
   if (memory == NULL || exr_header == NULL) {
     if (err) {
       (*err) = "Invalid argument.\n";
@@ -10460,16 +10479,18 @@ int ParseEXRHeaderFromMemory(EXRHeader *exr_header, const EXRVersion *version,
     return TINYEXR_ERROR_INVALID_ARGUMENT;
   }
 
-  const char *buf = reinterpret_cast<const char *>(memory);
+  if (size < kVersionSize) {
+    return TINYEXR_ERROR_INVALID_DATA;
+  }
 
-  const char *marker = &buf[4 + 4];  // skip magic number + version header
+  const unsigned char *marker = memory + kVersionSize;
+  size_t marker_size = size - kVersionSize;
 
   tinyexr::HeaderInfo info;
   info.clear();
 
   std::string err_str;
-  int ret = ParseEXRHeader(&info, NULL, version, &err_str,
-                           reinterpret_cast<const unsigned char *>(marker));
+  int ret = ParseEXRHeader(&info, NULL, version, &err_str, marker, marker_size);
 
   if (ret != TINYEXR_SUCCESS) {
     if (err && !err_str.empty()) {
@@ -10505,7 +10526,7 @@ int LoadEXRFromMemory(float *out_rgba, const unsigned char *memory, size_t size,
     return ret;
   }
 
-  ret = ParseEXRHeaderFromMemory(&exr_header, &exr_version, memory, err);
+  ret = ParseEXRHeaderFromMemory(&exr_header, &exr_version, memory, size, err);
   if (ret != TINYEXR_SUCCESS) {
     return ret;
   }
@@ -11271,16 +11292,25 @@ int LoadDeepEXR(DeepImage *deep_image, const char *filename, const char **err) {
   std::vector<tinyexr::ChannelInfo> channels;
 
   // Read attributes
+  size_t size = filesize - kVersionSize;
   for (;;) {
+    if (0 == size) {
+      return TINYEXR_ERROR_INVALID_DATA;
+    } else if (marker[0] == '\0') {
+      size--;
+      break;
+    }
+
     std::string attr_name;
     std::string attr_type;
     std::vector<unsigned char> data;
-    const char *marker_next =
-        tinyexr::ReadAttribute(&attr_name, &attr_type, &data, marker);
-    if (marker_next == NULL) {
-      marker++;  // skip '\0'
-      break;
+    size_t marker_size;
+    if (!tinyexr::ReadAttribute(&attr_name, &attr_type, &data, &marker_size,
+                                marker, size)) {
+      return TINYEXR_ERROR_INVALID_DATA;
     }
+    marker += marker_size;
+    size -= marker_size;
 
     if (attr_name.compare("compression") == 0) {
       compression_type = data[0];
@@ -11338,8 +11368,6 @@ int LoadDeepEXR(DeepImage *deep_image, const char *filename, const char **err) {
       tinyexr::swap4(reinterpret_cast<unsigned int *>(&w));
       tinyexr::swap4(reinterpret_cast<unsigned int *>(&h));
     }
-
-    marker = marker_next;
   }
 
   assert(dx >= 0);
@@ -11671,13 +11699,15 @@ int ParseEXRHeaderFromFile(EXRHeader *exr_header, const EXRVersion *exr_version,
     }
   }
 
-  return ParseEXRHeaderFromMemory(exr_header, exr_version, &buf.at(0), err);
+  return ParseEXRHeaderFromMemory(exr_header, exr_version, &buf.at(0), filesize,
+                                  err);
 }
 
 int ParseEXRMultipartHeaderFromMemory(EXRHeader ***exr_headers,
                                       int *num_headers,
                                       const EXRVersion *exr_version,
                                       const unsigned char *memory,
+                                      size_t size,
                                       const char **err) {
   if (memory == NULL || exr_headers == NULL || num_headers == NULL ||
       exr_version == NULL) {
@@ -11685,9 +11715,12 @@ int ParseEXRMultipartHeaderFromMemory(EXRHeader ***exr_headers,
     return TINYEXR_ERROR_INVALID_ARGUMENT;
   }
 
-  const char *buf = reinterpret_cast<const char *>(memory);
+  if (size < kVersionSize) {
+    return TINYEXR_ERROR_INVALID_DATA;
+  }
 
-  const char *marker = &buf[4 + 4];  // skip magic number + version header
+  const unsigned char *marker = memory + kVersionSize;
+  size_t marker_size = size - kVersionSize;
 
   std::vector<tinyexr::HeaderInfo> infos;
 
@@ -11698,7 +11731,7 @@ int ParseEXRMultipartHeaderFromMemory(EXRHeader ***exr_headers,
     std::string err_str;
     bool empty_header = false;
     int ret = ParseEXRHeader(&info, &empty_header, exr_version, &err_str,
-                             reinterpret_cast<const unsigned char *>(marker));
+                             marker, marker_size);
 
     if (ret != TINYEXR_SUCCESS) {
       if (err) {
@@ -11724,6 +11757,7 @@ int ParseEXRMultipartHeaderFromMemory(EXRHeader ***exr_headers,
 
     // move to next header.
     marker += info.header_len;
+    size -= info.header_len;
   }
 
   // allocate memory for EXRHeader and create array of EXRHeader pointers.
@@ -11791,10 +11825,9 @@ int ParseEXRMultipartHeaderFromFile(EXRHeader ***exr_headers, int *num_headers,
   }
 
   return ParseEXRMultipartHeaderFromMemory(exr_headers, num_headers,
-                                           exr_version, &buf.at(0), err);
+                                           exr_version, &buf.at(0), filesize,
+                                           err);
 }
-
-static const int kVersionSize = 8;
 
 int ParseEXRVersionFromMemory(EXRVersion *version,
                               const unsigned char *memory,
