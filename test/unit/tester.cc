@@ -513,7 +513,7 @@ TEST_CASE("ParseEXRVersionFromMemory invalid input", "[Parse]") {
 
   {
     EXRVersion version;
-    std::vector<unsigned char> buf(4, 0); // invalid magic number
+    std::vector<unsigned char> buf(8, 0); // invalid magic number
     ret = ParseEXRVersionFromMemory(&version, buf.data(), 8);
     REQUIRE(ret == TINYEXR_ERROR_INVALID_MAGIC_NUMBER);
   }
