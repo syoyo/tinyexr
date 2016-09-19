@@ -487,3 +487,34 @@ TEST_CASE("Beachbal singleparts", "[Load]") {
   }
 }
 
+TEST_CASE("ParseEXRVersionFromMemory invalid input", "[Parse]") {
+  int ret = ParseEXRVersionFromMemory(NULL, NULL, 0);
+  REQUIRE(ret == TINYEXR_ERROR_INVALID_ARGUMENT);
+
+  {
+    EXRVersion version;
+    ret = ParseEXRVersionFromMemory(&version, NULL, 0);
+    REQUIRE(ret == TINYEXR_ERROR_INVALID_ARGUMENT);
+  }
+
+  {
+    EXRVersion version;
+    std::vector<unsigned char> buf(128);
+    ret = ParseEXRVersionFromMemory(&version, buf.data(), 0);
+    REQUIRE(ret == TINYEXR_ERROR_INVALID_DATA);
+  }
+
+  {
+    EXRVersion version;
+    std::vector<unsigned char> buf(4);
+    ret = ParseEXRVersionFromMemory(&version, buf.data(), 1); // size is less than version header size
+    REQUIRE(ret == TINYEXR_ERROR_INVALID_DATA);
+  }
+
+  {
+    EXRVersion version;
+    std::vector<unsigned char> buf(4, 0); // invalid magic number
+    ret = ParseEXRVersionFromMemory(&version, buf.data(), 8);
+    REQUIRE(ret == TINYEXR_ERROR_INVALID_MAGIC_NUMBER);
+  }
+}
