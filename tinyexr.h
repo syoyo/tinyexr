@@ -266,6 +266,13 @@ typedef struct _DeepImage {
 extern int LoadEXR(float **out_rgba, int *width, int *height,
                    const char *filename, const char **err);
 
+// @deprecated { to be removed. }
+// Saves single-frame OpenEXR image. Assume EXR image contains RGB(A) channels.
+// components must be 3(RGB) or 4(RGBA).
+// Result image format is: float x RGB(A) x width x hight
+extern int SaveEXR(const float *data, int width, int height, int components,
+                   const char *filename);
+
 // Initialize EXRHeader struct
 extern void InitEXRHeader(EXRHeader *exr_header);
 
@@ -283,8 +290,7 @@ extern int ParseEXRVersionFromFile(EXRVersion *version, const char *filename);
 
 // Parse EXR version header from memory-mapped EXR data.
 extern int ParseEXRVersionFromMemory(EXRVersion *version,
-                                     const unsigned char *memory,
-                                     size_t size);
+                                     const unsigned char *memory, size_t size);
 
 // Parse single-part OpenEXR header from a file and initialize `EXRHeader`.
 extern int ParseEXRHeaderFromFile(EXRHeader *header, const EXRVersion *version,
@@ -293,8 +299,7 @@ extern int ParseEXRHeaderFromFile(EXRHeader *header, const EXRVersion *version,
 // Parse single-part OpenEXR header from a memory and initialize `EXRHeader`.
 extern int ParseEXRHeaderFromMemory(EXRHeader *header,
                                     const EXRVersion *version,
-                                    const unsigned char *memory,
-                                    size_t size,
+                                    const unsigned char *memory, size_t size,
                                     const char **err);
 
 // Parse multi-part OpenEXR headers from a file and initialize `EXRHeader*`
@@ -311,8 +316,7 @@ extern int ParseEXRMultipartHeaderFromMemory(EXRHeader ***headers,
                                              int *num_headers,
                                              const EXRVersion *version,
                                              const unsigned char *memory,
-                                             size_t size,
-                                             const char **err);
+                                             size_t size, const char **err);
 
 // Loads single-part OpenEXR image from a file.
 // Application must setup `ParseEXRHeaderFromFile` before calling this function.
@@ -355,13 +359,6 @@ extern int LoadEXRMultipartImageFromMemory(EXRImage *images,
                                            unsigned int num_parts,
                                            const unsigned char *memory,
                                            const char **err);
-
-// Saves floating point RGBA image as OpenEXR.
-// Image is compressed using EXRImage.compression value.
-// Returns negative value and may set error string in `err` when there's an
-// error
-// extern int SaveEXR(const float *in_rgba, int width, int height,
-//                   const char *filename, const char **err);
 
 // Saves multi-channel, single-frame OpenEXR image to a file.
 // Returns negative value and may set error string in `err` when there's an
@@ -7049,7 +7046,7 @@ static const char *ReadString(std::string *s, const char *ptr) {
 }
 
 static bool ReadAttribute(std::string *name, std::string *type,
-                          std::vector<unsigned char> *data, size_t* marker_size,
+                          std::vector<unsigned char> *data, size_t *marker_size,
                           const char *marker, size_t size) {
   size_t name_len = strnlen(marker, size);
   if (name_len == size) {
@@ -11706,8 +11703,7 @@ int ParseEXRHeaderFromFile(EXRHeader *exr_header, const EXRVersion *exr_version,
 int ParseEXRMultipartHeaderFromMemory(EXRHeader ***exr_headers,
                                       int *num_headers,
                                       const EXRVersion *exr_version,
-                                      const unsigned char *memory,
-                                      size_t size,
+                                      const unsigned char *memory, size_t size,
                                       const char **err) {
   if (memory == NULL || exr_headers == NULL || num_headers == NULL ||
       exr_version == NULL) {
@@ -11824,13 +11820,11 @@ int ParseEXRMultipartHeaderFromFile(EXRHeader ***exr_headers, int *num_headers,
     }
   }
 
-  return ParseEXRMultipartHeaderFromMemory(exr_headers, num_headers,
-                                           exr_version, &buf.at(0), filesize,
-                                           err);
+  return ParseEXRMultipartHeaderFromMemory(
+      exr_headers, num_headers, exr_version, &buf.at(0), filesize, err);
 }
 
-int ParseEXRVersionFromMemory(EXRVersion *version,
-                              const unsigned char *memory,
+int ParseEXRVersionFromMemory(EXRVersion *version, const unsigned char *memory,
                               size_t size) {
   if (version == NULL || memory == NULL) {
     return TINYEXR_ERROR_INVALID_ARGUMENT;
@@ -12053,6 +12047,105 @@ int LoadEXRMultipartImageFromFile(EXRImage *exr_images,
 
   return LoadEXRMultipartImageFromMemory(exr_images, exr_headers, num_parts,
                                          &buf.at(0), err);
+}
+
+int SaveEXR(const float *data, int width, int height, int components,
+            const char *outfilename) {
+  if (components == 3 || components == 4) {
+    // OK
+  } else {
+    return TINYEXR_ERROR_INVALID_ARGUMENT;
+  }
+
+  // Assume at least 16x16 pixels.
+  if (width < 16) return TINYEXR_ERROR_INVALID_ARGUMENT;
+  if (height < 16) return TINYEXR_ERROR_INVALID_ARGUMENT;
+
+  EXRHeader header;
+  InitEXRHeader(&header);
+
+  EXRImage image;
+  InitEXRImage(&image);
+
+  image.num_channels = components;
+
+  std::vector<float> images[4];
+  images[0].resize(static_cast<size_t>(width * height));
+  images[1].resize(static_cast<size_t>(width * height));
+  images[2].resize(static_cast<size_t>(width * height));
+  images[3].resize(static_cast<size_t>(width * height));
+
+  // Split RGB(A)RGB(A)RGB(A)... into R, G and B(and A) layers
+  for (size_t i = 0; i < static_cast<size_t>(width * height); i++) {
+    images[0][i] = data[static_cast<size_t>(components) * i + 0];
+    images[1][i] = data[static_cast<size_t>(components) * i + 1];
+    images[2][i] = data[static_cast<size_t>(components) * i + 2];
+    if (components == 4) {
+      images[3][i] = data[static_cast<size_t>(components) * i + 3];
+    }
+  }
+
+  float *image_ptr[4] = {0, 0, 0, 0};
+  if (components == 4) {
+    image_ptr[0] = &(images[3].at(0));  // A
+    image_ptr[1] = &(images[2].at(0));  // B
+    image_ptr[2] = &(images[1].at(0));  // G
+    image_ptr[3] = &(images[0].at(0));  // R
+  } else {
+    image_ptr[0] = &(images[2].at(0));  // B
+    image_ptr[1] = &(images[1].at(0));  // G
+    image_ptr[2] = &(images[0].at(0));  // R
+  }
+
+  image.images = reinterpret_cast<unsigned char **>(image_ptr);
+  image.width = width;
+  image.height = height;
+
+  header.num_channels = components;
+  header.channels = static_cast<EXRChannelInfo *>(malloc(
+      sizeof(EXRChannelInfo) * static_cast<size_t>(header.num_channels)));
+  // Must be (A)BGR order, since most of EXR viewers expect this channel order.
+  if (components == 4) {
+    strncpy(header.channels[0].name, "A", 255);
+    header.channels[0].name[strlen("A")] = '\0';
+    strncpy(header.channels[1].name, "B", 255);
+    header.channels[1].name[strlen("B")] = '\0';
+    strncpy(header.channels[2].name, "G", 255);
+    header.channels[2].name[strlen("G")] = '\0';
+    strncpy(header.channels[3].name, "R", 255);
+    header.channels[3].name[strlen("R")] = '\0';
+  } else {
+    strncpy(header.channels[0].name, "B", 255);
+    header.channels[0].name[strlen("B")] = '\0';
+    strncpy(header.channels[1].name, "G", 255);
+    header.channels[1].name[strlen("G")] = '\0';
+    strncpy(header.channels[2].name, "R", 255);
+    header.channels[2].name[strlen("R")] = '\0';
+  }
+
+  header.pixel_types = static_cast<int *>(
+      malloc(sizeof(int) * static_cast<size_t>(header.num_channels)));
+  header.requested_pixel_types = static_cast<int *>(
+      malloc(sizeof(int) * static_cast<size_t>(header.num_channels)));
+  for (int i = 0; i < header.num_channels; i++) {
+    header.pixel_types[i] =
+        TINYEXR_PIXELTYPE_FLOAT;  // pixel type of input image
+    header.requested_pixel_types[i] =
+        TINYEXR_PIXELTYPE_HALF;  // pixel type of output image to be stored in
+                                 // .EXR
+  }
+
+  const char *err;
+  int ret = SaveEXRImageToFile(&image, &header, outfilename, &err);
+  if (ret != TINYEXR_SUCCESS) {
+    return ret;
+  }
+
+  free(header.channels);
+  free(header.pixel_types);
+  free(header.requested_pixel_types);
+
+  return ret;
 }
 
 #ifdef _MSC_VER

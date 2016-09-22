@@ -10,6 +10,7 @@
 
 #ifdef SIMPLE_API_EXAMPLE
 
+#if 0
 static void
 SaveAsPFM(const char* filename, int width, int height, float* data)
 {
@@ -41,6 +42,7 @@ SaveAsPFM(const char* filename, int width, int height, float* data)
 
   fclose(fp);
 }
+#endif
 
 #else
 
@@ -119,7 +121,8 @@ main(int argc, char** argv)
     fprintf(stderr, "Load EXR err: %s\n", err);
     return ret;
   }
-  SaveAsPFM("output.pfm", width, height, image);
+  //SaveAsPFM("output.pfm", width, height, image);
+  ret = SaveEXR(image, width, height, 4 /* =RGBA*/, "output.exr");
   free(image);
 #else
     
