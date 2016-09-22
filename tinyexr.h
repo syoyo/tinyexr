@@ -460,7 +460,18 @@ typedef long long tinyexr_int64;
 #endif
 
 #if TINYEXR_USE_MINIZ
+
 namespace miniz {
+
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wc++11-long-long"
+#pragma clang diagnostic ignored "-Wold-style-cast"
+#pragma clang diagnostic ignored "-Wpadded"
+#pragma clang diagnostic ignored "-Wsign-conversion"
+#pragma clang diagnostic ignored "-Wc++11-extensions"
+#pragma clang diagnostic ignored "-Wconversion"
+#endif
 
 /* miniz.c v1.15 - public domain deflate/inflate, zlib-subset, ZIP
    reading/writing/appending, PNG writing
@@ -6846,6 +6857,10 @@ void *mz_zip_extract_archive_file_to_heap(const char *pZip_filename,
 */
 
 // ---------------------- end of miniz ----------------------------------------
+
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
 }
 #else
 
@@ -7292,8 +7307,9 @@ static void CompressZip(unsigned char *dst,
   //
 
   miniz::mz_ulong outSize = miniz::mz_compressBound(src_size);
-  int ret = miniz::mz_compress(dst, &outSize,
-                               (const unsigned char *)&tmpBuf.at(0), src_size);
+  int ret = miniz::mz_compress(
+      dst, &outSize, static_cast<const unsigned char *>(&tmpBuf.at(0)),
+      src_size);
   assert(ret == miniz::MZ_OK);
   (void)ret;
 
@@ -7576,6 +7592,17 @@ static void DecompressRle(unsigned char *dst,
 }
 
 #if TINYEXR_USE_PIZ
+
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wc++11-long-long"
+#pragma clang diagnostic ignored "-Wold-style-cast"
+#pragma clang diagnostic ignored "-Wpadded"
+#pragma clang diagnostic ignored "-Wsign-conversion"
+#pragma clang diagnostic ignored "-Wc++11-extensions"
+#pragma clang diagnostic ignored "-Wconversion"
+#endif
+
 //
 // PIZ compress/uncompress, based on OpenEXR's ImfPizCompressor.cpp
 //
@@ -8208,7 +8235,7 @@ const int LONG_ZEROCODE_RUN = 63;
 const int SHORTEST_LONG_RUN = 2 + LONG_ZEROCODE_RUN - SHORT_ZEROCODE_RUN;
 const int LONGEST_LONG_RUN = 255 + SHORTEST_LONG_RUN;
 
-void hufPackEncTable(
+static void hufPackEncTable(
     const long long *hcode,  // i : encoding table [HUF_ENCSIZE]
     int im,                  // i : min hcode index
     int iM,                  // i : max hcode index
@@ -8253,11 +8280,12 @@ void hufPackEncTable(
 // Unpack an encoding table packed by hufPackEncTable():
 //
 
-bool hufUnpackEncTable(const char **pcode,  // io: ptr to packed table (updated)
-                       int ni,              // i : input size (in bytes)
-                       int im,              // i : min hcode index
-                       int iM,              // i : max hcode index
-                       long long *hcode)    //  o: encoding table [HUF_ENCSIZE]
+static bool hufUnpackEncTable(
+    const char **pcode,  // io: ptr to packed table (updated)
+    int ni,              // i : input size (in bytes)
+    int im,              // i : min hcode index
+    int iM,              // i : max hcode index
+    long long *hcode)    //  o: encoding table [HUF_ENCSIZE]
 {
   memset(hcode, 0, sizeof(long long) * HUF_ENCSIZE);
 
@@ -8314,8 +8342,8 @@ bool hufUnpackEncTable(const char **pcode,  // io: ptr to packed table (updated)
 // Clear a newly allocated decoding table so that it contains only zeroes.
 //
 
-void hufClearDecTable(HufDec *hdecod)  // io: (allocated by caller)
-                                       //     decoding table [HUF_DECSIZE]
+static void hufClearDecTable(HufDec *hdecod)  // io: (allocated by caller)
+//     decoding table [HUF_DECSIZE]
 {
   for (int i = 0; i < HUF_DECSIZE; i++) {
     hdecod[i].len = 0;
@@ -8333,10 +8361,10 @@ void hufClearDecTable(HufDec *hdecod)  // io: (allocated by caller)
 //  - decoding tables are used by hufDecode();
 //
 
-bool hufBuildDecTable(const long long *hcode,  // i : encoding table
-                      int im,                  // i : min index in hcode
-                      int iM,                  // i : max index in hcode
-                      HufDec *hdecod)          //  o: (allocated by caller)
+static bool hufBuildDecTable(const long long *hcode,  // i : encoding table
+                             int im,                  // i : min index in hcode
+                             int iM,                  // i : max index in hcode
+                             HufDec *hdecod)  //  o: (allocated by caller)
 //     decoding table [HUF_DECSIZE]
 {
   //
@@ -8421,7 +8449,7 @@ bool hufBuildDecTable(const long long *hcode,  // i : encoding table
 // Free the long code entries of a decoding table built by hufBuildDecTable()
 //
 
-void hufFreeDecTable(HufDec *hdecod)  // io: Decoding table
+static void hufFreeDecTable(HufDec *hdecod)  // io: Decoding table
 {
   for (int i = 0; i < HUF_DECSIZE; i++) {
     if (hdecod[i].p) {
@@ -8461,7 +8489,7 @@ inline void sendCode(long long sCode, int runCount, long long runCode,
 // Encode (compress) ni values based on the Huffman encoding table hcode:
 //
 
-int hufEncode                   // return: output size (in bits)
+static int hufEncode            // return: output size (in bits)
     (const long long *hcode,    // i : encoding table
      const unsigned short *in,  // i : uncompressed input buffer
      const int ni,              // i : input buffer size (in bytes)
@@ -8545,13 +8573,13 @@ int hufEncode                   // return: output size (in bits)
 // Decode (uncompress) ni bits based on encoding & decoding tables:
 //
 
-bool hufDecode(const long long *hcode,  // i : encoding table
-               const HufDec *hdecod,    // i : decoding table
-               const char *in,          // i : compressed input buffer
-               int ni,                  // i : input size (in bits)
-               int rlc,                 // i : run-length code
-               int no,                  // i : expected output size (in bytes)
-               unsigned short *out)     //  o: uncompressed output buffer
+static bool hufDecode(const long long *hcode,  // i : encoding table
+                      const HufDec *hdecod,    // i : decoding table
+                      const char *in,          // i : compressed input buffer
+                      int ni,                  // i : input size (in bits)
+                      int rlc,                 // i : run-length code
+                      int no,  // i : expected output size (in bytes)
+                      unsigned short *out)  //  o: uncompressed output buffer
 {
   long long c = 0;
   int lc = 0;
@@ -8648,14 +8676,14 @@ bool hufDecode(const long long *hcode,  // i : encoding table
   return true;
 }
 
-void countFrequencies(long long freq[HUF_ENCSIZE],
-                      const unsigned short data[/*n*/], int n) {
+static void countFrequencies(long long freq[HUF_ENCSIZE],
+                             const unsigned short data[/*n*/], int n) {
   for (int i = 0; i < HUF_ENCSIZE; ++i) freq[i] = 0;
 
   for (int i = 0; i < n; ++i) ++freq[data[i]];
 }
 
-void writeUInt(char buf[4], unsigned int i) {
+static void writeUInt(char buf[4], unsigned int i) {
   unsigned char *b = (unsigned char *)buf;
 
   b[0] = i;
@@ -8664,7 +8692,7 @@ void writeUInt(char buf[4], unsigned int i) {
   b[3] = i >> 24;
 }
 
-unsigned int readUInt(const char buf[4]) {
+static unsigned int readUInt(const char buf[4]) {
   const unsigned char *b = (const unsigned char *)buf;
 
   return (b[0] & 0x000000ff) | ((b[1] << 8) & 0x0000ff00) |
@@ -8675,7 +8703,8 @@ unsigned int readUInt(const char buf[4]) {
 // EXTERNAL INTERFACE
 //
 
-int hufCompress(const unsigned short raw[], int nRaw, char compressed[]) {
+static int hufCompress(const unsigned short raw[], int nRaw,
+                       char compressed[]) {
   if (nRaw == 0) return 0;
 
   long long freq[HUF_ENCSIZE];
@@ -8704,8 +8733,8 @@ int hufCompress(const unsigned short raw[], int nRaw, char compressed[]) {
   return dataStart + data_length - compressed;
 }
 
-bool hufUncompress(const char compressed[], int nCompressed,
-                   unsigned short raw[], int nRaw) {
+static bool hufUncompress(const char compressed[], int nCompressed,
+                          unsigned short raw[], int nRaw) {
   if (nCompressed == 0) {
     if (nRaw != 0) return false;
 
@@ -8769,9 +8798,10 @@ bool hufUncompress(const char compressed[], int nCompressed,
 const int USHORT_RANGE = (1 << 16);
 const int BITMAP_SIZE = (USHORT_RANGE >> 3);
 
-void bitmapFromData(const unsigned short data[/*nData*/], int nData,
-                    unsigned char bitmap[BITMAP_SIZE],
-                    unsigned short &minNonZero, unsigned short &maxNonZero) {
+static void bitmapFromData(const unsigned short data[/*nData*/], int nData,
+                           unsigned char bitmap[BITMAP_SIZE],
+                           unsigned short &minNonZero,
+                           unsigned short &maxNonZero) {
   for (int i = 0; i < BITMAP_SIZE; ++i) bitmap[i] = 0;
 
   for (int i = 0; i < nData; ++i) bitmap[data[i] >> 3] |= (1 << (data[i] & 7));
@@ -8790,8 +8820,8 @@ void bitmapFromData(const unsigned short data[/*nData*/], int nData,
   }
 }
 
-unsigned short forwardLutFromBitmap(const unsigned char bitmap[BITMAP_SIZE],
-                                    unsigned short lut[USHORT_RANGE]) {
+static unsigned short forwardLutFromBitmap(
+    const unsigned char bitmap[BITMAP_SIZE], unsigned short lut[USHORT_RANGE]) {
   int k = 0;
 
   for (int i = 0; i < USHORT_RANGE; ++i) {
@@ -8804,8 +8834,8 @@ unsigned short forwardLutFromBitmap(const unsigned char bitmap[BITMAP_SIZE],
   return k - 1;  // maximum value stored in lut[],
 }  // i.e. number of ones in bitmap minus 1
 
-unsigned short reverseLutFromBitmap(const unsigned char bitmap[BITMAP_SIZE],
-                                    unsigned short lut[USHORT_RANGE]) {
+static unsigned short reverseLutFromBitmap(
+    const unsigned char bitmap[BITMAP_SIZE], unsigned short lut[USHORT_RANGE]) {
   int k = 0;
 
   for (int i = 0; i < USHORT_RANGE; ++i) {
@@ -8819,15 +8849,19 @@ unsigned short reverseLutFromBitmap(const unsigned char bitmap[BITMAP_SIZE],
   return n;  // maximum k where lut[k] is non-zero,
 }  // i.e. number of ones in bitmap minus 1
 
-void applyLut(const unsigned short lut[USHORT_RANGE],
-              unsigned short data[/*nData*/], int nData) {
+static void applyLut(const unsigned short lut[USHORT_RANGE],
+                     unsigned short data[/*nData*/], int nData) {
   for (int i = 0; i < nData; ++i) data[i] = lut[data[i]];
 }
 
-bool CompressPiz(unsigned char *outPtr, unsigned int &outSize,
-                 const unsigned char *inPtr, size_t inSize,
-                 const std::vector<ChannelInfo> &channelInfo, int data_width,
-                 int num_lines) {
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif  // __clang__
+
+static bool CompressPiz(unsigned char *outPtr, unsigned int &outSize,
+                        const unsigned char *inPtr, size_t inSize,
+                        const std::vector<ChannelInfo> &channelInfo,
+                        int data_width, int num_lines) {
   unsigned char bitmap[BITMAP_SIZE];
   unsigned short minNonZero;
   unsigned short maxNonZero;
@@ -8854,12 +8888,12 @@ bool CompressPiz(unsigned char *outPtr, unsigned int &outSize,
     cd.ny = num_lines;
     // cd.ys = c.channel().ySampling;
 
-    int pixelSize = sizeof(int);  // UINT and FLOAT
+    size_t pixelSize = sizeof(int);  // UINT and FLOAT
     if (channelInfo[c].pixel_type == TINYEXR_PIXELTYPE_HALF) {
       pixelSize = sizeof(short);
     }
 
-    cd.size = pixelSize / sizeof(short);
+    cd.size = static_cast<int>(pixelSize / sizeof(short));
 
     tmpBufferEnd += cd.nx * cd.ny * cd.size;
   }
@@ -8872,19 +8906,19 @@ bool CompressPiz(unsigned char *outPtr, unsigned int &outSize,
       // if (modp (y, cd.ys) != 0)
       //    continue;
 
-      int n = cd.nx * cd.size;
+      size_t n = static_cast<size_t>(cd.nx * cd.size);
       memcpy(cd.end, ptr, n * sizeof(unsigned short));
       ptr += n * sizeof(unsigned short);
       cd.end += n;
     }
   }
 
-  bitmapFromData(&tmpBuffer.at(0), tmpBuffer.size(), bitmap, minNonZero,
-                 maxNonZero);
+  bitmapFromData(&tmpBuffer.at(0), static_cast<int>(tmpBuffer.size()), bitmap,
+                 minNonZero, maxNonZero);
 
   unsigned short lut[USHORT_RANGE];
   unsigned short maxValue = forwardLutFromBitmap(bitmap, lut);
-  applyLut(lut, &tmpBuffer.at(0), tmpBuffer.size());
+  applyLut(lut, &tmpBuffer.at(0), static_cast<int>(tmpBuffer.size()));
 
   //
   // Store range compression info in _outBuffer
@@ -8898,7 +8932,8 @@ bool CompressPiz(unsigned char *outPtr, unsigned int &outSize,
   buf += sizeof(unsigned short);
 
   if (minNonZero <= maxNonZero) {
-    memcpy(buf, (char *)&bitmap[0] + minNonZero, maxNonZero - minNonZero + 1);
+    memcpy(buf, reinterpret_cast<char *>(&bitmap[0] + minNonZero),
+           maxNonZero - minNonZero + 1);
     buf += maxNonZero - minNonZero + 1;
   }
 
@@ -8926,17 +8961,20 @@ bool CompressPiz(unsigned char *outPtr, unsigned int &outSize,
   memcpy(buf, &zero, sizeof(int));
   buf += sizeof(int);
 
-  int length = hufCompress(&tmpBuffer.at(0), tmpBuffer.size(), buf);
+  int length =
+      hufCompress(&tmpBuffer.at(0), static_cast<int>(tmpBuffer.size()), buf);
   memcpy(lengthPtr, &length, sizeof(int));
 
-  outSize = (reinterpret_cast<unsigned char *>(buf) - outPtr) + length;
+  outSize = static_cast<unsigned int>(
+      (reinterpret_cast<unsigned char *>(buf) - outPtr) +
+      static_cast<unsigned int>(length));
   return true;
 }
 
-bool DecompressPiz(unsigned char *outPtr, const unsigned char *inPtr,
-                   size_t tmpBufSize, int num_channels,
-                   const EXRChannelInfo *channels, int data_width,
-                   int num_lines) {
+static bool DecompressPiz(unsigned char *outPtr, const unsigned char *inPtr,
+                          size_t tmpBufSize, int num_channels,
+                          const EXRChannelInfo *channels, int data_width,
+                          int num_lines) {
   unsigned char bitmap[BITMAP_SIZE];
   unsigned short minNonZero;
   unsigned short maxNonZero;
@@ -8959,7 +8997,8 @@ bool DecompressPiz(unsigned char *outPtr, const unsigned char *inPtr,
   }
 
   if (minNonZero <= maxNonZero) {
-    memcpy((char *)&bitmap[0] + minNonZero, ptr, maxNonZero - minNonZero + 1);
+    memcpy(reinterpret_cast<char *>(&bitmap[0] + minNonZero), ptr,
+           maxNonZero - minNonZero + 1);
     ptr += maxNonZero - minNonZero + 1;
   }
 
@@ -8978,20 +9017,20 @@ bool DecompressPiz(unsigned char *outPtr, const unsigned char *inPtr,
 
   std::vector<unsigned short> tmpBuffer(tmpBufSize);
   hufUncompress(reinterpret_cast<const char *>(ptr), length, &tmpBuffer.at(0),
-                tmpBufSize);
+                static_cast<int>(tmpBufSize));
 
   //
   // Wavelet decoding
   //
 
-  std::vector<PIZChannelData> channelData(num_channels);
+  std::vector<PIZChannelData> channelData(static_cast<size_t>(num_channels));
 
   unsigned short *tmpBufferEnd = &tmpBuffer.at(0);
 
   for (size_t i = 0; i < static_cast<size_t>(num_channels); ++i) {
     const EXRChannelInfo &chan = channels[i];
 
-    int pixelSize = sizeof(int);  // UINT and FLOAT
+    size_t pixelSize = sizeof(int);  // UINT and FLOAT
     if (chan.pixel_type == TINYEXR_PIXELTYPE_HALF) {
       pixelSize = sizeof(short);
     }
@@ -9001,7 +9040,7 @@ bool DecompressPiz(unsigned char *outPtr, const unsigned char *inPtr,
     channelData[i].nx = data_width;
     channelData[i].ny = num_lines;
     // channelData[i].ys = 1;
-    channelData[i].size = pixelSize / sizeof(short);
+    channelData[i].size = static_cast<int>(pixelSize / sizeof(short));
 
     tmpBufferEnd += channelData[i].nx * channelData[i].ny * channelData[i].size;
   }
@@ -9019,7 +9058,7 @@ bool DecompressPiz(unsigned char *outPtr, const unsigned char *inPtr,
   // Expand the pixel data to their original range
   //
 
-  applyLut(lut, &tmpBuffer.at(0), tmpBufSize);
+  applyLut(lut, &tmpBuffer.at(0), static_cast<int>(tmpBufSize));
 
   for (int y = 0; y < num_lines; y++) {
     for (size_t i = 0; i < channelData.size(); ++i) {
@@ -9028,8 +9067,8 @@ bool DecompressPiz(unsigned char *outPtr, const unsigned char *inPtr,
       // if (modp (y, cd.ys) != 0)
       //    continue;
 
-      int n = cd.nx * cd.size;
-      memcpy(outPtr, cd.end, n * sizeof(unsigned short));
+      size_t n = static_cast<size_t>(cd.nx * cd.size);
+      memcpy(outPtr, cd.end, static_cast<size_t>(n * sizeof(unsigned short)));
       outPtr += n * sizeof(unsigned short);
       cd.end += n;
     }
@@ -9252,13 +9291,14 @@ static void DecodePixelData(/* out */ unsigned char **out_images,
   if (compression_type == TINYEXR_COMPRESSIONTYPE_PIZ) {  // PIZ
 #if TINYEXR_USE_PIZ
     // Allocate original data size.
-    std::vector<unsigned char> outBuf(
-        static_cast<size_t>(width * num_lines * pixel_data_size));
-    size_t tmpBufLen = static_cast<size_t>(width * num_lines * pixel_data_size);
+    std::vector<unsigned char> outBuf(static_cast<size_t>(
+        static_cast<size_t>(width * num_lines) * pixel_data_size));
+    size_t tmpBufLen = static_cast<size_t>(
+        static_cast<size_t>(width * num_lines) * pixel_data_size);
 
     bool ret = tinyexr::DecompressPiz(
         reinterpret_cast<unsigned char *>(&outBuf.at(0)), data_ptr, tmpBufLen,
-        num_channels, channels, width, num_lines);
+        static_cast<int>(num_channels), channels, width, num_lines);
 
     assert(ret);
 
@@ -9272,13 +9312,13 @@ static void DecodePixelData(/* out */ unsigned char **out_images,
     //   pixel sample data for channel ... for scanline 1
     //   pixel sample data for channel n for scanline 1
     //   ...
-    for (int c = 0; c < static_cast<int>(num_channels); c++) {
+    for (size_t c = 0; c < static_cast<size_t>(num_channels); c++) {
       if (channels[c].pixel_type == TINYEXR_PIXELTYPE_HALF) {
-        for (int v = 0; v < num_lines; v++) {
+        for (size_t v = 0; v < static_cast<size_t>(num_lines); v++) {
           const unsigned short *line_ptr = reinterpret_cast<unsigned short *>(
-              &outBuf.at(v * pixel_data_size * width +
-                         channel_offset_list[c] * width));
-          for (int u = 0; u < width; u++) {
+              &outBuf.at(v * pixel_data_size * static_cast<size_t>(width) +
+                         channel_offset_list[c] * static_cast<size_t>(width)));
+          for (size_t u = 0; u < static_cast<size_t>(width); u++) {
             FP16 hf;
 
             hf.u = line_ptr[u];
@@ -9289,18 +9329,28 @@ static void DecodePixelData(/* out */ unsigned char **out_images,
               unsigned short *image =
                   reinterpret_cast<unsigned short **>(out_images)[c];
               if (line_order == 0) {
-                image += (line_no + v) * x_stride + u;
+                image += (static_cast<size_t>(line_no) + v) *
+                             static_cast<size_t>(x_stride) +
+                         u;
               } else {
-                image += (height - 1 - (line_no + v)) * x_stride + u;
+                image += static_cast<size_t>(
+                             (height - 1 - (line_no + static_cast<int>(v)))) *
+                             static_cast<size_t>(x_stride) +
+                         u;
               }
               *image = hf.u;
             } else {  // HALF -> FLOAT
               FP32 f32 = half_to_float(hf);
               float *image = reinterpret_cast<float **>(out_images)[c];
               if (line_order == 0) {
-                image += (line_no + v) * x_stride + u;
+                image += (static_cast<size_t>(line_no) + v) *
+                             static_cast<size_t>(x_stride) +
+                         u;
               } else {
-                image += (height - 1 - (line_no + v)) * x_stride + u;
+                image += static_cast<size_t>(
+                             (height - 1 - (line_no + static_cast<int>(v)))) *
+                             static_cast<size_t>(x_stride) +
+                         u;
               }
               *image = f32.f;
             }
@@ -9309,11 +9359,11 @@ static void DecodePixelData(/* out */ unsigned char **out_images,
       } else if (channels[c].pixel_type == TINYEXR_PIXELTYPE_UINT) {
         assert(requested_pixel_types[c] == TINYEXR_PIXELTYPE_UINT);
 
-        for (int v = 0; v < num_lines; v++) {
+        for (size_t v = 0; v < static_cast<size_t>(num_lines); v++) {
           const unsigned int *line_ptr = reinterpret_cast<unsigned int *>(
-              &outBuf.at(v * pixel_data_size * width +
-                         channel_offset_list[c] * width));
-          for (int u = 0; u < width; u++) {
+              &outBuf.at(v * pixel_data_size * static_cast<size_t>(width) +
+                         channel_offset_list[c] * static_cast<size_t>(width)));
+          for (size_t u = 0; u < static_cast<size_t>(width); u++) {
             unsigned int val = line_ptr[u];
 
             tinyexr::swap4(&val);
@@ -9321,29 +9371,39 @@ static void DecodePixelData(/* out */ unsigned char **out_images,
             unsigned int *image =
                 reinterpret_cast<unsigned int **>(out_images)[c];
             if (line_order == 0) {
-              image += (line_no + v) * x_stride + u;
+              image += (static_cast<size_t>(line_no) + v) *
+                           static_cast<size_t>(x_stride) +
+                       u;
             } else {
-              image += (height - 1 - (line_no + v)) * x_stride + u;
+              image += static_cast<size_t>(
+                           (height - 1 - (line_no + static_cast<int>(v)))) *
+                           static_cast<size_t>(x_stride) +
+                       u;
             }
             *image = val;
           }
         }
       } else if (channels[c].pixel_type == TINYEXR_PIXELTYPE_FLOAT) {
         assert(requested_pixel_types[c] == TINYEXR_PIXELTYPE_FLOAT);
-        for (int v = 0; v < num_lines; v++) {
-          const float *line_ptr = reinterpret_cast<float *>(
-              &outBuf.at(v * pixel_data_size * x_stride +
-                         channel_offset_list[c] * x_stride));
-          for (int u = 0; u < width; u++) {
+        for (size_t v = 0; v < static_cast<size_t>(num_lines); v++) {
+          const float *line_ptr = reinterpret_cast<float *>(&outBuf.at(
+              v * pixel_data_size * static_cast<size_t>(x_stride) +
+              channel_offset_list[c] * static_cast<size_t>(x_stride)));
+          for (size_t u = 0; u < static_cast<size_t>(width); u++) {
             float val = line_ptr[u];
 
             tinyexr::swap4(reinterpret_cast<unsigned int *>(&val));
 
             float *image = reinterpret_cast<float **>(out_images)[c];
             if (line_order == 0) {
-              image += (line_no + v) * x_stride + u;
+              image += (static_cast<size_t>(line_no) + v) *
+                           static_cast<size_t>(x_stride) +
+                       u;
             } else {
-              image += (height - 1 - (line_no + v)) * x_stride + u;
+              image += static_cast<size_t>(
+                           (height - 1 - (line_no + static_cast<int>(v)))) *
+                           static_cast<size_t>(x_stride) +
+                       u;
             }
             *image = val;
           }
@@ -11072,8 +11132,9 @@ size_t SaveEXRImageToMemory(const EXRImage *exr_image,
     } else if (exr_header->compression_type == TINYEXR_COMPRESSIONTYPE_PIZ) {
 #if TINYEXR_USE_PIZ
       unsigned int bufLen =
-          1024 +
-          1.2 * (unsigned int)buf.size();  // @fixme { compute good bound. }
+          1024 + static_cast<unsigned int>(
+                     1.2 * static_cast<unsigned int>(
+                               buf.size()));  // @fixme { compute good bound. }
       std::vector<unsigned char> block(bufLen);
       unsigned int outSize = static_cast<unsigned int>(block.size());
 
