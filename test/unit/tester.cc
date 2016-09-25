@@ -518,3 +518,38 @@ TEST_CASE("ParseEXRVersionFromMemory invalid input", "[Parse]") {
     REQUIRE(ret == TINYEXR_ERROR_INVALID_MAGIC_NUMBER);
   }
 }
+
+TEST_CASE("ParseEXRHeaderFromMemory invalid input", "[Parse]") {
+  {
+    int ret = ParseEXRHeaderFromMemory(NULL, NULL, NULL, 0, NULL);
+    REQUIRE(ret == TINYEXR_ERROR_INVALID_ARGUMENT);
+  }
+
+  {
+    EXRHeader header;
+    EXRVersion version;
+
+    int ret = ParseEXRHeaderFromMemory(&header, &version, NULL, 0, NULL);
+    REQUIRE(ret == TINYEXR_ERROR_INVALID_ARGUMENT);
+  }
+
+  {
+    EXRHeader header;
+    EXRVersion version;
+    std::vector<unsigned char> buf(128);
+
+    int ret = ParseEXRHeaderFromMemory(&header, &version, buf.data(), 0, NULL);
+    REQUIRE(ret == TINYEXR_ERROR_INVALID_DATA);
+  }
+
+  {
+    EXRHeader header;
+    EXRVersion version;
+    std::vector<unsigned char> buf(128, 0);
+
+    int ret = ParseEXRHeaderFromMemory(&header, &version, buf.data(), 128, NULL);
+    REQUIRE(ret == TINYEXR_ERROR_INVALID_HEADER);
+  }
+
+
+}

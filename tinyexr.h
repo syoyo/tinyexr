@@ -114,6 +114,7 @@ extern "C" {
 #define TINYEXR_ERROR_INVALID_PARAMETER (-5)
 #define TINYEXR_ERROR_CANT_OPEN_FILE (-6)
 #define TINYEXR_ERROR_UNSUPPORTED_FORMAT (-7)
+#define TINYEXR_ERROR_INVALID_HEADER (-8)
 
 // @note { OpenEXR file format: http://www.openexr.com/openexrfilelayout.pdf }
 
@@ -9941,6 +9942,26 @@ static int ParseEXRHeader(HeaderInfo *info, bool *empty_header,
     }
   }
 
+  // According to the spec, the header of every OpenEXR file must contain at
+  // least the following attributes:
+  //
+  // channels chlist
+  // compression compression
+  // dataWindow box2i
+  // displayWindow box2i
+  // lineOrder lineOrder
+  // pixelAspectRatio float
+  // screenWindowCenter v2f
+  // screenWindowWidth float
+  bool has_channels = false;
+  bool has_compression = false;
+  bool has_data_window = false;
+  bool has_display_window = false;
+  bool has_line_order = false;
+  bool has_pixel_aspect_ratio = false;
+  bool has_screen_window_center = false;
+  bool has_screen_window_width = false;
+
   info->data_window[0] = 0;
   info->data_window[1] = 0;
   info->data_window[2] = 0;
@@ -10037,6 +10058,7 @@ static int ParseEXRHeader(HeaderInfo *info, bool *empty_header,
       }
 
       info->compression_type = static_cast<int>(data[0]);
+      has_compression = true;
 
     } else if (attr_name.compare("channels") == 0) {
       // name: zero-terminated string, from 1 to 255 bytes long
@@ -10055,6 +10077,8 @@ static int ParseEXRHeader(HeaderInfo *info, bool *empty_header,
         return TINYEXR_ERROR_INVALID_DATA;
       }
 
+      has_channels = true;
+
     } else if (attr_name.compare("dataWindow") == 0) {
       memcpy(&info->data_window[0], &data.at(0), sizeof(int));
       memcpy(&info->data_window[1], &data.at(4), sizeof(int));
@@ -10064,6 +10088,8 @@ static int ParseEXRHeader(HeaderInfo *info, bool *empty_header,
       tinyexr::swap4(reinterpret_cast<unsigned int *>(&info->data_window[1]));
       tinyexr::swap4(reinterpret_cast<unsigned int *>(&info->data_window[2]));
       tinyexr::swap4(reinterpret_cast<unsigned int *>(&info->data_window[3]));
+
+      has_data_window = true;
     } else if (attr_name.compare("displayWindow") == 0) {
       memcpy(&info->display_window[0], &data.at(0), sizeof(int));
       memcpy(&info->display_window[1], &data.at(4), sizeof(int));
@@ -10077,12 +10103,16 @@ static int ParseEXRHeader(HeaderInfo *info, bool *empty_header,
           reinterpret_cast<unsigned int *>(&info->display_window[2]));
       tinyexr::swap4(
           reinterpret_cast<unsigned int *>(&info->display_window[3]));
+
+      has_display_window = true;
     } else if (attr_name.compare("lineOrder") == 0) {
       info->line_order = static_cast<int>(data[0]);
+      has_line_order = true;
     } else if (attr_name.compare("pixelAspectRatio") == 0) {
       memcpy(&info->pixel_aspect_ratio, &data.at(0), sizeof(float));
       tinyexr::swap4(
           reinterpret_cast<unsigned int *>(&info->pixel_aspect_ratio));
+      has_pixel_aspect_ratio = true;
     } else if (attr_name.compare("screenWindowCenter") == 0) {
       memcpy(&info->screen_window_center[0], &data.at(0), sizeof(float));
       memcpy(&info->screen_window_center[1], &data.at(4), sizeof(float));
@@ -10090,11 +10120,13 @@ static int ParseEXRHeader(HeaderInfo *info, bool *empty_header,
           reinterpret_cast<unsigned int *>(&info->screen_window_center[0]));
       tinyexr::swap4(
           reinterpret_cast<unsigned int *>(&info->screen_window_center[1]));
+      has_screen_window_center = true;
     } else if (attr_name.compare("screenWindowWidth") == 0) {
       memcpy(&info->screen_window_width, &data.at(0), sizeof(float));
       tinyexr::swap4(
           reinterpret_cast<unsigned int *>(&info->screen_window_width));
 
+      has_screen_window_width = true;
     } else if (attr_name.compare("chunkCount") == 0) {
       memcpy(&info->chunk_count, &data.at(0), sizeof(int));
       tinyexr::swap4(reinterpret_cast<unsigned int *>(&info->chunk_count));
@@ -10112,6 +10144,56 @@ static int ParseEXRHeader(HeaderInfo *info, bool *empty_header,
                data.size());
         info->attributes.push_back(attrib);
       }
+    }
+  }
+
+  // Check if required attributes exist
+  {
+    std::stringstream ss_err;
+
+    if (!has_compression) {
+      ss_err << "\"compression\" attribute not found in the header."
+             << std::endl;
+    }
+
+    if (!has_channels) {
+      ss_err << "\"channels\" attribute not found in the header." << std::endl;
+    }
+
+    if (!has_line_order) {
+      ss_err << "\"lineOrder\" attribute not found in the header." << std::endl;
+    }
+
+    if (!has_display_window) {
+      ss_err << "\"displayWindow\" attribute not found in the header."
+             << std::endl;
+    }
+
+    if (!has_data_window) {
+      ss_err << "\"dataWindow\" attribute not found in the header."
+             << std::endl;
+    }
+
+    if (!has_pixel_aspect_ratio) {
+      ss_err << "\"pixelAspectRatio\" attribute not found in the header."
+             << std::endl;
+    }
+
+    if (!has_screen_window_width) {
+      ss_err << "\"screenWindowWidth\" attribute not found in the header."
+             << std::endl;
+    }
+
+    if (!has_screen_window_center) {
+      ss_err << "\"screenWindowCenter\" attribute not found in the header."
+             << std::endl;
+    }
+
+    if (!(ss_err.str().empty())) {
+      if (err) {
+        (*err) += ss_err.str();
+      }
+      return TINYEXR_ERROR_INVALID_HEADER;
     }
   }
 
