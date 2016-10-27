@@ -9302,6 +9302,7 @@ static void DecodePixelData(/* out */ unsigned char **out_images,
         static_cast<int>(num_channels), channels, width, num_lines);
 
     assert(ret);
+    (void)ret;
 
     // For PIZ_COMPRESSION:
     //   pixel sample data for channel 0 for scanline 0
