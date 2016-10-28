@@ -7488,7 +7488,7 @@ static void CompressRle(unsigned char *dst,
 
   //
   // Apply EXR-specific? postprocess. Grabbed from OpenEXR's
-  // ImfZipCompressor.cpp
+  // ImfRleCompressor.cpp
   //
 
   //
@@ -7549,13 +7549,13 @@ static void DecompressRle(unsigned char *dst,
   int ret = rleUncompress(static_cast<int>(src_size),
                           static_cast<int>(uncompressed_size),
                           reinterpret_cast<const signed char *>(src),
-                          reinterpret_cast<char *>(dst));
+                          reinterpret_cast<char *>(tmpBuf.data()));
   assert(ret == static_cast<int>(uncompressed_size));
   (void)ret;
 
   //
   // Apply EXR-specific? postprocess. Grabbed from OpenEXR's
-  // ImfZipCompressor.cpp
+  // ImfRleCompressor.cpp
   //
 
   // Predictor.
@@ -9554,7 +9554,7 @@ static void DecodePixelData(/* out */ unsigned char **out_images,
                            dstLen, data_ptr,
                            static_cast<unsigned long>(data_len));
 
-    // For ZIP_COMPRESSION:
+    // For RLE_COMPRESSION:
     //   pixel sample data for channel 0 for scanline 0
     //   pixel sample data for channel 1 for scanline 0
     //   pixel sample data for channel ... for scanline 0
