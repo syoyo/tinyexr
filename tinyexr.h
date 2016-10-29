@@ -7552,7 +7552,7 @@ static void DecompressRle(unsigned char *dst,
   int ret = rleUncompress(static_cast<int>(src_size),
                           static_cast<int>(uncompressed_size),
                           reinterpret_cast<const signed char *>(src),
-                          reinterpret_cast<char *>(tmpBuf.at(0)));
+                          reinterpret_cast<char *>(&tmpBuf.at(0)));
   assert(ret == static_cast<int>(uncompressed_size));
   (void)ret;
 
