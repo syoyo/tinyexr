@@ -10534,7 +10534,8 @@ static int DecodeEXRImage(EXRImage *exr_image, const EXRHeader *exr_header,
       //  ss << "Incomplete lineOffsets." << std::endl;
       //  (*err) += ss.str();
       //}
-      bool ret = ReconstructLineOffsets(&offsets, num_blocks, head, marker, size);
+      bool ret =
+          ReconstructLineOffsets(&offsets, num_blocks, head, marker, size);
       if (ret) {
         // OK
         break;
