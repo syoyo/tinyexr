@@ -423,6 +423,11 @@ extern int LoadEXRFromMemory(float *out_rgba, const unsigned char *memory,
 #include <string>
 #include <vector>
 
+#if __cplusplus > 199711L
+// C++11
+#include <cstdint>
+#endif  // __cplusplus > 199711L
+
 // @todo { remove including tinyexr.h }
 #include "tinyexr.h"
 
@@ -443,7 +448,6 @@ namespace tinyexr {
 
 #if __cplusplus > 199711L
 // C++11
-#include <cstdint>
 typedef uint64_t tinyexr_uint64;
 typedef int64_t tinyexr_int64;
 #else
