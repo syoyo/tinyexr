@@ -12187,7 +12187,10 @@ int LoadEXRMultipartImageFromMemory(EXRImage *exr_images,
       memcpy(&offset, marker, 8);
       tinyexr::swap8(&offset);
 
-      if (offset < size) {
+      if (offset >= size) {
+        if (err) {
+          (*err) = "Invalid offset size.";
+        }
         return TINYEXR_ERROR_INVALID_DATA;
       }
 
