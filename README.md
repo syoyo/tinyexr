@@ -138,6 +138,7 @@ Scanline and tiled format are supported.
   EXRHeader exr_header;
   InitEXRHeader(&exr_header);
 
+  const char* err;
   ret = ParseEXRHeaderFromFile(&exr_header, &exr_version, argv[1], &err);
   if (ret != 0) {
     fprintf(stderr, "Parse EXR err: %s\n", err);
