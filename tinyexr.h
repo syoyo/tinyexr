@@ -9431,7 +9431,7 @@ static void DecodePixelData(/* out */ unsigned char **out_images,
                                       static_cast<size_t>(num_lines) *
                                       pixel_data_size);
 
-    unsigned long dstLen = outBuf.size();
+    unsigned long dstLen = static_cast<unsigned long>(outBuf.size());
     assert(dstLen > 0);
     tinyexr::DecompressZip(reinterpret_cast<unsigned char *>(&outBuf.at(0)),
                            &dstLen, data_ptr,
@@ -9554,7 +9554,7 @@ static void DecodePixelData(/* out */ unsigned char **out_images,
                                       static_cast<size_t>(num_lines) *
                                       pixel_data_size);
 
-    unsigned long dstLen = outBuf.size();
+    unsigned long dstLen = static_cast<unsigned long>(outBuf.size());
     assert(dstLen > 0);
     tinyexr::DecompressRle(reinterpret_cast<unsigned char *>(&outBuf.at(0)),
                            dstLen, data_ptr,
@@ -11235,15 +11235,15 @@ size_t SaveEXRImageToMemory(const EXRImage *exr_image,
                (exr_header->compression_type == TINYEXR_COMPRESSIONTYPE_ZIP)) {
 #if TINYEXR_USE_MINIZ
       std::vector<unsigned char> block(
-          tinyexr::miniz::mz_compressBound(buf.size()));
+          tinyexr::miniz::mz_compressBound(static_cast<unsigned long>(buf.size())));
 #else
-      std::vector<unsigned char> block(compressBound(buf.size()));
+      std::vector<unsigned char> block(compressBound(static_cast<uLong>(buf.size())));
 #endif
       tinyexr::tinyexr_uint64 outSize = block.size();
 
       tinyexr::CompressZip(&block.at(0), outSize,
                            reinterpret_cast<const unsigned char *>(&buf.at(0)),
-                           buf.size());
+                           static_cast<unsigned long>(buf.size()));
 
       // 4 byte: scan line
       // 4 byte: data size
@@ -11268,7 +11268,7 @@ size_t SaveEXRImageToMemory(const EXRImage *exr_image,
 
       tinyexr::CompressRle(&block.at(0), outSize,
                            reinterpret_cast<const unsigned char *>(&buf.at(0)),
-                           buf.size());
+                           static_cast<unsigned long>(buf.size()));
 
       // 4 byte: scan line
       // 4 byte: data size
@@ -11682,10 +11682,10 @@ int LoadDeepEXR(DeepImage *deep_image, const char *filename, const char **err) {
 
     // decode pixel offset table.
     {
-      unsigned long dstLen = pixelOffsetTable.size() * sizeof(int);
+      unsigned long dstLen = static_cast<unsigned long>(pixelOffsetTable.size() * sizeof(int));
       tinyexr::DecompressZip(
           reinterpret_cast<unsigned char *>(&pixelOffsetTable.at(0)), &dstLen,
-          data_ptr + 28, static_cast<size_t>(packedOffsetTableSize));
+          data_ptr + 28, static_cast<unsigned long>(packedOffsetTableSize));
 
       assert(dstLen == pixelOffsetTable.size() * sizeof(int));
       for (size_t i = 0; i < static_cast<size_t>(data_width); i++) {
@@ -11702,7 +11702,7 @@ int LoadDeepEXR(DeepImage *deep_image, const char *filename, const char **err) {
       tinyexr::DecompressZip(
           reinterpret_cast<unsigned char *>(&sample_data.at(0)), &dstLen,
           data_ptr + 28 + packedOffsetTableSize,
-          static_cast<size_t>(packedSampleDataSize));
+          static_cast<unsigned long>(packedSampleDataSize));
       assert(dstLen == static_cast<unsigned long>(unpackedSampleDataSize));
     }
 
