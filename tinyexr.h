@@ -412,7 +412,12 @@ extern int LoadEXRFromMemory(float *out_rgba, const unsigned char *memory,
 }
 #endif
 
+#endif  // TINYEXR_H_
+
 #ifdef TINYEXR_IMPLEMENTATION
+#ifndef TINYEXR_IMPLEMENTATION_DEIFNED
+#define TINYEXR_IMPLEMENTATION_DEIFNED
+
 #include <algorithm>
 #include <cassert>
 #include <cstdio>
@@ -427,9 +432,6 @@ extern int LoadEXRFromMemory(float *out_rgba, const unsigned char *memory,
 // C++11
 #include <cstdint>
 #endif  // __cplusplus > 199711L
-
-// @todo { remove including tinyexr.h }
-#include "tinyexr.h"
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -735,7 +737,7 @@ namespace miniz {
 #ifndef MINIZ_HEADER_INCLUDED
 #define MINIZ_HEADER_INCLUDED
 
-#include <stdlib.h>
+//#include <stdlib.h>
 
 // Defines to completely disable specific portions of miniz.c:
 // If all macros here are defined the only functionality remaining will be
@@ -753,7 +755,7 @@ namespace miniz {
 #define MINIZ_NO_TIME
 
 // Define MINIZ_NO_ARCHIVE_APIS to disable all ZIP archive API's.
-//#define MINIZ_NO_ARCHIVE_APIS
+#define MINIZ_NO_ARCHIVE_APIS
 
 // Define MINIZ_NO_ARCHIVE_APIS to disable all writing related ZIP archive
 // API's.
@@ -783,7 +785,7 @@ namespace miniz {
 #endif
 
 #if !defined(MINIZ_NO_TIME) && !defined(MINIZ_NO_ARCHIVE_APIS)
-#include <time.h>
+//#include <time.h>
 #endif
 
 #if defined(_M_IX86) || defined(_M_X64) || defined(__i386__) || \
@@ -1804,8 +1806,8 @@ typedef unsigned char mz_validate_uint16[sizeof(mz_uint16) == 2 ? 1 : -1];
 typedef unsigned char mz_validate_uint32[sizeof(mz_uint32) == 4 ? 1 : -1];
 typedef unsigned char mz_validate_uint64[sizeof(mz_uint64) == 8 ? 1 : -1];
 
-#include <assert.h>
-#include <string.h>
+//#include <assert.h>
+//#include <string.h>
 
 #define MZ_ASSERT(x) assert(x)
 
@@ -4498,6 +4500,7 @@ void *tdefl_write_image_to_png_file_in_memory(const void *pImage, int w, int h,
 // ------------------- .ZIP archive reading
 
 #ifndef MINIZ_NO_ARCHIVE_APIS
+#error "No arvhive APIs"
 
 #ifdef MINIZ_NO_STDIO
 #define MZ_FILE void *
@@ -12378,6 +12381,6 @@ int SaveEXR(const float *data, int width, int height, int components,
 #pragma warning(pop)
 #endif
 
-#endif
+#endif  // TINYEXR_IMPLEMENTATION_DEIFNED
+#endif  // TINYEXR_IMPLEMENTATION
 
-#endif  // TINYEXR_H_
