@@ -10705,7 +10705,11 @@ int ParseEXRHeaderFromMemory(EXRHeader *exr_header, const EXRVersion *version,
 
   if (ret != TINYEXR_SUCCESS) {
     if (err && !err_str.empty()) {
+#ifdef _WIN32
+      (*err) = _strdup(err_str.c_str());  // May leak
+#else
       (*err) = strdup(err_str.c_str());  // May leak
+#endif
     }
   }
 
@@ -11952,7 +11956,11 @@ int ParseEXRMultipartHeaderFromMemory(EXRHeader ***exr_headers,
 
     if (ret != TINYEXR_SUCCESS) {
       if (err) {
+#ifdef _WIN32
+        (*err) = _strdup(err_str.c_str());  // may leak
+#else
         (*err) = strdup(err_str.c_str());  // may leak
+#endif
       }
       return ret;
     }
