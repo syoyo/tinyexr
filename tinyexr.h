@@ -10033,8 +10033,7 @@ static int ParseEXRHeader(HeaderInfo *info, bool *empty_header,
 
     } else if (attr_name.compare("compression") == 0) {
       bool ok = false;
-      if ((data[0] >= TINYEXR_COMPRESSIONTYPE_NONE) &&
-          (data[0] < TINYEXR_COMPRESSIONTYPE_PIZ)) {
+      if (data[0] < TINYEXR_COMPRESSIONTYPE_PIZ) {
         ok = true;
       }
 
