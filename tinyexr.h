@@ -478,7 +478,11 @@ namespace miniz {
 #pragma clang diagnostic ignored "-Wsign-conversion"
 #pragma clang diagnostic ignored "-Wc++11-extensions"
 #pragma clang diagnostic ignored "-Wconversion"
+#ifdef __APPLE__
+#if __clang_major__ >= 8 && __clang__minor__ > 1
 #pragma clang diagnostic ignored "-Wcomma"
+#endif
+#endif
 #pragma clang diagnostic ignored "-Wunused-function"
 #endif
 
