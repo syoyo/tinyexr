@@ -10039,8 +10039,7 @@ static int ParseEXRHeader(HeaderInfo *info, bool *empty_header,
 
     } else if (attr_name.compare("compression") == 0) {
       bool ok = false;
-      if ((data[0] >= TINYEXR_COMPRESSIONTYPE_NONE) &&
-          (data[0] < TINYEXR_COMPRESSIONTYPE_PIZ)) {
+      if (data[0] < TINYEXR_COMPRESSIONTYPE_PIZ) {
         ok = true;
       }
 
@@ -10712,7 +10711,11 @@ int ParseEXRHeaderFromMemory(EXRHeader *exr_header, const EXRVersion *version,
 
   if (ret != TINYEXR_SUCCESS) {
     if (err && !err_str.empty()) {
+#ifdef _WIN32
+      (*err) = _strdup(err_str.c_str());  // May leak
+#else
       (*err) = strdup(err_str.c_str());  // May leak
+#endif
     }
   }
 
@@ -11961,7 +11964,11 @@ int ParseEXRMultipartHeaderFromMemory(EXRHeader ***exr_headers,
 
     if (ret != TINYEXR_SUCCESS) {
       if (err) {
+#ifdef _WIN32
+        (*err) = _strdup(err_str.c_str());  // may leak
+#else
         (*err) = strdup(err_str.c_str());  // may leak
+#endif
       }
       return ret;
     }

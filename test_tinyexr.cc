@@ -114,6 +114,7 @@ main(int argc, char** argv)
   }
 
 #ifdef SIMPLE_API_EXAMPLE
+  (void)outfilename;
   int width, height;
   float* image;
   int ret = LoadEXR(&image, &width, &height, argv[1], &err);

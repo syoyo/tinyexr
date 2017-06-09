@@ -1,6 +1,6 @@
 
 CXX ?= clang++
-CXXFLAGS ?= -fsanitize=address -Werror -Weverything -g -O0 -DTINYEXR_USE_MINIZ=0 -DTINYEXR_USE_PIZ=0
+CXXFLAGS ?= -fsanitize=address -Werror -Wall -Wextra -g -O0 -DTINYEXR_USE_MINIZ=0 -DTINYEXR_USE_PIZ=0
 LDFLAGS ?= -lz
 
 # ZFP
