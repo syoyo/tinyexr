@@ -7077,7 +7077,7 @@ static const char *ReadString(std::string *s, const char *ptr) {
 }
 
 static bool ReadAttribute(std::string *name, std::string *type,
-                          std::vector<unsigned char> *data, size_t *marker_size,
+                          const unsigned char **data, size_t *data_size, size_t *marker_size,
                           const char *marker, size_t size) {
   size_t name_len = strnlen(marker, size);
   if (name_len == size) {
@@ -7113,10 +7113,12 @@ static bool ReadAttribute(std::string *name, std::string *type,
     return false;
   }
 
-  data->resize(static_cast<size_t>(data_len));
-  memcpy(&data->at(0), marker, static_cast<size_t>(data_len));
+  //data->resize(static_cast<size_t>(data_len));
+  //memcpy(&data->at(0), marker, static_cast<size_t>(data_len));
+  (*data) = reinterpret_cast<const unsigned char*>(marker);
+  (*data_size) = data_len;
+  (*marker_size) = name_len + 1 + type_len + 1 + sizeof(uint32_t) + data_len;
 
-  *marker_size = name_len + 1 + type_len + 1 + sizeof(uint32_t) + data_len;
   return true;
 }
 
@@ -7197,8 +7199,8 @@ typedef struct {
 } HeaderInfo;
 
 static void ReadChannelInfo(std::vector<ChannelInfo> &channels,
-                            const std::vector<unsigned char> &data) {
-  const char *p = reinterpret_cast<const char *>(&data.at(0));
+                            const unsigned char *data) {
+  const char *p = reinterpret_cast<const char *>(data);
 
   for (;;) {
     if ((*p) == 0) {
@@ -10011,9 +10013,11 @@ static int ParseEXRHeader(HeaderInfo *info, bool *empty_header,
 
     std::string attr_name;
     std::string attr_type;
-    std::vector<unsigned char> data;
+    //std::vector<unsigned char> data;
+    const unsigned char *data;
+    size_t data_size;
     size_t marker_size;
-    if (!tinyexr::ReadAttribute(&attr_name, &attr_type, &data, &marker_size,
+    if (!tinyexr::ReadAttribute(&attr_name, &attr_type, &data, &data_size, &marker_size,
                                 marker, size)) {
       return TINYEXR_ERROR_INVALID_DATA;
     }
@@ -10023,9 +10027,9 @@ static int ParseEXRHeader(HeaderInfo *info, bool *empty_header,
     if (version->tiled && attr_name.compare("tiles") == 0) {
       unsigned int x_size, y_size;
       unsigned char tile_mode;
-      assert(data.size() == 9);
-      memcpy(&x_size, &data.at(0), sizeof(int));
-      memcpy(&y_size, &data.at(4), sizeof(int));
+      //assert(data.size() == 9);
+      memcpy(&x_size, &data[0], sizeof(int));
+      memcpy(&y_size, &data[4], sizeof(int));
       tile_mode = data[8];
       tinyexr::swap4(&x_size);
       tinyexr::swap4(&y_size);
@@ -10096,10 +10100,10 @@ static int ParseEXRHeader(HeaderInfo *info, bool *empty_header,
       has_channels = true;
 
     } else if (attr_name.compare("dataWindow") == 0) {
-      memcpy(&info->data_window[0], &data.at(0), sizeof(int));
-      memcpy(&info->data_window[1], &data.at(4), sizeof(int));
-      memcpy(&info->data_window[2], &data.at(8), sizeof(int));
-      memcpy(&info->data_window[3], &data.at(12), sizeof(int));
+      memcpy(&info->data_window[0], &data[0], sizeof(int));
+      memcpy(&info->data_window[1], &data[4], sizeof(int));
+      memcpy(&info->data_window[2], &data[8], sizeof(int));
+      memcpy(&info->data_window[3], &data[12], sizeof(int));
       tinyexr::swap4(reinterpret_cast<unsigned int *>(&info->data_window[0]));
       tinyexr::swap4(reinterpret_cast<unsigned int *>(&info->data_window[1]));
       tinyexr::swap4(reinterpret_cast<unsigned int *>(&info->data_window[2]));
@@ -10107,10 +10111,10 @@ static int ParseEXRHeader(HeaderInfo *info, bool *empty_header,
 
       has_data_window = true;
     } else if (attr_name.compare("displayWindow") == 0) {
-      memcpy(&info->display_window[0], &data.at(0), sizeof(int));
-      memcpy(&info->display_window[1], &data.at(4), sizeof(int));
-      memcpy(&info->display_window[2], &data.at(8), sizeof(int));
-      memcpy(&info->display_window[3], &data.at(12), sizeof(int));
+      memcpy(&info->display_window[0], &data[0], sizeof(int));
+      memcpy(&info->display_window[1], &data[4], sizeof(int));
+      memcpy(&info->display_window[2], &data[8], sizeof(int));
+      memcpy(&info->display_window[3], &data[12], sizeof(int));
       tinyexr::swap4(
           reinterpret_cast<unsigned int *>(&info->display_window[0]));
       tinyexr::swap4(
@@ -10125,26 +10129,26 @@ static int ParseEXRHeader(HeaderInfo *info, bool *empty_header,
       info->line_order = static_cast<int>(data[0]);
       has_line_order = true;
     } else if (attr_name.compare("pixelAspectRatio") == 0) {
-      memcpy(&info->pixel_aspect_ratio, &data.at(0), sizeof(float));
+      memcpy(&info->pixel_aspect_ratio, &data[0], sizeof(float));
       tinyexr::swap4(
           reinterpret_cast<unsigned int *>(&info->pixel_aspect_ratio));
       has_pixel_aspect_ratio = true;
     } else if (attr_name.compare("screenWindowCenter") == 0) {
-      memcpy(&info->screen_window_center[0], &data.at(0), sizeof(float));
-      memcpy(&info->screen_window_center[1], &data.at(4), sizeof(float));
+      memcpy(&info->screen_window_center[0], &data[0], sizeof(float));
+      memcpy(&info->screen_window_center[1], &data[4], sizeof(float));
       tinyexr::swap4(
           reinterpret_cast<unsigned int *>(&info->screen_window_center[0]));
       tinyexr::swap4(
           reinterpret_cast<unsigned int *>(&info->screen_window_center[1]));
       has_screen_window_center = true;
     } else if (attr_name.compare("screenWindowWidth") == 0) {
-      memcpy(&info->screen_window_width, &data.at(0), sizeof(float));
+      memcpy(&info->screen_window_width, &data[0], sizeof(float));
       tinyexr::swap4(
           reinterpret_cast<unsigned int *>(&info->screen_window_width));
 
       has_screen_window_width = true;
     } else if (attr_name.compare("chunkCount") == 0) {
-      memcpy(&info->chunk_count, &data.at(0), sizeof(int));
+      memcpy(&info->chunk_count, &data[0], sizeof(int));
       tinyexr::swap4(reinterpret_cast<unsigned int *>(&info->chunk_count));
     } else {
       // Custom attribute(up to TINYEXR_MAX_ATTRIBUTES)
@@ -10154,10 +10158,10 @@ static int ParseEXRHeader(HeaderInfo *info, bool *empty_header,
         attrib.name[255] = '\0';
         strncpy(attrib.type, attr_type.c_str(), 255);
         attrib.type[255] = '\0';
-        attrib.size = static_cast<int>(data.size());
-        attrib.value = static_cast<unsigned char *>(malloc(data.size()));
-        memcpy(reinterpret_cast<char *>(attrib.value), &data.at(0),
-               data.size());
+        attrib.size = static_cast<int>(data_size);
+        attrib.value = static_cast<unsigned char *>(malloc(data_size));
+        memcpy(reinterpret_cast<char *>(attrib.value), &data[0],
+               data_size);
         info->attributes.push_back(attrib);
       }
     }
@@ -10246,6 +10250,7 @@ static void ConvertHeader(EXRHeader *exr_header, const HeaderInfo &info) {
   exr_header->channels = static_cast<EXRChannelInfo *>(malloc(
       sizeof(EXRChannelInfo) * static_cast<size_t>(exr_header->num_channels)));
   for (size_t c = 0; c < static_cast<size_t>(exr_header->num_channels); c++) {
+    memset(exr_header->channels[c].name, 0, 255);
     strncpy(exr_header->channels[c].name, info.channels[c].name.c_str(), 255);
     // manually add '\0' for safety.
     exr_header->channels[c].name[255] = '\0';
@@ -10622,6 +10627,7 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
   int idxB = -1;
   int idxA = -1;
   for (int c = 0; c < exr_header.num_channels; c++) {
+    printf("channels = %d, c = %d\n", exr_header.num_channels, c);
     if (strcmp(exr_header.channels[c].name, "R") == 0) {
       idxR = c;
     } else if (strcmp(exr_header.channels[c].name, "G") == 0) {
@@ -11527,9 +11533,11 @@ int LoadDeepEXR(DeepImage *deep_image, const char *filename, const char **err) {
 
     std::string attr_name;
     std::string attr_type;
-    std::vector<unsigned char> data;
+    //std::vector<unsigned char> data;
+    const unsigned char *data;
+    size_t data_size;
     size_t marker_size;
-    if (!tinyexr::ReadAttribute(&attr_name, &attr_type, &data, &marker_size,
+    if (!tinyexr::ReadAttribute(&attr_name, &attr_type, &data, &data_size, &marker_size,
                                 marker, size)) {
       return TINYEXR_ERROR_INVALID_DATA;
     }
@@ -11569,10 +11577,10 @@ int LoadDeepEXR(DeepImage *deep_image, const char *filename, const char **err) {
       }
 
     } else if (attr_name.compare("dataWindow") == 0) {
-      memcpy(&dx, &data.at(0), sizeof(int));
-      memcpy(&dy, &data.at(4), sizeof(int));
-      memcpy(&dw, &data.at(8), sizeof(int));
-      memcpy(&dh, &data.at(12), sizeof(int));
+      memcpy(&dx, &data[0], sizeof(int));
+      memcpy(&dy, &data[4], sizeof(int));
+      memcpy(&dw, &data[8], sizeof(int));
+      memcpy(&dh, &data[12], sizeof(int));
       tinyexr::swap4(reinterpret_cast<unsigned int *>(&dx));
       tinyexr::swap4(reinterpret_cast<unsigned int *>(&dy));
       tinyexr::swap4(reinterpret_cast<unsigned int *>(&dw));
@@ -11583,10 +11591,10 @@ int LoadDeepEXR(DeepImage *deep_image, const char *filename, const char **err) {
       int y;
       int w;
       int h;
-      memcpy(&x, &data.at(0), sizeof(int));
-      memcpy(&y, &data.at(4), sizeof(int));
-      memcpy(&w, &data.at(8), sizeof(int));
-      memcpy(&h, &data.at(12), sizeof(int));
+      memcpy(&x, &data[0], sizeof(int));
+      memcpy(&y, &data[4], sizeof(int));
+      memcpy(&w, &data[8], sizeof(int));
+      memcpy(&h, &data[12], sizeof(int));
       tinyexr::swap4(reinterpret_cast<unsigned int *>(&x));
       tinyexr::swap4(reinterpret_cast<unsigned int *>(&y));
       tinyexr::swap4(reinterpret_cast<unsigned int *>(&w));
