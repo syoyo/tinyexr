@@ -363,7 +363,7 @@ Checkout zfp repo as an submodule.
 
 Then build ZFP
 
-    $ cd dep/ZFP
+    $ cd deps/ZFP
     $ mkdir -p lib   # Create `lib` directory if not exist
     $ make
 
