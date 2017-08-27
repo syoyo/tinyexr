@@ -9021,7 +9021,7 @@ static bool CompressPiz(unsigned char *outPtr, unsigned int *outSize,
   // Use uncompressed data when compressed data is larger than uncompressed.
   // (Issue 40)
   if ((*outSize) >= inSize) {
-    (*outSize) = inSize;
+    (*outSize) = static_cast<unsigned int>(inSize);
     memcpy(outPtr, inPtr, inSize);
   }
   return true;
