@@ -269,8 +269,8 @@ extern int LoadEXR(float **out_rgba, int *width, int *height,
 
 // @deprecated { to be removed. }
 // Saves single-frame OpenEXR image. Assume EXR image contains RGB(A) channels.
-// components must be 3(RGB) or 4(RGBA).
-// Result image format is: float x RGB(A) x width x hight
+// components must be 1(Grayscale), 3(RGB) or 4(RGBA).
+// Input image format is: `float x width x height`, or `float x RGB(A) x width x hight`
 extern int SaveEXR(const float *data, int width, int height, int components,
                    const char *filename);
 
@@ -12345,7 +12345,7 @@ int LoadEXRMultipartImageFromFile(EXRImage *exr_images,
 
 int SaveEXR(const float *data, int width, int height, int components,
             const char *outfilename) {
-  if (components == 3 || components == 4) {
+  if ((components == 1) || components == 3 || components == 4) {
     // OK
   } else {
     return TINYEXR_ERROR_INVALID_ARGUMENT;
@@ -12364,18 +12364,24 @@ int SaveEXR(const float *data, int width, int height, int components,
   image.num_channels = components;
 
   std::vector<float> images[4];
-  images[0].resize(static_cast<size_t>(width * height));
-  images[1].resize(static_cast<size_t>(width * height));
-  images[2].resize(static_cast<size_t>(width * height));
-  images[3].resize(static_cast<size_t>(width * height));
 
-  // Split RGB(A)RGB(A)RGB(A)... into R, G and B(and A) layers
-  for (size_t i = 0; i < static_cast<size_t>(width * height); i++) {
-    images[0][i] = data[static_cast<size_t>(components) * i + 0];
-    images[1][i] = data[static_cast<size_t>(components) * i + 1];
-    images[2][i] = data[static_cast<size_t>(components) * i + 2];
-    if (components == 4) {
-      images[3][i] = data[static_cast<size_t>(components) * i + 3];
+  if (components == 1) {
+    images[0].resize(static_cast<size_t>(width * height));
+    memcpy(images[0].data(), data, sizeof(float) * size_t(width * height));
+  } else {
+    images[0].resize(static_cast<size_t>(width * height));
+    images[1].resize(static_cast<size_t>(width * height));
+    images[2].resize(static_cast<size_t>(width * height));
+    images[3].resize(static_cast<size_t>(width * height));
+
+    // Split RGB(A)RGB(A)RGB(A)... into R, G and B(and A) layers
+    for (size_t i = 0; i < static_cast<size_t>(width * height); i++) {
+      images[0][i] = data[static_cast<size_t>(components) * i + 0];
+      images[1][i] = data[static_cast<size_t>(components) * i + 1];
+      images[2][i] = data[static_cast<size_t>(components) * i + 2];
+      if (components == 4) {
+        images[3][i] = data[static_cast<size_t>(components) * i + 3];
+      }
     }
   }
 
@@ -12385,10 +12391,12 @@ int SaveEXR(const float *data, int width, int height, int components,
     image_ptr[1] = &(images[2].at(0));  // B
     image_ptr[2] = &(images[1].at(0));  // G
     image_ptr[3] = &(images[0].at(0));  // R
-  } else {
+  } else if (components == 3) {
     image_ptr[0] = &(images[2].at(0));  // B
     image_ptr[1] = &(images[1].at(0));  // G
     image_ptr[2] = &(images[0].at(0));  // R
+  } else if (components == 1) {
+    image_ptr[0] = &(images[0].at(0));  // A
   }
 
   image.images = reinterpret_cast<unsigned char **>(image_ptr);
@@ -12408,13 +12416,16 @@ int SaveEXR(const float *data, int width, int height, int components,
     header.channels[2].name[strlen("G")] = '\0';
     strncpy(header.channels[3].name, "R", 255);
     header.channels[3].name[strlen("R")] = '\0';
-  } else {
+  } else if (components == 3) {
     strncpy(header.channels[0].name, "B", 255);
     header.channels[0].name[strlen("B")] = '\0';
     strncpy(header.channels[1].name, "G", 255);
     header.channels[1].name[strlen("G")] = '\0';
     strncpy(header.channels[2].name, "R", 255);
     header.channels[2].name[strlen("R")] = '\0';
+  } else {
+    strncpy(header.channels[0].name, "A", 255);
+    header.channels[0].name[strlen("A")] = '\0';
   }
 
   header.pixel_types = static_cast<int *>(
