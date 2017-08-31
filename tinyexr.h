@@ -259,7 +259,7 @@ typedef struct _DeepImage {
 } DeepImage;
 
 // @deprecated { to be removed. }
-// Loads single-frame OpenEXR image. Assume EXR image contains RGB(A) channels.
+// Loads single-frame OpenEXR image. Assume EXR image contains A(single channel alpha) or RGB(A) channels.
 // Application must free image data as returned by `out_rgba`
 // Result image format is: float x RGBA x width x hight
 // Returns negative value and may set error string in `err` when there's an
@@ -10682,46 +10682,64 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
     }
   }
 
-  if (idxR == -1) {
-    if (err) {
-      (*err) = "R channel not found\n";
+  if ((idxA == 0) && (idxR == -1) && (idxG == -1) && (idxB == -1)) {
+    // Alpha channel only.
+
+    (*out_rgba) = reinterpret_cast<float *>(
+        malloc(4 * sizeof(float) * static_cast<size_t>(exr_image.width) *
+               static_cast<size_t>(exr_image.height)));
+    for (int i = 0; i < exr_image.width * exr_image.height; i++) {
+      const float val = reinterpret_cast<float **>(exr_image.images)[0][i];
+      (*out_rgba)[4 * i + 0] = val;
+      (*out_rgba)[4 * i + 1] = val;
+      (*out_rgba)[4 * i + 2] = val;
+      (*out_rgba)[4 * i + 3] = val;
+    }
+  } else {
+
+    // Assume RGB(A)
+
+    if (idxR == -1) {
+      if (err) {
+        (*err) = "R channel not found\n";
+      }
+
+      // @todo { free exr_image }
+      return TINYEXR_ERROR_INVALID_DATA;
     }
 
-    // @todo { free exr_image }
-    return TINYEXR_ERROR_INVALID_DATA;
-  }
-
-  if (idxG == -1) {
-    if (err) {
-      (*err) = "G channel not found\n";
+    if (idxG == -1) {
+      if (err) {
+        (*err) = "G channel not found\n";
+      }
+      // @todo { free exr_image }
+      return TINYEXR_ERROR_INVALID_DATA;
     }
-    // @todo { free exr_image }
-    return TINYEXR_ERROR_INVALID_DATA;
-  }
 
-  if (idxB == -1) {
-    if (err) {
-      (*err) = "B channel not found\n";
+    if (idxB == -1) {
+      if (err) {
+        (*err) = "B channel not found\n";
+      }
+      // @todo { free exr_image }
+      return TINYEXR_ERROR_INVALID_DATA;
     }
-    // @todo { free exr_image }
-    return TINYEXR_ERROR_INVALID_DATA;
-  }
 
-  (*out_rgba) = reinterpret_cast<float *>(
-      malloc(4 * sizeof(float) * static_cast<size_t>(exr_image.width) *
-             static_cast<size_t>(exr_image.height)));
-  for (int i = 0; i < exr_image.width * exr_image.height; i++) {
-    (*out_rgba)[4 * i + 0] =
-        reinterpret_cast<float **>(exr_image.images)[idxR][i];
-    (*out_rgba)[4 * i + 1] =
-        reinterpret_cast<float **>(exr_image.images)[idxG][i];
-    (*out_rgba)[4 * i + 2] =
-        reinterpret_cast<float **>(exr_image.images)[idxB][i];
-    if (idxA != -1) {
-      (*out_rgba)[4 * i + 3] =
-          reinterpret_cast<float **>(exr_image.images)[idxA][i];
-    } else {
-      (*out_rgba)[4 * i + 3] = 1.0;
+    (*out_rgba) = reinterpret_cast<float *>(
+        malloc(4 * sizeof(float) * static_cast<size_t>(exr_image.width) *
+               static_cast<size_t>(exr_image.height)));
+    for (int i = 0; i < exr_image.width * exr_image.height; i++) {
+      (*out_rgba)[4 * i + 0] =
+          reinterpret_cast<float **>(exr_image.images)[idxR][i];
+      (*out_rgba)[4 * i + 1] =
+          reinterpret_cast<float **>(exr_image.images)[idxG][i];
+      (*out_rgba)[4 * i + 2] =
+          reinterpret_cast<float **>(exr_image.images)[idxB][i];
+      if (idxA != -1) {
+        (*out_rgba)[4 * i + 3] =
+            reinterpret_cast<float **>(exr_image.images)[idxA][i];
+      } else {
+        (*out_rgba)[4 * i + 3] = 1.0;
+      }
     }
   }
 
