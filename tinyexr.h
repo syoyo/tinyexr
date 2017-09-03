@@ -479,15 +479,9 @@ namespace miniz {
 #pragma clang diagnostic ignored "-Wc++11-extensions"
 #pragma clang diagnostic ignored "-Wconversion"
 #pragma clang diagnostic ignored "-Wunused-function"
-#ifdef __APPLE__
-#if __clang_major__ >= 8 && __clang_minor__ >= 1
+#if __has_warning("-Wcomma")
 #pragma clang diagnostic ignored "-Wcomma"
 #endif
-#else  // __APPLE__
-#if (__clang_major__ >= 4) || (__clang_major__ >= 3 && __clang_minor__ > 8)
-#pragma clang diagnostic ignored "-Wcomma"
-#endif
-#endif  // __APPLE__
 #endif
 
 /* miniz.c v1.15 - public domain deflate/inflate, zlib-subset, ZIP
