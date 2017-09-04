@@ -123,7 +123,7 @@ main(int argc, char** argv)
     return ret;
   }
   //SaveAsPFM("output.pfm", width, height, image);
-  ret = SaveEXR(image, width, height, 4 /* =RGBA*/, "output.exr");
+  ret = SaveEXR(image, width, height, 4 /* =RGBA*/, 1 /* = save as fp16 format */, "output.exr");
   free(image);
 #else
     

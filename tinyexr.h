@@ -271,8 +271,9 @@ extern int LoadEXR(float **out_rgba, int *width, int *height,
 // Saves single-frame OpenEXR image. Assume EXR image contains RGB(A) channels.
 // components must be 1(Grayscale), 3(RGB) or 4(RGBA).
 // Input image format is: `float x width x height`, or `float x RGB(A) x width x hight`
-extern int SaveEXR(const float *data, int width, int height, int components,
-                   const char *filename);
+// Save image as fp16(HALF) format when `save_as_fp16` is positive non-zero value.
+// Save image as fp32(FLOAT) format when `save_as_fp16` is 0. 
+extern int SaveEXR(const float *data, const int width, const int height, const int components, const int save_as_fp16, const char *filename);
 
 // Initialize EXRHeader struct
 extern void InitEXRHeader(EXRHeader *exr_header);
@@ -12356,6 +12357,7 @@ int LoadEXRMultipartImageFromFile(EXRImage *exr_images,
 }
 
 int SaveEXR(const float *data, int width, int height, int components,
+            const int save_as_fp16,
             const char *outfilename) {
   if ((components == 1) || components == 3 || components == 4) {
     // OK
@@ -12447,9 +12449,14 @@ int SaveEXR(const float *data, int width, int height, int components,
   for (int i = 0; i < header.num_channels; i++) {
     header.pixel_types[i] =
         TINYEXR_PIXELTYPE_FLOAT;  // pixel type of input image
-    header.requested_pixel_types[i] =
-        TINYEXR_PIXELTYPE_HALF;  // pixel type of output image to be stored in
-                                 // .EXR
+
+    if (save_as_fp16 > 0) {
+      header.requested_pixel_types[i] =
+          TINYEXR_PIXELTYPE_HALF;  // save with half(fp16) pixel format
+    } else {
+      header.requested_pixel_types[i] =
+          TINYEXR_PIXELTYPE_FLOAT;  // save with float(fp32) pixel format(i.e. no precision reduction)
+    }
   }
 
   const char *err;

@@ -104,7 +104,7 @@ int main(int argc, char *argv[]) {
  
   WriteImageEXR(argv[2], rgba, w, h);
   const char *err;
-  SaveEXR(rgba, w, h, argv[1], &err);
+  SaveEXR(rgba, w, h, argv[1], /* fp16 */1, &err);
   
   int ow, oh;
   float *orgba = OpenExrLoad(argv[2], &ow, &oh);
