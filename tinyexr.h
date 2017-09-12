@@ -259,7 +259,8 @@ typedef struct _DeepImage {
 } DeepImage;
 
 // @deprecated { to be removed. }
-// Loads single-frame OpenEXR image. Assume EXR image contains A(single channel alpha) or RGB(A) channels.
+// Loads single-frame OpenEXR image. Assume EXR image contains A(single channel
+// alpha) or RGB(A) channels.
 // Application must free image data as returned by `out_rgba`
 // Result image format is: float x RGBA x width x hight
 // Returns negative value and may set error string in `err` when there's an
@@ -270,10 +271,14 @@ extern int LoadEXR(float **out_rgba, int *width, int *height,
 // @deprecated { to be removed. }
 // Saves single-frame OpenEXR image. Assume EXR image contains RGB(A) channels.
 // components must be 1(Grayscale), 3(RGB) or 4(RGBA).
-// Input image format is: `float x width x height`, or `float x RGB(A) x width x hight`
-// Save image as fp16(HALF) format when `save_as_fp16` is positive non-zero value.
-// Save image as fp32(FLOAT) format when `save_as_fp16` is 0. 
-extern int SaveEXR(const float *data, const int width, const int height, const int components, const int save_as_fp16, const char *filename);
+// Input image format is: `float x width x height`, or `float x RGB(A) x width x
+// hight`
+// Save image as fp16(HALF) format when `save_as_fp16` is positive non-zero
+// value.
+// Save image as fp32(FLOAT) format when `save_as_fp16` is 0.
+extern int SaveEXR(const float *data, const int width, const int height,
+                   const int components, const int save_as_fp16,
+                   const char *filename);
 
 // Initialize EXRHeader struct
 extern void InitEXRHeader(EXRHeader *exr_header);
@@ -1912,7 +1917,7 @@ static void def_free_func(void *opaque, void *address) {
   (void)opaque, (void)address;
   MZ_FREE(address);
 }
-//static void *def_realloc_func(void *opaque, void *address, size_t items,
+// static void *def_realloc_func(void *opaque, void *address, size_t items,
 //                              size_t size) {
 //  (void)opaque, (void)address, (void)items, (void)size;
 //  return MZ_REALLOC(address, items * size);
@@ -10353,6 +10358,8 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
                                 &channel_offset, num_channels,
                                 exr_header->channels);
 
+  bool invalid_data = false;
+
   if (exr_header->tiled) {
     size_t num_tiles = offsets.size();  // = # of blocks
 
@@ -10447,16 +10454,25 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
       // Adjust line_no with data_window.bmin.y
       line_no -= exr_header->data_window[1];
 
-      tinyexr::DecodePixelData(
-          exr_image->images, exr_header->requested_pixel_types, data_ptr,
-          static_cast<size_t>(data_len), exr_header->compression_type,
-          exr_header->line_order, data_width, data_height, data_width, y,
-          line_no, num_lines, static_cast<size_t>(pixel_data_size),
-          static_cast<size_t>(exr_header->num_custom_attributes),
-          exr_header->custom_attributes,
-          static_cast<size_t>(exr_header->num_channels), exr_header->channels,
-          channel_offset_list);
+      if (line_no < 0) {
+        invalid_data = true;
+        break;
+      } else {
+        tinyexr::DecodePixelData(
+            exr_image->images, exr_header->requested_pixel_types, data_ptr,
+            static_cast<size_t>(data_len), exr_header->compression_type,
+            exr_header->line_order, data_width, data_height, data_width, y,
+            line_no, num_lines, static_cast<size_t>(pixel_data_size),
+            static_cast<size_t>(exr_header->num_custom_attributes),
+            exr_header->custom_attributes,
+            static_cast<size_t>(exr_header->num_channels), exr_header->channels,
+            channel_offset_list);
+      }
     }  // omp parallel
+  }
+
+  if (invalid_data) {
+    return TINYEXR_ERROR_INVALID_DATA;
   }
 
   // Overwrite `pixel_type` with `requested_pixel_type`.
@@ -10691,7 +10707,6 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
       (*out_rgba)[4 * i + 3] = val;
     }
   } else {
-
     // Assume RGB(A)
 
     if (idxR == -1) {
@@ -12357,8 +12372,7 @@ int LoadEXRMultipartImageFromFile(EXRImage *exr_images,
 }
 
 int SaveEXR(const float *data, int width, int height, int components,
-            const int save_as_fp16,
-            const char *outfilename) {
+            const int save_as_fp16, const char *outfilename) {
   if ((components == 1) || components == 3 || components == 4) {
     // OK
   } else {
@@ -12455,7 +12469,8 @@ int SaveEXR(const float *data, int width, int height, int components,
           TINYEXR_PIXELTYPE_HALF;  // save with half(fp16) pixel format
     } else {
       header.requested_pixel_types[i] =
-          TINYEXR_PIXELTYPE_FLOAT;  // save with float(fp32) pixel format(i.e. no precision reduction)
+          TINYEXR_PIXELTYPE_FLOAT;  // save with float(fp32) pixel format(i.e.
+                                    // no precision reduction)
     }
   }
 
