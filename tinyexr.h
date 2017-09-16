@@ -10456,7 +10456,6 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
 
       if (line_no < 0) {
         invalid_data = true;
-        break;
       } else {
         tinyexr::DecodePixelData(
             exr_image->images, exr_header->requested_pixel_types, data_ptr,
