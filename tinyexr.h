@@ -10814,6 +10814,13 @@ int LoadEXRFromMemory(float *out_rgba, const unsigned char *memory, size_t size,
   if (ret != TINYEXR_SUCCESS) {
     return ret;
   }
+  
+  // Read HALF channel as FLOAT.
+  for (int i = 0; i < exr_header.num_channels; i++) {
+    if (exr_header.pixel_types[i] == TINYEXR_PIXELTYPE_HALF) {
+      exr_header.requested_pixel_types[i] = TINYEXR_PIXELTYPE_FLOAT;
+    }
+  }  
 
   InitEXRImage(&exr_image);
   ret = LoadEXRImageFromMemory(&exr_image, &exr_header, memory, size, err);
