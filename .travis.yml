@@ -6,61 +6,120 @@ language: cpp
 
 matrix:
   include:
-  - addons: &1
-      apt:
-        sources:
-        - george-edison55-precise-backports
-        - ubuntu-toolchain-r-test
-        - llvm-toolchain-precise-3.7
-        packages:
-        - cmake
-        - cmake-data
-        - ninja-build
-        - g++-4.9
-        - clang-3.7
-    compiler: clang
-    env: DEPLOY_BUILD=1 COMPILER_VERSION=3.7 BUILD_TYPE=Debug CXXFLAGS="-g -O0 -Weverything -Werror -Wno-c++11-long-long -Wno-padded -Wno-sign-conversion -DTINYEXR_USE_MINIZ=0 -DTINYEXR_USE_PIZ=0" LDFLAGS="-lz"
-  - addons: *1
-    compiler: clang
-    env: COMPILER_VERSION=3.7 BUILD_TYPE=Release
-  - addons: &2
-      apt:
-        sources:
-        - george-edison55-precise-backports
-        - ubuntu-toolchain-r-test
-        packages:
-        - cmake
-        - cmake-data
-        - ninja-build
-        - g++-4.9
-    compiler: gcc
-    env: COMPILER_VERSION=4.9 BUILD_TYPE=Debug
-  - addons: *2
-    compiler: gcc
-    env: COMPILER_VERSION=4.9 BUILD_TYPE=Release
-  - addons: *1
-    compiler: clang
-    env: COMPILER_VERSION=3.7 BUILD_TYPE=Debug
-  - addons: &3
-      apt:
-        sources:
-        - gccgeorge-edison55-precise-backports
-        - ubuntu-toolchain-r-test
-        packages:
-        - g++-4.4
-    compiler: gcc
-    env: COMPILER_VERSION=4.4 BUILD_TYPE=Debug
-  - addons: *3
-    compiler: gcc
-    env: COMPILER_VERSION=4.4 BUILD_TYPE=Release
+    # works on Precise and Trusty
+    - os: linux
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+          packages:
+            - g++-4.9
+      env:
+         - MATRIX_EVAL="CC=gcc-4.9 && CXX=g++-4.9"
+
+    # works on Precise and Trusty
+    - os: linux
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+          packages:
+            - g++-5
+      env:
+         - MATRIX_EVAL="CC=gcc-5 && CXX=g++-5"
+
+    # works on Precise and Trusty
+    - os: linux
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+          packages:
+            - g++-6
+      env:
+        - MATRIX_EVAL="CC=gcc-6 && CXX=g++-6"
+
+    # works on Precise and Trusty
+    - os: linux
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+          packages:
+            - g++-7
+      env:
+        - MATRIX_EVAL="CC=gcc-7 && CXX=g++-7"
+    # works on Precise and Trusty
+    - os: linux
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+            - llvm-toolchain-precise-3.6
+          packages:
+            - clang-3.6
+      env:
+        - MATRIX_EVAL="CC=clang-3.6 && CXX=clang++-3.6"
+
+    # works on Precise and Trusty
+    - os: linux
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+            - llvm-toolchain-precise-3.7
+          packages:
+            - clang-3.7
+      env:
+        - MATRIX_EVAL="CC=clang-3.7 && CXX=clang++-3.7"
+
+    # works on Precise and Trusty
+    - os: linux
+      addons:
+        apt:
+          sources:
+            - ubuntu-toolchain-r-test
+            - llvm-toolchain-precise-3.8
+          packages:
+            - clang-3.8
+      env:
+        - MATRIX_EVAL="CC=clang-3.8 && CXX=clang++-3.8"
+
+    # works on Trusty
+    - os: linux
+      addons:
+        apt:
+          sources:
+            - llvm-toolchain-trusty-3.9
+          packages:
+            - clang-3.9
+      env:
+        - MATRIX_EVAL="CC=clang-3.9 && CXX=clang++-3.9"
+
+    # works on Trusty
+    - os: linux
+      addons:
+        apt:
+          sources:
+            - llvm-toolchain-trusty-4.0
+          packages:
+            - clang-4.0
+      env:
+        - MATRIX_EVAL="CC=clang-4.0 && CXX=clang++-4.0"
+
+    # works on Trusty
+    - os: linux
+      addons:
+        apt:
+          sources:
+            - llvm-toolchain-trusty-5.0
+          packages:
+            - clang-5.0
+      env:
+        - MATRIX_EVAL="CC=clang-5.0 && CXX=clang++-5.0"
 
 before_install:
-  - sudo apt-get update -qq -y
-  - sudo apt-get install -qq -y libgd2-xpm ia32-libs ia32-libs-multiarch p7zip > /dev/null
-  - wget -q --timeout=120 http://dl.google.com/android/ndk/android-ndk-r10e-linux-x86.bin -O ndk.bin
-  - md5sum ndk.bin | grep c3edd3273029da1cbd2f62c48249e978
-  - 7zr x ndk.bin $(sed 's/^/ -xr!/g' ndk-excludes.txt) | awk '/^Extracting/ { i++; if (i > 50) {print; i = 0}}'
-  - export ANDROID_HOME=$(pwd)/android-sdk-linux
+    - eval "${MATRIX_EVAL}"
 
 script:
   - export CC="${CC}-${COMPILER_VERSION}"
@@ -68,7 +127,6 @@ script:
   - export CXXFLAGS="${CXXFLAGS}"
   - make
   - make test
-  - (cd jni; make)
 
 addons:
   coverity_scan:
