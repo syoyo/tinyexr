@@ -122,9 +122,6 @@ before_install:
     - eval "${MATRIX_EVAL}"
 
 script:
-  - export CC="${CC}-${COMPILER_VERSION}"
-  - export CXX="${CXX}-${COMPILER_VERSION}"
-  - export CXXFLAGS="${CXXFLAGS}"
   - make
   - make test
 
