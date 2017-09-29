@@ -407,12 +407,11 @@ extern int LoadDeepEXR(DeepImage *out_image, const char *filename,
 // For emscripten.
 // Loads single-frame OpenEXR image from memory. Assume EXR image contains
 // RGB(A) channels.
-// `out_rgba` must have enough memory(at least sizeof(float) x 4(RGBA) x width x
-// hight)
 // Returns negative value and may set error string in `err` when there's an
 // error
-extern int LoadEXRFromMemory(float *out_rgba, const unsigned char *memory,
-                             size_t size, const char **err);
+extern int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
+							 const unsigned char *memory, size_t size,
+							 const char **err);
 
 #ifdef __cplusplus
 }
@@ -10804,8 +10803,9 @@ int ParseEXRHeaderFromMemory(EXRHeader *exr_header, const EXRVersion *version,
   return ret;
 }
 
-int LoadEXRFromMemory(float *out_rgba, const unsigned char *memory, size_t size,
-                      const char **err) {
+int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
+	const unsigned char *memory, size_t size,
+	const char **err) {
   if (out_rgba == NULL || memory == NULL) {
     if (err) {
       (*err) = "Invalid argument.\n";
@@ -10884,18 +10884,31 @@ int LoadEXRFromMemory(float *out_rgba, const unsigned char *memory, size_t size,
     return TINYEXR_ERROR_INVALID_DATA;
   }
 
-  // Assume `out_rgba` have enough memory allocated.
+  (*out_rgba) = reinterpret_cast<float *>(
+	malloc(4 * sizeof(float) * static_cast<size_t>(exr_image.width) *
+	  static_cast<size_t>(exr_image.height)));
+
   for (int i = 0; i < exr_image.width * exr_image.height; i++) {
-    out_rgba[4 * i + 0] = reinterpret_cast<float **>(exr_image.images)[idxR][i];
-    out_rgba[4 * i + 1] = reinterpret_cast<float **>(exr_image.images)[idxG][i];
-    out_rgba[4 * i + 2] = reinterpret_cast<float **>(exr_image.images)[idxB][i];
-    if (idxA > 0) {
-      out_rgba[4 * i + 3] =
-          reinterpret_cast<float **>(exr_image.images)[idxA][i];
-    } else {
-      out_rgba[4 * i + 3] = 1.0;
-    }
+	(*out_rgba)[4 * i + 0] =
+	 reinterpret_cast<float **>(exr_image.images)[idxR][i];
+	(*out_rgba)[4 * i + 1] =
+	 reinterpret_cast<float **>(exr_image.images)[idxG][i];
+	(*out_rgba)[4 * i + 2] =
+	 reinterpret_cast<float **>(exr_image.images)[idxB][i];
+	if (idxA != -1) {
+	 (*out_rgba)[4 * i + 3] =
+	  reinterpret_cast<float **>(exr_image.images)[idxA][i];
+	}
+	else {
+	 (*out_rgba)[4 * i + 3] = 1.0;
+	}
   }
+
+  (*width) = exr_image.width;
+  (*height) = exr_image.height;
+
+  FreeEXRHeader(&exr_header);
+  FreeEXRImage(&exr_image);
 
   return TINYEXR_SUCCESS;
 }
