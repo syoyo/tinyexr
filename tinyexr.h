@@ -6883,6 +6883,12 @@ void *mz_zip_extract_archive_file_to_heap(const char *pZip_filename,
 #ifdef __clang__
 #pragma clang diagnostic pop
 #endif
+
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
+
+
 }
 #else
 
@@ -7422,6 +7428,22 @@ static void DecompressZip(unsigned char *dst,
 #pragma clang diagnostic ignored "-Wsign-conversion"
 #endif
 
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable : 4204)  // nonstandard extension used : non-constant
+                                 // aggregate initializer (also supported by GNU
+                                 // C and C99, so no big deal)
+#pragma warning(disable : 4244)  // 'initializing': conversion from '__int64' to
+                                 // 'int', possible loss of data
+#pragma warning( \
+    disable : 4267)  // 'argument': conversion from '__int64' to 'int',
+                     // possible loss of data
+#pragma warning(disable : 4996)  // 'strdup': The POSIX name for this item is
+                                 // deprecated. Instead, use the ISO C and C++
+                                 // conformant name: _strdup.
+#endif
+
+
 const int MIN_RUN_LENGTH = 3;
 const int MAX_RUN_LENGTH = 127;
 
@@ -7514,6 +7536,7 @@ static int rleUncompress(int inLength, int maxLength, const signed char in[],
 #ifdef __clang__
 #pragma clang diagnostic pop
 #endif
+
 // End of RLE code from OpenEXR -----------------------------------
 
 static void CompressRle(unsigned char *dst,
@@ -8907,6 +8930,11 @@ static void applyLut(const unsigned short lut[USHORT_RANGE],
 #pragma clang diagnostic pop
 #endif  // __clang__
 
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
+
+
 static bool CompressPiz(unsigned char *outPtr, unsigned int *outSize,
                         const unsigned char *inPtr, size_t inSize,
                         const std::vector<ChannelInfo> &channelInfo,
@@ -10199,9 +10227,14 @@ static int ParseEXRHeader(HeaderInfo *info, bool *empty_header,
       // Custom attribute(up to TINYEXR_MAX_ATTRIBUTES)
       if (info->attributes.size() < TINYEXR_MAX_ATTRIBUTES) {
         EXRAttribute attrib;
+#ifdef _MSC_VER
+        strncpy_s(attrib.name, attr_name.c_str(), 255);
+        strncpy_s(attrib.type, attr_type.c_str(), 255);
+#else
         strncpy(attrib.name, attr_name.c_str(), 255);
-        attrib.name[255] = '\0';
         strncpy(attrib.type, attr_type.c_str(), 255);
+#endif
+        attrib.name[255] = '\0';
         attrib.type[255] = '\0';
         attrib.size = static_cast<int>(data.size());
         attrib.value = static_cast<unsigned char *>(malloc(data.size()));
@@ -10295,8 +10328,12 @@ static void ConvertHeader(EXRHeader *exr_header, const HeaderInfo &info) {
   exr_header->channels = static_cast<EXRChannelInfo *>(malloc(
       sizeof(EXRChannelInfo) * static_cast<size_t>(exr_header->num_channels)));
   for (size_t c = 0; c < static_cast<size_t>(exr_header->num_channels); c++) {
+#ifdef _MSC_VER
+    strncpy_s(exr_header->channels[c].name, info.channels[c].name.c_str(), 255);
+#else
     strncpy(exr_header->channels[c].name, info.channels[c].name.c_str(), 255);
-    // manually add '\0' for safety.
+#endif
+	// manually add '\0' for safety.
     exr_header->channels[c].name[255] = '\0';
 
     exr_header->channels[c].pixel_type = info.channels[c].pixel_type;
@@ -11546,6 +11583,16 @@ int LoadDeepEXR(DeepImage *deep_image, const char *filename, const char **err) {
     return TINYEXR_ERROR_INVALID_ARGUMENT;
   }
 
+#ifdef _MSC_VER
+  FILE *fp = NULL;
+  errno_t errcode = fopen_s(&fp, filename, "rb");
+  if ((!errcode) || (!fp)) {
+    if (err) {
+      (*err) = "Cannot read file.";
+    }
+    return TINYEXR_ERROR_CANT_OPEN_FILE;
+  }
+#else
   FILE *fp = fopen(filename, "rb");
   if (!fp) {
     if (err) {
@@ -11553,6 +11600,7 @@ int LoadDeepEXR(DeepImage *deep_image, const char *filename, const char **err) {
     }
     return TINYEXR_ERROR_CANT_OPEN_FILE;
   }
+#endif
 
   size_t filesize;
   // Compute size
@@ -11861,7 +11909,7 @@ int LoadDeepEXR(DeepImage *deep_image, const char *filename, const char **err) {
         if (channels[c].pixel_type == 0) {  // UINT
           for (size_t x = 0; x < static_cast<size_t>(samples_per_line); x++) {
             unsigned int ui = *reinterpret_cast<unsigned int *>(
-                &sample_data.at(data_offset + x * sizeof(int)));
+                &sample_data.at(size_t(data_offset) + x * sizeof(int)));
             deep_image->image[c][y][x] = static_cast<float>(ui);  // @fixme
           }
           data_offset +=
@@ -11870,7 +11918,7 @@ int LoadDeepEXR(DeepImage *deep_image, const char *filename, const char **err) {
           for (size_t x = 0; x < static_cast<size_t>(samples_per_line); x++) {
             tinyexr::FP16 f16;
             f16.u = *reinterpret_cast<unsigned short *>(
-                &sample_data.at(data_offset + x * sizeof(short)));
+                &sample_data.at(size_t(data_offset) + x * sizeof(short)));
             tinyexr::FP32 f32 = half_to_float(f16);
             deep_image->image[c][y][x] = f32.f;
           }
@@ -11878,7 +11926,7 @@ int LoadDeepEXR(DeepImage *deep_image, const char *filename, const char **err) {
         } else {  // float
           for (size_t x = 0; x < static_cast<size_t>(samples_per_line); x++) {
             float f = *reinterpret_cast<float *>(
-                &sample_data.at(data_offset + x * sizeof(float)));
+                &sample_data.at(size_t(data_offset) + x * sizeof(float)));
             deep_image->image[c][y][x] = f;
           }
           data_offset += sizeof(float) * static_cast<size_t>(samples_per_line);
@@ -12456,23 +12504,40 @@ int SaveEXR(const float *data, int width, int height, int components,
       sizeof(EXRChannelInfo) * static_cast<size_t>(header.num_channels)));
   // Must be (A)BGR order, since most of EXR viewers expect this channel order.
   if (components == 4) {
+#ifdef _MSC_VER
+    strncpy_s(header.channels[0].name, "A", 255);
+    strncpy_s(header.channels[1].name, "B", 255);
+    strncpy_s(header.channels[2].name, "G", 255);
+    strncpy_s(header.channels[3].name, "R", 255);
+#else
     strncpy(header.channels[0].name, "A", 255);
-    header.channels[0].name[strlen("A")] = '\0';
     strncpy(header.channels[1].name, "B", 255);
-    header.channels[1].name[strlen("B")] = '\0';
     strncpy(header.channels[2].name, "G", 255);
-    header.channels[2].name[strlen("G")] = '\0';
     strncpy(header.channels[3].name, "R", 255);
+#endif
+    header.channels[0].name[strlen("A")] = '\0';
+    header.channels[1].name[strlen("B")] = '\0';
+    header.channels[2].name[strlen("G")] = '\0';
     header.channels[3].name[strlen("R")] = '\0';
   } else if (components == 3) {
+#ifdef _MSC_VER
+    strncpy_s(header.channels[0].name, "B", 255);
+    strncpy_s(header.channels[1].name, "G", 255);
+    strncpy_s(header.channels[2].name, "R", 255);
+#else
     strncpy(header.channels[0].name, "B", 255);
-    header.channels[0].name[strlen("B")] = '\0';
     strncpy(header.channels[1].name, "G", 255);
-    header.channels[1].name[strlen("G")] = '\0';
     strncpy(header.channels[2].name, "R", 255);
+#endif
+    header.channels[0].name[strlen("B")] = '\0';
+    header.channels[1].name[strlen("G")] = '\0';
     header.channels[2].name[strlen("R")] = '\0';
   } else {
+#ifdef _MSC_VER
+    strncpy_s(header.channels[0].name, "A", 255);
+#else
     strncpy(header.channels[0].name, "A", 255);
+#endif
     header.channels[0].name[strlen("A")] = '\0';
   }
 
@@ -12506,10 +12571,6 @@ int SaveEXR(const float *data, int width, int height, int components,
 
   return ret;
 }
-
-#ifdef _MSC_VER
-#pragma warning(pop)
-#endif
 
 #endif  // TINYEXR_IMPLEMENTATION_DEIFNED
 #endif  // TINYEXR_IMPLEMENTATION

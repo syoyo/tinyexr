@@ -15,7 +15,7 @@ bool LoadEXRRGBA(float** rgba, int *w, int *h, const char* filename)
   int ret = LoadEXR(&image, &width, &height, filename, &err);
   if (ret != 0) {
     fprintf(stderr, "Load EXR err: %s\n", err);
-    return ret;
+    return false;
   }
 
   (*rgba) = image;
