@@ -2,10 +2,16 @@
 
 Using Emscripten.
 
-## How to
+## How to compile
 
 edit `compile_to_js.sh`, then
 
 ```
 ./compile_to_js.sh
+```
+
+## How to run
+
+```
+$ node test.js
 ```
