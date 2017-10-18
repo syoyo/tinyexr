@@ -4,11 +4,11 @@ var tinyexr = require('./tinyexr.js')
 var data = new Uint8Array(fs.readFileSync("../../asakusa.exr"))
 console.log(data.length)
 
-var instance = new tinyexr.EXRLoader();
+var instance = new tinyexr.EXRLoader(data);
 console.log(instance)
 //console.log(instance.getInt())
 var img = instance.image()
-console.log(img)
+console.log(img.size())
 //instance.delete()
 
 //ParseEXRHeaderFromMemory = tinyexr.cwrap(
