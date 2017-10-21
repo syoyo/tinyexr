@@ -33,7 +33,7 @@ class EXRLoader {
 
     if (TINYEXR_SUCCESS == result_) {
       image_.resize(size_t(width_ * height_ * 4));
-      memcpy(image_.data(), rgba, sizeof(float) * sizeof(width_ * height_ * 4));
+      memcpy(image_.data(), rgba, sizeof(float) * size_t(width_ * height_ * 4));
       free(rgba);
     } else {
       if (err) {
