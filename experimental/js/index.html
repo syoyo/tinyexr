@@ -16,7 +16,7 @@
   let canvas = document.getElementById('imgCanvas');
   let ctx = canvas.getContext('2d');
 
-  fetch("../../asakusa.exr").then(response => {
+  fetch("./asakusa.exr").then(response => {
     return response.arrayBuffer();
   }).then(arrayBuffer => {
 
