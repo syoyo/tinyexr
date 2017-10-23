@@ -86,6 +86,10 @@ Current status of `tinyexr` is:
 * [examples/ldr2exr/](examples/exr2rgbe) LDR to EXR converter
 * [examples/exr2ldr/](examples/exr2ldr) EXR to LDR converter
 
+## Experimental
+
+* [experimental/js/](experimental/js) JavaScript port using Emscripten
+
 ## Usage
 
 NOTE: **API is still subject to change**. See the source code for details.
