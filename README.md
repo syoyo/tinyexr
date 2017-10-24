@@ -412,8 +412,8 @@ Contribution is welcome!
 - [ ] Custom attributes
   - [x] Normal image(EXR 1.x)
   - [ ] Deep image(EXR 2.x)
-- [ ] JavaScript library
-  - [ ] LoadEXRFromMemory
+- [ ] JavaScript library(experimental. using Emscripten)
+  - [x] LoadEXRFromMemory
   - [ ] SaveMultiChannelEXR
   - [ ] Deep image save/load
 - [ ] Write from/to memory buffer.
