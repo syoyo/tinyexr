@@ -11670,6 +11670,7 @@ int LoadDeepEXR(DeepImage *deep_image, const char *filename, const char **err) {
     if (0 == size) {
       return TINYEXR_ERROR_INVALID_DATA;
     } else if (marker[0] == '\0') {
+      marker++;
       size--;
       break;
     }
@@ -11859,11 +11860,13 @@ int LoadDeepEXR(DeepImage *deep_image, const char *filename, const char **err) {
     // decode sample data.
     {
       unsigned long dstLen = static_cast<unsigned long>(unpackedSampleDataSize);
-      tinyexr::DecompressZip(
-          reinterpret_cast<unsigned char *>(&sample_data.at(0)), &dstLen,
-          data_ptr + 28 + packedOffsetTableSize,
-          static_cast<unsigned long>(packedSampleDataSize));
-      assert(dstLen == static_cast<unsigned long>(unpackedSampleDataSize));
+      if (dstLen) {
+        tinyexr::DecompressZip(
+            reinterpret_cast<unsigned char *>(&sample_data.at(0)), &dstLen,
+            data_ptr + 28 + packedOffsetTableSize,
+            static_cast<unsigned long>(packedSampleDataSize));
+        assert(dstLen == static_cast<unsigned long>(unpackedSampleDataSize));
+      }
     }
 
     // decode sample
