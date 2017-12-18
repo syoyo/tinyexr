@@ -10606,8 +10606,15 @@ static int DecodeEXRImage(EXRImage *exr_image, const EXRHeader *exr_header,
   int data_width = exr_header->data_window[2] - exr_header->data_window[0] + 1;
   int data_height = exr_header->data_window[3] - exr_header->data_window[1] + 1;
 
+  if ((data_width < 0) || (data_height < 0)) {
+    if (err) {
+      (*err) = "Invalid data window value.";
+    }
+    return TINYEXR_ERROR_INVALID_DATA;
+  }
+
   // Read offset tables.
-  size_t num_blocks;
+  size_t num_blocks = 0;
 
   if (exr_header->chunk_count > 0) {
     // Use `chunkCount` attribute.
