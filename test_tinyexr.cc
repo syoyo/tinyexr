@@ -102,7 +102,7 @@ int
 main(int argc, char** argv)
 {
   const char* outfilename = "output_test.exr";
-  const char* err;
+  const char* err = NULL;
 
   if (argc < 2) {
     fprintf(stderr, "Needs input.exr.\n");
@@ -119,7 +119,11 @@ main(int argc, char** argv)
   float* image;
   int ret = LoadEXR(&image, &width, &height, argv[1], &err);
   if (ret != 0) {
-    fprintf(stderr, "Load EXR err: %s\n", err);
+    if (err) {
+      fprintf(stderr, "Load EXR err: %s(code %d)\n", err, ret);
+    } else {
+      fprintf(stderr, "Load EXR err: code = %d\n", ret);
+    }
     return ret;
   }
   //SaveAsPFM("output.pfm", width, height, image);

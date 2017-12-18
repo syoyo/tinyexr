@@ -10173,16 +10173,19 @@ static int ParseEXRHeader(HeaderInfo *info, bool *empty_header,
       has_channels = true;
 
     } else if (attr_name.compare("dataWindow") == 0) {
-      memcpy(&info->data_window[0], &data.at(0), sizeof(int));
-      memcpy(&info->data_window[1], &data.at(4), sizeof(int));
-      memcpy(&info->data_window[2], &data.at(8), sizeof(int));
-      memcpy(&info->data_window[3], &data.at(12), sizeof(int));
-      tinyexr::swap4(reinterpret_cast<unsigned int *>(&info->data_window[0]));
-      tinyexr::swap4(reinterpret_cast<unsigned int *>(&info->data_window[1]));
-      tinyexr::swap4(reinterpret_cast<unsigned int *>(&info->data_window[2]));
-      tinyexr::swap4(reinterpret_cast<unsigned int *>(&info->data_window[3]));
-
-      has_data_window = true;
+      if (data.size() < 16) {
+        // Corrupsed file(Issue #50). 
+      } else {
+        memcpy(&info->data_window[0], &data.at(0), sizeof(int));
+        memcpy(&info->data_window[1], &data.at(4), sizeof(int));
+        memcpy(&info->data_window[2], &data.at(8), sizeof(int));
+        memcpy(&info->data_window[3], &data.at(12), sizeof(int));
+        tinyexr::swap4(reinterpret_cast<unsigned int *>(&info->data_window[0]));
+        tinyexr::swap4(reinterpret_cast<unsigned int *>(&info->data_window[1]));
+        tinyexr::swap4(reinterpret_cast<unsigned int *>(&info->data_window[2]));
+        tinyexr::swap4(reinterpret_cast<unsigned int *>(&info->data_window[3]));
+        has_data_window = true;
+      }
     } else if (attr_name.compare("displayWindow") == 0) {
       memcpy(&info->display_window[0], &data.at(0), sizeof(int));
       memcpy(&info->display_window[1], &data.at(4), sizeof(int));
@@ -10268,7 +10271,7 @@ static int ParseEXRHeader(HeaderInfo *info, bool *empty_header,
     }
 
     if (!has_data_window) {
-      ss_err << "\"dataWindow\" attribute not found in the header."
+      ss_err << "\"dataWindow\" attribute not found in the header or invalid."
              << std::endl;
     }
 
