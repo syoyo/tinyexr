@@ -410,8 +410,8 @@ extern int LoadDeepEXR(DeepImage *out_image, const char *filename,
 // Returns negative value and may set error string in `err` when there's an
 // error
 extern int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
-							 const unsigned char *memory, size_t size,
-							 const char **err);
+                             const unsigned char *memory, size_t size,
+                             const char **err);
 
 #ifdef __cplusplus
 }
@@ -444,7 +444,8 @@ extern int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
 
 #if TINYEXR_USE_MINIZ
 #else
-//  Issue #46. Please include your own zlib-compatible API header before including `tinyexr.h`
+//  Issue #46. Please include your own zlib-compatible API header before
+//  including `tinyexr.h`
 //#include "zlib.h"
 #endif
 
@@ -6887,8 +6888,6 @@ void *mz_zip_extract_archive_file_to_heap(const char *pZip_filename,
 #ifdef _MSC_VER
 #pragma warning(pop)
 #endif
-
-
 }
 #else
 
@@ -7079,11 +7078,18 @@ static FP16 float_to_half_full(FP32 f) {
 // #define IMF_B44_COMPRESSION 6
 // #define IMF_B44A_COMPRESSION  7
 
-static const char *ReadString(std::string *s, const char *ptr) {
+static const char *ReadString(std::string *s, const char *ptr, size_t len) {
   // Read untile NULL(\0).
   const char *p = ptr;
   const char *q = ptr;
-  while ((*q) != 0) q++;
+  while ((size_t(q - ptr) < len) && (*q) != 0) {
+    q++;
+  }
+
+  if (size_t(q - ptr) >= len) {
+    (*s) = std::string();
+    return NULL;
+  }
 
   (*s) = std::string(p, q);
 
@@ -7210,7 +7216,7 @@ typedef struct {
   }
 } HeaderInfo;
 
-static void ReadChannelInfo(std::vector<ChannelInfo> &channels,
+static bool ReadChannelInfo(std::vector<ChannelInfo> &channels,
                             const std::vector<unsigned char> &data) {
   const char *p = reinterpret_cast<const char *>(&data.at(0));
 
@@ -7219,7 +7225,13 @@ static void ReadChannelInfo(std::vector<ChannelInfo> &channels,
       break;
     }
     ChannelInfo info;
-    p = ReadString(&info.name, p);
+    p = ReadString(
+        &info.name, p,
+        data.size() - (p - reinterpret_cast<const char *>(data.data())));
+    if ((p == NULL) && (info.name.empty())) {
+      // Buffer overrun. Issue #51.
+      return false;
+    }
 
     memcpy(&info.pixel_type, p, sizeof(int));
     p += 4;
@@ -7236,6 +7248,8 @@ static void ReadChannelInfo(std::vector<ChannelInfo> &channels,
 
     channels.push_back(info);
   }
+
+  return true;
 }
 
 static void WriteChannelInfo(std::vector<unsigned char> &data,
@@ -7442,7 +7456,6 @@ static void DecompressZip(unsigned char *dst,
                                  // deprecated. Instead, use the ISO C and C++
                                  // conformant name: _strdup.
 #endif
-
 
 const int MIN_RUN_LENGTH = 3;
 const int MAX_RUN_LENGTH = 127;
@@ -8934,7 +8947,6 @@ static void applyLut(const unsigned short lut[USHORT_RANGE],
 #pragma warning(pop)
 #endif
 
-
 static bool CompressPiz(unsigned char *outPtr, unsigned int *outSize,
                         const unsigned char *inPtr, size_t inSize,
                         const std::vector<ChannelInfo> &channelInfo,
@@ -10161,7 +10173,12 @@ static int ParseEXRHeader(HeaderInfo *info, bool *empty_header,
       // xSampling: int
       // ySampling: int
 
-      ReadChannelInfo(info->channels, data);
+      if (!ReadChannelInfo(info->channels, data)) {
+        if (err) {
+          (*err) = "Failed to parse channel info.";
+        }
+        return TINYEXR_ERROR_INVALID_DATA;
+      }
 
       if (info->channels.size() < 1) {
         if (err) {
@@ -10174,7 +10191,7 @@ static int ParseEXRHeader(HeaderInfo *info, bool *empty_header,
 
     } else if (attr_name.compare("dataWindow") == 0) {
       if (data.size() < 16) {
-        // Corrupsed file(Issue #50). 
+        // Corrupsed file(Issue #50).
       } else {
         memcpy(&info->data_window[0], &data.at(0), sizeof(int));
         memcpy(&info->data_window[1], &data.at(4), sizeof(int));
@@ -10336,7 +10353,7 @@ static void ConvertHeader(EXRHeader *exr_header, const HeaderInfo &info) {
 #else
     strncpy(exr_header->channels[c].name, info.channels[c].name.c_str(), 255);
 #endif
-	// manually add '\0' for safety.
+    // manually add '\0' for safety.
     exr_header->channels[c].name[255] = '\0';
 
     exr_header->channels[c].pixel_type = info.channels[c].pixel_type;
@@ -10845,8 +10862,8 @@ int ParseEXRHeaderFromMemory(EXRHeader *exr_header, const EXRVersion *version,
 }
 
 int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
-	const unsigned char *memory, size_t size,
-	const char **err) {
+                      const unsigned char *memory, size_t size,
+                      const char **err) {
   if (out_rgba == NULL || memory == NULL) {
     if (err) {
       (*err) = "Invalid argument.\n";
@@ -10869,13 +10886,13 @@ int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
   if (ret != TINYEXR_SUCCESS) {
     return ret;
   }
-  
+
   // Read HALF channel as FLOAT.
   for (int i = 0; i < exr_header.num_channels; i++) {
     if (exr_header.pixel_types[i] == TINYEXR_PIXELTYPE_HALF) {
       exr_header.requested_pixel_types[i] = TINYEXR_PIXELTYPE_FLOAT;
     }
-  }  
+  }
 
   InitEXRImage(&exr_image);
   ret = LoadEXRImageFromMemory(&exr_image, &exr_header, memory, size, err);
@@ -10926,23 +10943,22 @@ int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
   }
 
   (*out_rgba) = reinterpret_cast<float *>(
-	malloc(4 * sizeof(float) * static_cast<size_t>(exr_image.width) *
-	  static_cast<size_t>(exr_image.height)));
+      malloc(4 * sizeof(float) * static_cast<size_t>(exr_image.width) *
+             static_cast<size_t>(exr_image.height)));
 
   for (int i = 0; i < exr_image.width * exr_image.height; i++) {
-	(*out_rgba)[4 * i + 0] =
-	 reinterpret_cast<float **>(exr_image.images)[idxR][i];
-	(*out_rgba)[4 * i + 1] =
-	 reinterpret_cast<float **>(exr_image.images)[idxG][i];
-	(*out_rgba)[4 * i + 2] =
-	 reinterpret_cast<float **>(exr_image.images)[idxB][i];
-	if (idxA != -1) {
-	 (*out_rgba)[4 * i + 3] =
-	  reinterpret_cast<float **>(exr_image.images)[idxA][i];
-	}
-	else {
-	 (*out_rgba)[4 * i + 3] = 1.0;
-	}
+    (*out_rgba)[4 * i + 0] =
+        reinterpret_cast<float **>(exr_image.images)[idxR][i];
+    (*out_rgba)[4 * i + 1] =
+        reinterpret_cast<float **>(exr_image.images)[idxG][i];
+    (*out_rgba)[4 * i + 2] =
+        reinterpret_cast<float **>(exr_image.images)[idxB][i];
+    if (idxA != -1) {
+      (*out_rgba)[4 * i + 3] =
+          reinterpret_cast<float **>(exr_image.images)[idxA][i];
+    } else {
+      (*out_rgba)[4 * i + 3] = 1.0;
+    }
   }
 
   (*width) = exr_image.width;
@@ -11710,7 +11726,12 @@ int LoadDeepEXR(DeepImage *deep_image, const char *filename, const char **err) {
       // xSampling: int
       // ySampling: int
 
-      tinyexr::ReadChannelInfo(channels, data);
+      if (!tinyexr::ReadChannelInfo(channels, data)) {
+        if (err) {
+          (*err) = "Failed to parse channel info.";
+        }
+        return TINYEXR_ERROR_INVALID_DATA;
+      }
 
       num_channels = static_cast<int>(channels.size());
 
