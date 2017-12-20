@@ -652,3 +652,26 @@ TEST_CASE("Regression: Issue50", "[fuzzing]") {
   FreeEXRHeader(&header);
   //FreeEXRImage(&image);
 }
+
+TEST_CASE("Regression: Issue57", "[fuzzing]") {
+  EXRVersion exr_version;
+  std::string filepath = "./regression/poc-df76d1f27adb8927a1446a603028272140905c168a336128465a1162ec7af270.mini";
+  int ret = ParseEXRVersionFromFile(&exr_version, filepath.c_str());
+  REQUIRE(TINYEXR_SUCCESS == ret);
+  REQUIRE(false == exr_version.tiled);
+  REQUIRE(false == exr_version.non_image);
+  REQUIRE(false == exr_version.multipart);
+
+  EXRVersion version;
+  EXRHeader header;
+  EXRImage image;
+  InitEXRHeader(&header);
+  InitEXRImage(&image);
+
+  const char* err;
+  ret = ParseEXRHeaderFromFile(&header, &exr_version, filepath.c_str(), &err);
+  REQUIRE(TINYEXR_SUCCESS == false);
+
+  FreeEXRHeader(&header);
+  //FreeEXRImage(&image);
+}

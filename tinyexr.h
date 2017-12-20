@@ -7126,6 +7126,10 @@ static bool ReadAttribute(std::string *name, std::string *type,
   memcpy(&data_len, marker, sizeof(uint32_t));
   tinyexr::swap4(reinterpret_cast<unsigned int *>(&data_len));
 
+  if (data_len == 0) {
+    return false;
+  }
+
   marker += sizeof(uint32_t);
   size -= sizeof(uint32_t);
 
