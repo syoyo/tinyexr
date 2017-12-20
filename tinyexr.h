@@ -10503,26 +10503,31 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
                                    (exr_header->data_window[3] + 1));
 
       int num_lines = end_line_no - line_no;
-      assert(num_lines > 0);
+      //assert(num_lines > 0);
 
-      // Move to data addr: 8 = 4 + 4;
-      data_ptr += 8;
-
-      // Adjust line_no with data_window.bmin.y
-      line_no -= exr_header->data_window[1];
-
-      if (line_no < 0) {
+      if (num_lines <= 0) {
         invalid_data = true;
       } else {
-        tinyexr::DecodePixelData(
-            exr_image->images, exr_header->requested_pixel_types, data_ptr,
-            static_cast<size_t>(data_len), exr_header->compression_type,
-            exr_header->line_order, data_width, data_height, data_width, y,
-            line_no, num_lines, static_cast<size_t>(pixel_data_size),
-            static_cast<size_t>(exr_header->num_custom_attributes),
-            exr_header->custom_attributes,
-            static_cast<size_t>(exr_header->num_channels), exr_header->channels,
-            channel_offset_list);
+
+        // Move to data addr: 8 = 4 + 4;
+        data_ptr += 8;
+
+        // Adjust line_no with data_window.bmin.y
+        line_no -= exr_header->data_window[1];
+
+        if (line_no < 0) {
+          invalid_data = true;
+        } else {
+          tinyexr::DecodePixelData(
+              exr_image->images, exr_header->requested_pixel_types, data_ptr,
+              static_cast<size_t>(data_len), exr_header->compression_type,
+              exr_header->line_order, data_width, data_height, data_width, y,
+              line_no, num_lines, static_cast<size_t>(pixel_data_size),
+              static_cast<size_t>(exr_header->num_custom_attributes),
+              exr_header->custom_attributes,
+              static_cast<size_t>(exr_header->num_channels), exr_header->channels,
+              channel_offset_list);
+        }
       }
     }  // omp parallel
   }
