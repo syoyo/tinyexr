@@ -603,3 +603,52 @@ TEST_CASE("Compressed is smaller than uncompressed", "[Issue40]") {
   int const ret = SaveEXRImageToFile(&image, &header, "issue40.exr", &err);
   REQUIRE(ret == TINYEXR_SUCCESS);
 }
+
+TEST_CASE("Regression: Issue54", "[fuzzing]") {
+  EXRVersion exr_version;
+  std::string filepath = "./regression/poc-360c3b0555cb979ca108f2d178cf8a80959cfeabaa4ec1d310d062fa653a8c6b_min";
+  int ret = ParseEXRVersionFromFile(&exr_version, filepath.c_str());
+  REQUIRE(TINYEXR_SUCCESS == ret);
+  REQUIRE(false == exr_version.tiled);
+  REQUIRE(false == exr_version.non_image);
+  REQUIRE(false == exr_version.multipart);
+
+  EXRVersion version;
+  EXRHeader header;
+  EXRImage image;
+  InitEXRHeader(&header);
+  InitEXRImage(&image);
+
+  const char* err;
+  ret = ParseEXRHeaderFromFile(&header, &exr_version, filepath.c_str(), &err);
+  REQUIRE(TINYEXR_SUCCESS == ret);
+
+  ret = LoadEXRImageFromFile(&image, &header, filepath.c_str(), &err);
+  REQUIRE(TINYEXR_ERROR_INVALID_DATA == ret);
+
+  FreeEXRHeader(&header);
+  FreeEXRImage(&image);
+}
+
+TEST_CASE("Regression: Issue50", "[fuzzing]") {
+  EXRVersion exr_version;
+  std::string filepath = "./regression/poc-eedff3a9e99eb1c0fd3a3b0989e7c44c0a69f04f10b23e5264f362a4773f4397_min";
+  int ret = ParseEXRVersionFromFile(&exr_version, filepath.c_str());
+  REQUIRE(TINYEXR_SUCCESS == ret);
+  REQUIRE(false == exr_version.tiled);
+  REQUIRE(false == exr_version.non_image);
+  REQUIRE(false == exr_version.multipart);
+
+  EXRVersion version;
+  EXRHeader header;
+  EXRImage image;
+  InitEXRHeader(&header);
+  InitEXRImage(&image);
+
+  const char* err;
+  ret = ParseEXRHeaderFromFile(&header, &exr_version, filepath.c_str(), &err);
+  REQUIRE(TINYEXR_SUCCESS == false);
+
+  FreeEXRHeader(&header);
+  //FreeEXRImage(&image);
+}
