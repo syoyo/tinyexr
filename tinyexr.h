@@ -7379,25 +7379,27 @@ static void CompressZip(unsigned char *dst,
   }
 }
 
-static void DecompressZip(unsigned char *dst,
+static bool DecompressZip(unsigned char *dst,
                           unsigned long *uncompressed_size /* inout */,
                           const unsigned char *src, unsigned long src_size) {
   if ((*uncompressed_size) == src_size) {
     // Data is not compressed(Issue 40).
     memcpy(dst, src, src_size);
-    return;
+    return true;
   }
   std::vector<unsigned char> tmpBuf(*uncompressed_size);
 
 #if TINYEXR_USE_MINIZ
   int ret =
       miniz::mz_uncompress(&tmpBuf.at(0), uncompressed_size, src, src_size);
-  assert(ret == miniz::MZ_OK);
-  (void)ret;
+  if (miniz::MZ_OK != ret) {
+    return false;
+  }
 #else
   int ret = uncompress(&tmpBuf.at(0), uncompressed_size, src, src_size);
-  assert(ret == Z_OK);
-  (void)ret;
+  if (Z_OK != ret) {
+    return false;
+  }
 #endif
 
   //
@@ -7437,6 +7439,8 @@ static void DecompressZip(unsigned char *dst,
         break;
     }
   }
+
+  return true;
 }
 
 // RLE code from OpenEXR --------------------------------------
@@ -9389,7 +9393,7 @@ bool CompressZfp(std::vector<unsigned char> *outBuf, unsigned int *outSize,
 // -----------------------------------------------------------------
 //
 
-static void DecodePixelData(/* out */ unsigned char **out_images,
+static bool DecodePixelData(/* out */ unsigned char **out_images,
                             const int *requested_pixel_types,
                             const unsigned char *data_ptr, size_t data_len,
                             int compression_type, int line_order, int width,
@@ -9525,6 +9529,7 @@ static void DecodePixelData(/* out */ unsigned char **out_images,
     }
 #else
     assert(0 && "PIZ is enabled in this build");
+    return false;
 #endif
 
   } else if (compression_type == TINYEXR_COMPRESSIONTYPE_ZIPS ||
@@ -9536,9 +9541,11 @@ static void DecodePixelData(/* out */ unsigned char **out_images,
 
     unsigned long dstLen = static_cast<unsigned long>(outBuf.size());
     assert(dstLen > 0);
-    tinyexr::DecompressZip(reinterpret_cast<unsigned char *>(&outBuf.at(0)),
+    if (!tinyexr::DecompressZip(reinterpret_cast<unsigned char *>(&outBuf.at(0)),
                            &dstLen, data_ptr,
-                           static_cast<unsigned long>(data_len));
+                           static_cast<unsigned long>(data_len))) {
+      return false;
+    }
 
     // For ZIP_COMPRESSION:
     //   pixel sample data for channel 0 for scanline 0
@@ -9649,6 +9656,7 @@ static void DecodePixelData(/* out */ unsigned char **out_images,
         }
       } else {
         assert(0);
+        return false;
       }
     }
   } else if (compression_type == TINYEXR_COMPRESSIONTYPE_RLE) {
@@ -9772,6 +9780,7 @@ static void DecodePixelData(/* out */ unsigned char **out_images,
         }
       } else {
         assert(0);
+        return false;
       }
     }
   } else if (compression_type == TINYEXR_COMPRESSIONTYPE_ZFP) {
@@ -9780,7 +9789,7 @@ static void DecodePixelData(/* out */ unsigned char **out_images,
     if (!FindZFPCompressionParam(&zfp_compression_param, attributes,
                                  num_attributes)) {
       assert(0);
-      return;
+      return false;
     }
 
     // Allocate original data size.
@@ -9834,6 +9843,7 @@ static void DecodePixelData(/* out */ unsigned char **out_images,
         }
       } else {
         assert(0);
+        return false;
       }
     }
 #else
@@ -9841,6 +9851,7 @@ static void DecodePixelData(/* out */ unsigned char **out_images,
     (void)num_attributes;
     (void)num_channels;
     assert(0);
+    return false;
 #endif
   } else if (compression_type == TINYEXR_COMPRESSIONTYPE_NONE) {
     for (size_t c = 0; c < num_channels; c++) {
@@ -9889,6 +9900,7 @@ static void DecodePixelData(/* out */ unsigned char **out_images,
           }
         } else {
           assert(0);
+          return false;
         }
       } else if (channels[c].pixel_type == TINYEXR_PIXELTYPE_FLOAT) {
         const float *line_ptr = reinterpret_cast<const float *>(
@@ -9929,6 +9941,8 @@ static void DecodePixelData(/* out */ unsigned char **out_images,
       }
     }
   }
+
+  return true;
 }
 
 static void DecodeTiledPixelData(
@@ -10522,7 +10536,7 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
         if (line_no < 0) {
           invalid_data = true;
         } else {
-          tinyexr::DecodePixelData(
+          if (!tinyexr::DecodePixelData(
               exr_image->images, exr_header->requested_pixel_types, data_ptr,
               static_cast<size_t>(data_len), exr_header->compression_type,
               exr_header->line_order, data_width, data_height, data_width, y,
@@ -10530,7 +10544,9 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
               static_cast<size_t>(exr_header->num_custom_attributes),
               exr_header->custom_attributes,
               static_cast<size_t>(exr_header->num_channels), exr_header->channels,
-              channel_offset_list);
+              channel_offset_list)) {
+            invalid_data = true;
+          }
         }
       }
     }  // omp parallel
@@ -11884,9 +11900,11 @@ int LoadDeepEXR(DeepImage *deep_image, const char *filename, const char **err) {
     {
       unsigned long dstLen =
           static_cast<unsigned long>(pixelOffsetTable.size() * sizeof(int));
-      tinyexr::DecompressZip(
+      if (!tinyexr::DecompressZip(
           reinterpret_cast<unsigned char *>(&pixelOffsetTable.at(0)), &dstLen,
-          data_ptr + 28, static_cast<unsigned long>(packedOffsetTableSize));
+          data_ptr + 28, static_cast<unsigned long>(packedOffsetTableSize))) {
+        return false;
+      }
 
       assert(dstLen == pixelOffsetTable.size() * sizeof(int));
       for (size_t i = 0; i < static_cast<size_t>(data_width); i++) {
@@ -11901,10 +11919,12 @@ int LoadDeepEXR(DeepImage *deep_image, const char *filename, const char **err) {
     {
       unsigned long dstLen = static_cast<unsigned long>(unpackedSampleDataSize);
       if (dstLen) {
-        tinyexr::DecompressZip(
+        if (!tinyexr::DecompressZip(
             reinterpret_cast<unsigned char *>(&sample_data.at(0)), &dstLen,
             data_ptr + 28 + packedOffsetTableSize,
-            static_cast<unsigned long>(packedSampleDataSize));
+            static_cast<unsigned long>(packedSampleDataSize))) {
+          return false;
+        }
         assert(dstLen == static_cast<unsigned long>(unpackedSampleDataSize));
       }
     }
