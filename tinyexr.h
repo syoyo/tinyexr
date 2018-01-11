@@ -489,6 +489,9 @@ namespace miniz {
 #if __has_warning("-Wcomma")
 #pragma clang diagnostic ignored "-Wcomma"
 #endif
+#if __has_warning("-Wmacro-redefined")
+#pragma clang diagnostic ignored "-Wmacro-redefined"
+#endif
 #endif
 
 /* miniz.c v1.15 - public domain deflate/inflate, zlib-subset, ZIP
@@ -10582,7 +10585,7 @@ static bool ReconstructLineOffsets(
   for (size_t i = 0; i < n; i++) {
     size_t offset = static_cast<size_t>(marker - head);
     // Offset should not exceed whole EXR file/data size.
-    if (offset >= size) {
+    if ((offset + sizeof(tinyexr::tinyexr_uint64)) >= size) {
       return false;
     }
 
