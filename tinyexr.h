@@ -10412,7 +10412,7 @@ static void ConvertHeader(EXRHeader *exr_header, const HeaderInfo &info) {
 
 static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
                        const std::vector<tinyexr::tinyexr_uint64> &offsets,
-                       const unsigned char *head) {
+                       const unsigned char *head, const size_t size) {
   int num_channels = exr_header->num_channels;
 
   int num_scanline_blocks = 1;
@@ -10453,6 +10453,11 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
       // 16 byte: tile coordinates
       // 4 byte : data size
       // ~      : data(uncompressed or compressed)
+      if (offsets[tile_idx] + sizeof(int) * 5 > size) {
+        return TINYEXR_ERROR_INVALID_DATA;
+      }
+
+      size_t data_size = size - (offsets[tile_idx] + sizeof(int) * 5);
       const unsigned char *data_ptr =
           reinterpret_cast<const unsigned char *>(head + offsets[tile_idx]);
 
@@ -10471,7 +10476,10 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
       memcpy(&data_len, data_ptr + 16,
              sizeof(int));  // 16 = sizeof(tile_coordinates)
       tinyexr::swap4(reinterpret_cast<unsigned int *>(&data_len));
-      assert(data_len >= 4);
+
+      if (data_len < 4 || size_t(data_len) > data_size) {
+        return TINYEXR_ERROR_INVALID_DATA;
+      }
 
       // Move to data addr: 20 = 16 + 4;
       data_ptr += 20;
@@ -10508,17 +10516,28 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
 #endif
     for (int y = 0; y < static_cast<int>(num_blocks); y++) {
       size_t y_idx = static_cast<size_t>(y);
-      const unsigned char *data_ptr =
-          reinterpret_cast<const unsigned char *>(head + offsets[y_idx]);
+
+      if (offsets[y_idx] + sizeof(int) * 2 > size) {
+        return TINYEXR_ERROR_INVALID_DATA;
+      }
+
       // 4 byte: scan line
       // 4 byte: data size
       // ~     : pixel data(uncompressed or compressed)
+      size_t data_size = size - (offsets[y_idx] + sizeof(int) * 2);
+      const unsigned char *data_ptr =
+          reinterpret_cast<const unsigned char *>(head + offsets[y_idx]);
+
       int line_no;
       memcpy(&line_no, data_ptr, sizeof(int));
       int data_len;
       memcpy(&data_len, data_ptr + 4, sizeof(int));
       tinyexr::swap4(reinterpret_cast<unsigned int *>(&line_no));
       tinyexr::swap4(reinterpret_cast<unsigned int *>(&data_len));
+
+      if (size_t(data_len) > data_size) {
+        return TINYEXR_ERROR_INVALID_DATA;
+      }
 
       int end_line_no = (std::min)(line_no + num_scanline_blocks,
                                    (exr_header->data_window[3] + 1));
@@ -10712,7 +10731,7 @@ static int DecodeEXRImage(EXRImage *exr_image, const EXRHeader *exr_header,
     }
   }
 
-  return DecodeChunk(exr_image, exr_header, offsets, head);
+  return DecodeChunk(exr_image, exr_header, offsets, head, size);
 }
 
 }  // namespace tinyexr
@@ -12453,7 +12472,7 @@ int LoadEXRMultipartImageFromMemory(EXRImage *exr_images,
     }
 
     int ret = tinyexr::DecodeChunk(&exr_images[i], exr_headers[i], offset_table,
-                                   memory);
+                                   memory, size);
     if (ret != TINYEXR_SUCCESS) {
       return ret;
     }
