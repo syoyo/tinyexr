@@ -492,6 +492,9 @@ namespace miniz {
 #if __has_warning("-Wmacro-redefined")
 #pragma clang diagnostic ignored "-Wmacro-redefined"
 #endif
+#if __has_warning("-Wcast-qual")
+#pragma clang diagnostic ignored "-Wcast-qual"
+#endif
 #endif
 
 /* miniz.c v1.15 - public domain deflate/inflate, zlib-subset, ZIP
@@ -7232,9 +7235,14 @@ static bool ReadChannelInfo(std::vector<ChannelInfo> &channels,
       break;
     }
     ChannelInfo info;
+
+    ssize_t data_len = ssize_t(data.size()) - (p - reinterpret_cast<const char *>(data.data()));
+    if (data_len < 0) {
+      return false;
+    }
+
     p = ReadString(
-        &info.name, p,
-        data.size() - (p - reinterpret_cast<const char *>(data.data())));
+        &info.name, p, size_t(data_len));
     if ((p == NULL) && (info.name.empty())) {
       // Buffer overrun. Issue #51.
       return false;
@@ -7697,6 +7705,11 @@ static void DecompressRle(unsigned char *dst,
 #pragma clang diagnostic ignored "-Wsign-conversion"
 #pragma clang diagnostic ignored "-Wc++11-extensions"
 #pragma clang diagnostic ignored "-Wconversion"
+
+#if __has_warning("-Wcast-qual")
+#pragma clang diagnostic ignored "-Wcast-qual"
+#endif
+
 #endif
 
 //
