@@ -7236,7 +7236,7 @@ static bool ReadChannelInfo(std::vector<ChannelInfo> &channels,
     }
     ChannelInfo info;
 
-    ssize_t data_len = ssize_t(data.size()) - (p - reinterpret_cast<const char *>(data.data()));
+    tinyexr_int64 data_len = static_cast<tinyexr_int64>(data.size()) - (p - reinterpret_cast<const char *>(data.data()));
     if (data_len < 0) {
       return false;
     }
