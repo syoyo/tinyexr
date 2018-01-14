@@ -10224,9 +10224,7 @@ static int ParseEXRHeader(HeaderInfo *info, bool *empty_header,
       has_channels = true;
 
     } else if (attr_name.compare("dataWindow") == 0) {
-      if (data.size() < 16) {
-        // Corrupsed file(Issue #50).
-      } else {
+      if (data.size() >= 16) {
         memcpy(&info->data_window[0], &data.at(0), sizeof(int));
         memcpy(&info->data_window[1], &data.at(4), sizeof(int));
         memcpy(&info->data_window[2], &data.at(8), sizeof(int));
@@ -10238,45 +10236,57 @@ static int ParseEXRHeader(HeaderInfo *info, bool *empty_header,
         has_data_window = true;
       }
     } else if (attr_name.compare("displayWindow") == 0) {
-      memcpy(&info->display_window[0], &data.at(0), sizeof(int));
-      memcpy(&info->display_window[1], &data.at(4), sizeof(int));
-      memcpy(&info->display_window[2], &data.at(8), sizeof(int));
-      memcpy(&info->display_window[3], &data.at(12), sizeof(int));
-      tinyexr::swap4(
-          reinterpret_cast<unsigned int *>(&info->display_window[0]));
-      tinyexr::swap4(
-          reinterpret_cast<unsigned int *>(&info->display_window[1]));
-      tinyexr::swap4(
-          reinterpret_cast<unsigned int *>(&info->display_window[2]));
-      tinyexr::swap4(
-          reinterpret_cast<unsigned int *>(&info->display_window[3]));
+      if (data.size() >= 16) {
+        memcpy(&info->display_window[0], &data.at(0), sizeof(int));
+        memcpy(&info->display_window[1], &data.at(4), sizeof(int));
+        memcpy(&info->display_window[2], &data.at(8), sizeof(int));
+        memcpy(&info->display_window[3], &data.at(12), sizeof(int));
+        tinyexr::swap4(
+            reinterpret_cast<unsigned int *>(&info->display_window[0]));
+        tinyexr::swap4(
+            reinterpret_cast<unsigned int *>(&info->display_window[1]));
+        tinyexr::swap4(
+            reinterpret_cast<unsigned int *>(&info->display_window[2]));
+        tinyexr::swap4(
+            reinterpret_cast<unsigned int *>(&info->display_window[3]));
 
-      has_display_window = true;
+        has_display_window = true;
+      }
     } else if (attr_name.compare("lineOrder") == 0) {
-      info->line_order = static_cast<int>(data[0]);
-      has_line_order = true;
+      if (data.size() >= 1) {
+        info->line_order = static_cast<int>(data[0]);
+        has_line_order = true;
+      }
     } else if (attr_name.compare("pixelAspectRatio") == 0) {
-      memcpy(&info->pixel_aspect_ratio, &data.at(0), sizeof(float));
-      tinyexr::swap4(
-          reinterpret_cast<unsigned int *>(&info->pixel_aspect_ratio));
-      has_pixel_aspect_ratio = true;
+      if (data.size() >= sizeof(float)) {
+        memcpy(&info->pixel_aspect_ratio, &data.at(0), sizeof(float));
+        tinyexr::swap4(
+            reinterpret_cast<unsigned int *>(&info->pixel_aspect_ratio));
+        has_pixel_aspect_ratio = true;
+      }
     } else if (attr_name.compare("screenWindowCenter") == 0) {
-      memcpy(&info->screen_window_center[0], &data.at(0), sizeof(float));
-      memcpy(&info->screen_window_center[1], &data.at(4), sizeof(float));
-      tinyexr::swap4(
-          reinterpret_cast<unsigned int *>(&info->screen_window_center[0]));
-      tinyexr::swap4(
-          reinterpret_cast<unsigned int *>(&info->screen_window_center[1]));
-      has_screen_window_center = true;
+      if (data.size() >= 8) {
+        memcpy(&info->screen_window_center[0], &data.at(0), sizeof(float));
+        memcpy(&info->screen_window_center[1], &data.at(4), sizeof(float));
+        tinyexr::swap4(
+            reinterpret_cast<unsigned int *>(&info->screen_window_center[0]));
+        tinyexr::swap4(
+            reinterpret_cast<unsigned int *>(&info->screen_window_center[1]));
+        has_screen_window_center = true;
+      }
     } else if (attr_name.compare("screenWindowWidth") == 0) {
-      memcpy(&info->screen_window_width, &data.at(0), sizeof(float));
-      tinyexr::swap4(
-          reinterpret_cast<unsigned int *>(&info->screen_window_width));
+      if (data.size() >= sizeof(float)) {
+        memcpy(&info->screen_window_width, &data.at(0), sizeof(float));
+        tinyexr::swap4(
+            reinterpret_cast<unsigned int *>(&info->screen_window_width));
 
-      has_screen_window_width = true;
+        has_screen_window_width = true;
+      }
     } else if (attr_name.compare("chunkCount") == 0) {
-      memcpy(&info->chunk_count, &data.at(0), sizeof(int));
-      tinyexr::swap4(reinterpret_cast<unsigned int *>(&info->chunk_count));
+      if (data.size() >= sizeof(int)) {
+        memcpy(&info->chunk_count, &data.at(0), sizeof(int));
+        tinyexr::swap4(reinterpret_cast<unsigned int *>(&info->chunk_count));
+      }
     } else {
       // Custom attribute(up to TINYEXR_MAX_ATTRIBUTES)
       if (info->attributes.size() < TINYEXR_MAX_ATTRIBUTES) {
