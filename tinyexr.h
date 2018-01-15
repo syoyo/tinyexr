@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2014 - 2017, Syoyo Fujita
+Copyright (c) 2014 - 2018, Syoyo Fujita
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -486,6 +486,8 @@ namespace miniz {
 #pragma clang diagnostic ignored "-Wc++11-extensions"
 #pragma clang diagnostic ignored "-Wconversion"
 #pragma clang diagnostic ignored "-Wunused-function"
+#pragma clang diagnostic ignored "-Wc++98-compat-pedantic"
+
 #if __has_warning("-Wcomma")
 #pragma clang diagnostic ignored "-Wcomma"
 #endif
@@ -494,6 +496,9 @@ namespace miniz {
 #endif
 #if __has_warning("-Wcast-qual")
 #pragma clang diagnostic ignored "-Wcast-qual"
+#endif
+#if __has_warning("-Wzero-as-null-pointer-constant")
+#pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
 #endif
 #endif
 
@@ -7084,6 +7089,15 @@ static FP16 float_to_half_full(FP32 f) {
 // #define IMF_B44_COMPRESSION 6
 // #define IMF_B44A_COMPRESSION  7
 
+#ifdef __clang__
+#pragma clang diagnostic push
+
+#if __has_warning("-Wzero-as-null-pointer-constant")
+#pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
+
+#endif
+
 static const char *ReadString(std::string *s, const char *ptr, size_t len) {
   // Read untile NULL(\0).
   const char *p = ptr;
@@ -7101,6 +7115,7 @@ static const char *ReadString(std::string *s, const char *ptr, size_t len) {
 
   return q + 1;  // skip '\0'
 }
+
 
 static bool ReadAttribute(std::string *name, std::string *type,
                           std::vector<unsigned char> *data, size_t *marker_size,
@@ -7705,6 +7720,7 @@ static void DecompressRle(unsigned char *dst,
 #pragma clang diagnostic ignored "-Wsign-conversion"
 #pragma clang diagnostic ignored "-Wc++11-extensions"
 #pragma clang diagnostic ignored "-Wconversion"
+#pragma clang diagnostic ignored "-Wc++98-compat-pedantic"
 
 #if __has_warning("-Wcast-qual")
 #pragma clang diagnostic ignored "-Wcast-qual"
@@ -12679,6 +12695,12 @@ int SaveEXR(const float *data, int width, int height, int components,
 
   return ret;
 }
+
+#ifdef __clang__
+// zero-as-null-ppinter-constant
+#pragma clang diagnostic pop 
+#endif
+
 
 #endif  // TINYEXR_IMPLEMENTATION_DEIFNED
 #endif  // TINYEXR_IMPLEMENTATION

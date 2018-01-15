@@ -2,8 +2,16 @@
 #include <cstdio>
 #include <vector>
 
+// Uncomment if you want to use system provided zlib.
+// #define TINYEXR_USE_MINIZ (0)
+// #include <zlib.h>
+
 #define TINYEXR_IMPLEMENTATION
 #include "tinyexr.h"
+
+#ifdef __clang__
+#pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
 
 #define SIMPLE_API_EXAMPLE
 //#define TEST_ZFP_COMPRESSION
