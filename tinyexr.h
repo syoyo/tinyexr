@@ -10689,8 +10689,23 @@ static int DecodeEXRImage(EXRImage *exr_image, const EXRHeader *exr_header,
     num_scanline_blocks = 16;
   }
 
-  int data_width = exr_header->data_window[2] - exr_header->data_window[0] + 1;
-  int data_height = exr_header->data_window[3] - exr_header->data_window[1] + 1;
+  int data_width = exr_header->data_window[2] - exr_header->data_window[0];
+  if (data_width >= std::numeric_limits<int>::max()) {
+    // Issue 63
+    if (err) {
+      (*err) = "Invalid data window value.";
+    }
+    return TINYEXR_ERROR_INVALID_DATA;
+  }
+  data_width++;
+
+  int data_height = exr_header->data_window[3] - exr_header->data_window[1];
+  if (data_height >= std::numeric_limits<int>::max()) {
+    if (err) {
+      (*err) = "Invalid data height value.";
+    }
+    return TINYEXR_ERROR_INVALID_DATA;
+  }
 
   if ((data_width < 0) || (data_height < 0)) {
     if (err) {
