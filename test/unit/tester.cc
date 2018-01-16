@@ -624,7 +624,7 @@ TEST_CASE("Regression: Issue54", "[fuzzing]") {
   REQUIRE(TINYEXR_SUCCESS == ret);
 
   ret = LoadEXRImageFromFile(&image, &header, filepath.c_str(), &err);
-  REQUIRE(TINYEXR_ERROR_INVALID_DATA == ret);
+  REQUIRE(TINYEXR_SUCCESS == ret);
 
   FreeEXRHeader(&header);
   FreeEXRImage(&image);
