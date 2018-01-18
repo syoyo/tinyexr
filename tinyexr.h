@@ -115,6 +115,7 @@ extern "C" {
 #define TINYEXR_ERROR_CANT_OPEN_FILE (-6)
 #define TINYEXR_ERROR_UNSUPPORTED_FORMAT (-7)
 #define TINYEXR_ERROR_INVALID_HEADER (-8)
+#define TINYEXR_ERROR_UNSUPPORTED_FEATURE (-9)
 
 // @note { OpenEXR file format: http://www.openexr.com/openexrfilelayout.pdf }
 
@@ -10508,8 +10509,12 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
       tinyexr::swap4(reinterpret_cast<unsigned int *>(&tile_coordinates[3]));
 
       // @todo{ LoD }
-      assert(tile_coordinates[2] == 0);
-      assert(tile_coordinates[3] == 0);
+      if (tile_coordinates[2] != 0) {
+        return TINYEXR_ERROR_UNSUPPORTED_FEATURE;
+      }
+      if (tile_coordinates[3] != 0) {
+        return TINYEXR_ERROR_UNSUPPORTED_FEATURE;
+      }
 
       int data_len;
       memcpy(&data_len, data_ptr + 16,
