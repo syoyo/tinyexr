@@ -488,6 +488,7 @@ namespace miniz {
 #pragma clang diagnostic ignored "-Wconversion"
 #pragma clang diagnostic ignored "-Wunused-function"
 #pragma clang diagnostic ignored "-Wc++98-compat-pedantic"
+#pragma clang diagnostic ignored "-Wundef"
 
 #if __has_warning("-Wcomma")
 #pragma clang diagnostic ignored "-Wcomma"
