@@ -433,6 +433,7 @@ extern int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
 
 #include <string>
 #include <vector>
+#include <limits>
 
 #if __cplusplus > 199711L
 // C++11
