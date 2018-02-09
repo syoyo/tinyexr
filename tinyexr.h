@@ -10484,7 +10484,7 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
     size_t num_tiles = offsets.size();  // = # of blocks
 
     exr_image->tiles = static_cast<EXRTile *>(
-        malloc(sizeof(EXRTile) * static_cast<size_t>(num_tiles)));
+        calloc(sizeof(EXRTile), static_cast<size_t>(num_tiles)));
 
     for (size_t tile_idx = 0; tile_idx < num_tiles; tile_idx++) {
       // Allocate memory for each tile.
