@@ -10925,8 +10925,7 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
 				const int jj = exr_image.tiles[it].offset_y*exr_header.tile_size_y + j;
 				const int idx = ii + jj*exr_image.width;
 				const int srcIdx = i + j*exr_header.tile_size_x;
-				auto src = exr_image.tiles[it].images;
-				float* p = reinterpret_cast<float **>(src)[idxR];
+				unsigned char **src = exr_image.tiles[it].images;
 				(*out_rgba)[4 * idx + 0] =
 					reinterpret_cast<float **>(src)[idxR][srcIdx];
 				(*out_rgba)[4 * idx + 1] =
