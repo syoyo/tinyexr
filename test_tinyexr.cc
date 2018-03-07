@@ -10,7 +10,9 @@
 #include "tinyexr.h"
 
 #ifdef __clang__
+#if __has_warning("-Wzero-as-null-pointer-constant")
 #pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
+#endif
 #endif
 
 #define SIMPLE_API_EXAMPLE
