@@ -49,7 +49,7 @@ int main(int argc, char** argv)
     printf("    Pixel value [0.0, 1.0] in EXR is mapped to [0, 255] for LDR image.\n");
     printf("    You can adjust pixel value by `scale`(default = 1.0).\n");
     printf("    Resize image using `resize_factor`(default = 1.0). 2 = create half size image, 4 = 1/4 image, and so on\n");
-    printf("    gammmavalue will be used for gamma correction when saving png image(default = 1.0).\n");
+    printf("    gammmavalue will be used for gamma correction when saving png image(default = 2.2).\n");
     printf("    Ignore alpha value of input using -i or --ignore-alpha flag, and alpha of output is set to 255.\n");
     exit(-1);
   }
@@ -64,7 +64,7 @@ int main(int argc, char** argv)
     resize_factor = atof(argv[4]);
   }
 
-  float gamma = 1.0f;
+  float gamma = 2.2f;
   if (argc > 5) {
     gamma = atof(argv[5]);
   }
