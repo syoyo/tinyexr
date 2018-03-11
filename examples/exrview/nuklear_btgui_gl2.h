@@ -17,6 +17,13 @@ enum nk_btgui_init_state{
     NK_BTGUI3_DEFAULT = 0,
     NK_BTGUI3_INSTALL_CALLBACKS
 };
+
+struct nk_btgui_vertex {
+    float position[2];
+    float uv[2];
+    nk_byte col[4];
+};
+
 NK_API struct nk_context*   nk_btgui_init(b3gDefaultOpenGLWindow *win, enum nk_btgui_init_state);
 NK_API void                 nk_btgui_font_stash_begin(struct nk_font_atlas **atlas);
 NK_API void                 nk_btgui_font_stash_end(void);
@@ -128,10 +135,10 @@ nk_btgui_render(enum nk_anti_aliasing AA, int max_vertex_buffer, int max_element
     glEnableClientState(GL_TEXTURE_COORD_ARRAY);
     glEnableClientState(GL_COLOR_ARRAY);
     {
-        GLsizei vs = sizeof(struct nk_draw_vertex);
-        size_t vp = offsetof(struct nk_draw_vertex, position);
-        size_t vt = offsetof(struct nk_draw_vertex, uv);
-        size_t vc = offsetof(struct nk_draw_vertex, col);
+        GLsizei vs = sizeof(struct nk_btgui_vertex);
+        size_t vp = offsetof(struct nk_btgui_vertex, position);
+        size_t vt = offsetof(struct nk_btgui_vertex, uv);
+        size_t vc = offsetof(struct nk_btgui_vertex, col);
 
         /* convert from command queue into draw list and draw to screen */
         const struct nk_draw_command *cmd;
@@ -140,14 +147,24 @@ nk_btgui_render(enum nk_anti_aliasing AA, int max_vertex_buffer, int max_element
 
         /* fill converting configuration */
         struct nk_convert_config config;
-        memset(&config, 0, sizeof(config));
-        config.global_alpha = 1.0f;
-        config.shape_AA = AA;
-        config.line_AA = AA;
+        static const struct nk_draw_vertex_layout_element vertex_layout[] = {
+            {NK_VERTEX_POSITION, NK_FORMAT_FLOAT, NK_OFFSETOF(struct nk_btgui_vertex, position)},
+            {NK_VERTEX_TEXCOORD, NK_FORMAT_FLOAT, NK_OFFSETOF(struct nk_btgui_vertex, uv)},
+            {NK_VERTEX_COLOR, NK_FORMAT_R8G8B8A8, NK_OFFSETOF(struct nk_btgui_vertex, col)},
+            {NK_VERTEX_LAYOUT_END}
+        };
+        NK_MEMSET(&config, 0, sizeof(config));
+        config.vertex_layout = vertex_layout;
+        config.vertex_size = sizeof(struct nk_btgui_vertex);
+        config.vertex_alignment = NK_ALIGNOF(struct nk_btgui_vertex);
+        config.null = dev->null;
         config.circle_segment_count = 22;
         config.curve_segment_count = 22;
         config.arc_segment_count = 22;
-        config.null = dev->null;
+        config.global_alpha = 1.0f;
+        config.shape_AA = AA;
+        config.line_AA = AA;
+
 
         /* convert shapes into vertexes */
         nk_buffer_init_default(&vbuf);
