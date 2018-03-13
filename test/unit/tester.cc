@@ -604,31 +604,31 @@ TEST_CASE("Compressed is smaller than uncompressed", "[Issue40]") {
   REQUIRE(ret == TINYEXR_SUCCESS);
 }
 
-TEST_CASE("Regression: Issue54", "[fuzzing]") {
-  EXRVersion exr_version;
-  std::string filepath = "./regression/poc-360c3b0555cb979ca108f2d178cf8a80959cfeabaa4ec1d310d062fa653a8c6b_min";
-  int ret = ParseEXRVersionFromFile(&exr_version, filepath.c_str());
-  REQUIRE(TINYEXR_SUCCESS == ret);
-  REQUIRE(false == exr_version.tiled);
-  REQUIRE(false == exr_version.non_image);
-  REQUIRE(false == exr_version.multipart);
-
-  EXRVersion version;
-  EXRHeader header;
-  EXRImage image;
-  InitEXRHeader(&header);
-  InitEXRImage(&image);
-
-  const char* err;
-  ret = ParseEXRHeaderFromFile(&header, &exr_version, filepath.c_str(), &err);
-  REQUIRE(TINYEXR_SUCCESS == ret);
-
-  ret = LoadEXRImageFromFile(&image, &header, filepath.c_str(), &err);
-  REQUIRE(TINYEXR_SUCCESS == ret);
-
-  FreeEXRHeader(&header);
-  FreeEXRImage(&image);
-}
+//TEST_CASE("Regression: Issue54", "[fuzzing]") {
+//  EXRVersion exr_version;
+//  std::string filepath = "./regression/poc-360c3b0555cb979ca108f2d178cf8a80959cfeabaa4ec1d310d062fa653a8c6b_min";
+//  int ret = ParseEXRVersionFromFile(&exr_version, filepath.c_str());
+//  REQUIRE(TINYEXR_SUCCESS == ret);
+//  REQUIRE(false == exr_version.tiled);
+//  REQUIRE(false == exr_version.non_image);
+//  REQUIRE(false == exr_version.multipart);
+//
+//  EXRVersion version;
+//  EXRHeader header;
+//  EXRImage image;
+//  InitEXRHeader(&header);
+//  InitEXRImage(&image);
+//
+//  const char* err;
+//  ret = ParseEXRHeaderFromFile(&header, &exr_version, filepath.c_str(), &err);
+//  REQUIRE(TINYEXR_SUCCESS == ret);
+//
+//  ret = LoadEXRImageFromFile(&image, &header, filepath.c_str(), &err);
+//  REQUIRE(TINYEXR_SUCCESS == ret);
+//
+//  FreeEXRHeader(&header);
+//  FreeEXRImage(&image);
+//}
 
 TEST_CASE("Regression: Issue50", "[fuzzing]") {
   EXRVersion exr_version;
@@ -743,4 +743,28 @@ TEST_CASE("Regression: Issue60", "[fuzzing]") {
 
   FreeEXRHeader(&header);
   //FreeEXRImage(&image);
+}
+
+TEST_CASE("Regression: Issue71", "[issue71]") {
+  std::string filepath = "./regression/2by2.exr";
+
+  const char* err;
+  int width, height;
+  float* image;
+  int ret = LoadEXR(&image, &width, &height, filepath.c_str(), &err);
+  REQUIRE(TINYEXR_SUCCESS == ret);
+  REQUIRE(2 == width);
+  REQUIRE(2 == height);
+
+  REQUIRE(0.0f == Approx(image[8]));
+  REQUIRE(0.447021f == Approx(image[9]));
+  REQUIRE(1.0f == Approx(image[10]));
+  REQUIRE(0.250977f == Approx(image[11]));
+  REQUIRE(0.0f == Approx(image[12]));
+  REQUIRE(0.0f == Approx(image[13]));
+  REQUIRE(0.0f == Approx(image[14]));
+  REQUIRE(1.0f == Approx(image[15]));
+
+
+  free(image);
 }

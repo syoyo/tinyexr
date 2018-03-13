@@ -10708,6 +10708,7 @@ static int DecodeEXRImage(EXRImage *exr_image, const EXRHeader *exr_header,
     }
     return TINYEXR_ERROR_INVALID_DATA;
   }
+  data_height++;
 
   if ((data_width < 0) || (data_height < 0)) {
     if (err) {
