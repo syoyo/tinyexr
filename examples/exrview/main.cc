@@ -446,8 +446,8 @@ int main(int argc, char** argv) {
 
     /* GUI */
     {
-      struct nk_panel layout;
-      if (nk_begin(ctx, &layout, "UI", nk_rect(50, 50, 350, 250),
+      //struct nk_panel layout;
+      if (nk_begin(ctx, "UI", nk_rect(50, 50, 350, 250),
                    NK_WINDOW_BORDER | NK_WINDOW_MOVABLE | NK_WINDOW_SCALABLE |
                        NK_WINDOW_MINIMIZABLE | NK_WINDOW_TITLE)) {
         nk_layout_row_static(ctx, 30, 300, 1);
