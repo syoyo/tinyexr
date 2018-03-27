@@ -12208,6 +12208,7 @@ int FreeEXRImage(EXRImage *exr_image) {
         free(exr_image->tiles[tid].images);
       }
     }
+    free(exr_image->tiles);
   }
 
   return TINYEXR_SUCCESS;
