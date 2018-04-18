@@ -255,10 +255,6 @@ int main(int argc, char **argv) {
     exit(-1);
   }
 
-  printf("aa %f, %f, %f, %f, %f, %f\n", gDeepImage.image[6][0][0],
-         gDeepImage.image[5][0][0], gDeepImage.image[4][0][0],
-         gDeepImage.image[3][0][0], gDeepImage.image[2][0][0],
-         gDeepImage.image[1][0][0]);
   glutInit(&argc, argv);
   glutInitWindowSize(512, 512);
   glutInitDisplayMode(GLUT_DOUBLE | GLUT_DEPTH | GLUT_RGBA);
