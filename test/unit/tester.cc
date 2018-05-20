@@ -467,6 +467,7 @@ TEST_CASE("Beachbal singleparts", "[Load]") {
     REQUIRE(false == exr_version.multipart);
 
     EXRVersion version;
+    memset(&version, 0, sizeof(EXRVersion));
     EXRHeader header;
     EXRImage image;
     InitEXRHeader(&header);
@@ -493,12 +494,14 @@ TEST_CASE("ParseEXRVersionFromMemory invalid input", "[Parse]") {
 
   {
     EXRVersion version;
+    memset(&version, 0, sizeof(EXRVersion));
     ret = ParseEXRVersionFromMemory(&version, NULL, 0);
     REQUIRE(ret == TINYEXR_ERROR_INVALID_ARGUMENT);
   }
 
   {
     EXRVersion version;
+    memset(&version, 0, sizeof(EXRVersion));
     std::vector<unsigned char> buf(128);
     ret = ParseEXRVersionFromMemory(&version, buf.data(), 0);
     REQUIRE(ret == TINYEXR_ERROR_INVALID_DATA);
@@ -506,6 +509,7 @@ TEST_CASE("ParseEXRVersionFromMemory invalid input", "[Parse]") {
 
   {
     EXRVersion version;
+    memset(&version, 0, sizeof(EXRVersion));
     std::vector<unsigned char> buf(4);
     ret = ParseEXRVersionFromMemory(
         &version, buf.data(), 1);  // size is less than version header size
@@ -514,6 +518,7 @@ TEST_CASE("ParseEXRVersionFromMemory invalid input", "[Parse]") {
 
   {
     EXRVersion version;
+    memset(&version, 0, sizeof(EXRVersion));
     std::vector<unsigned char> buf(8, 0);  // invalid magic number
     ret = ParseEXRVersionFromMemory(&version, buf.data(), 8);
     REQUIRE(ret == TINYEXR_ERROR_INVALID_MAGIC_NUMBER);
@@ -529,6 +534,7 @@ TEST_CASE("ParseEXRHeaderFromMemory invalid input", "[Parse]") {
   {
     EXRHeader header;
     EXRVersion version;
+    memset(&version, 0, sizeof(EXRVersion));
 
     int ret = ParseEXRHeaderFromMemory(&header, &version, NULL, 0, NULL);
     REQUIRE(ret == TINYEXR_ERROR_INVALID_ARGUMENT);
@@ -537,6 +543,7 @@ TEST_CASE("ParseEXRHeaderFromMemory invalid input", "[Parse]") {
   {
     EXRHeader header;
     EXRVersion version;
+    memset(&version, 0, sizeof(EXRVersion));
     std::vector<unsigned char> buf(128);
 
     int ret = ParseEXRHeaderFromMemory(&header, &version, buf.data(), 0, NULL);
@@ -546,6 +553,7 @@ TEST_CASE("ParseEXRHeaderFromMemory invalid input", "[Parse]") {
   {
     EXRHeader header;
     EXRVersion version;
+    memset(&version, 0, sizeof(EXRVersion));
     std::vector<unsigned char> buf(128, 0);
 
     int ret =
