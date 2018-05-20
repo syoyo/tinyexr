@@ -206,7 +206,7 @@ typedef struct _EXRHeader {
   // Custom attributes(exludes required attributes(e.g. `channels`,
   // `compression`, etc)
   int num_custom_attributes;
-  EXRAttribute custom_attributes[TINYEXR_MAX_ATTRIBUTES];
+  EXRAttribute *custom_attributes; // array of EXRAttribute. size = `num_custom_attributes`.
 
   EXRChannelInfo *channels;  // [num_channels]
 
@@ -10433,15 +10433,27 @@ static void ConvertHeader(EXRHeader *exr_header, const HeaderInfo &info) {
     exr_header->requested_pixel_types[c] = info.channels[c].pixel_type;
   }
 
-  assert(info.attributes.size() < TINYEXR_MAX_ATTRIBUTES);
   exr_header->num_custom_attributes = static_cast<int>(info.attributes.size());
 
-  for (size_t i = 0; i < info.attributes.size(); i++) {
-    memcpy(exr_header->custom_attributes[i].name, info.attributes[i].name, 256);
-    memcpy(exr_header->custom_attributes[i].type, info.attributes[i].type, 256);
-    exr_header->custom_attributes[i].size = info.attributes[i].size;
-    // Just copy poiner
-    exr_header->custom_attributes[i].value = info.attributes[i].value;
+  if (exr_header->num_custom_attributes > 0) {
+    // TODO(syoyo): Report warning when # of attributes exceeds `TINYEXR_MAX_ATTRIBUTES`
+    if (exr_header->num_custom_attributes > TINYEXR_MAX_ATTRIBUTES) {
+      exr_header->num_custom_attributes = TINYEXR_MAX_ATTRIBUTES;
+    }
+
+    exr_header->custom_attributes = static_cast<EXRAttribute *>(
+        malloc(sizeof(EXRAttribute) * size_t(exr_header->num_custom_attributes)));
+
+    for (size_t i = 0; i < info.attributes.size(); i++) {
+      memcpy(exr_header->custom_attributes[i].name, info.attributes[i].name, 256);
+      memcpy(exr_header->custom_attributes[i].type, info.attributes[i].type, 256);
+      exr_header->custom_attributes[i].size = info.attributes[i].size;
+      // Just copy poiner
+      exr_header->custom_attributes[i].value = info.attributes[i].value;
+    }
+
+  } else {
+    exr_header->custom_attributes = NULL;
   }
 
   exr_header->header_len = info.header_len;
@@ -12177,6 +12189,10 @@ int FreeEXRHeader(EXRHeader *exr_header) {
     if (exr_header->custom_attributes[i].value) {
       free(exr_header->custom_attributes[i].value);
     }
+  }
+
+  if (exr_header->custom_attributes) {
+    free(exr_header->custom_attributes);
   }
 
   return TINYEXR_SUCCESS;
