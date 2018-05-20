@@ -306,6 +306,7 @@ main(int argc, char** argv)
 #if 0 // example to write custom attribute
     int version_minor = 3;
     exr_header.num_custom_attributes = 1;
+    exr_header.custom_attributes = reinterpret_cast<EXRAttribute *>(malloc(sizeof(EXRAttribute) * exr_header.custom_attributes));
     exr_header.custom_attributes[0].name = strdup("tinyexr_version_minor");
     exr_header.custom_attributes[0].type = strdup("int");
     exr_header.custom_attributes[0].size = sizeof(int);
