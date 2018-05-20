@@ -10,7 +10,7 @@
 int main(int argc, char** argv)
 {
   if (argc < 5) {
-    printf("Usage: exrresize input.exr output.hdr dst_width dst_height.\n");
+    printf("Usage: exrresize input.exr output.exr dst_width dst_height.\n");
     printf("  Only supports RGB or RGBA EXR input.\n");
     exit(-1);
   }
