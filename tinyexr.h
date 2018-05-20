@@ -9044,9 +9044,9 @@ static bool CompressPiz(unsigned char *outPtr, unsigned int *outSize,
   bitmapFromData(&tmpBuffer.at(0), static_cast<int>(tmpBuffer.size()), bitmap.data(),
                  minNonZero, maxNonZero);
 
-  unsigned short lut[USHORT_RANGE];
-  unsigned short maxValue = forwardLutFromBitmap(bitmap.data(), lut);
-  applyLut(lut, &tmpBuffer.at(0), static_cast<int>(tmpBuffer.size()));
+  std::vector<unsigned short> lut(USHORT_RANGE);
+  unsigned short maxValue = forwardLutFromBitmap(bitmap.data(), lut.data());
+  applyLut(lut.data(), &tmpBuffer.at(0), static_cast<int>(tmpBuffer.size()));
 
   //
   // Store range compression info in _outBuffer
@@ -9143,9 +9143,9 @@ static bool DecompressPiz(unsigned char *outPtr, const unsigned char *inPtr,
     ptr += maxNonZero - minNonZero + 1;
   }
 
-  unsigned short lut[USHORT_RANGE];
-  memset(lut, 0, sizeof(unsigned short) * USHORT_RANGE);
-  unsigned short maxValue = reverseLutFromBitmap(bitmap.data(), lut);
+  std::vector<unsigned short> lut(USHORT_RANGE);
+  memset(lut.data(), 0, sizeof(unsigned short) * USHORT_RANGE);
+  unsigned short maxValue = reverseLutFromBitmap(bitmap.data(), lut.data());
 
   //
   // Huffman decoding
@@ -9199,7 +9199,7 @@ static bool DecompressPiz(unsigned char *outPtr, const unsigned char *inPtr,
   // Expand the pixel data to their original range
   //
 
-  applyLut(lut, &tmpBuffer.at(0), static_cast<int>(tmpBufSize));
+  applyLut(lut.data(), &tmpBuffer.at(0), static_cast<int>(tmpBufSize));
 
   for (int y = 0; y < num_lines; y++) {
     for (size_t i = 0; i < channelData.size(); ++i) {
@@ -10508,7 +10508,7 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
         return TINYEXR_ERROR_INVALID_DATA;
       }
 
-      size_t data_size = size - (offsets[tile_idx] + sizeof(int) * 5);
+      size_t data_size = size_t(size - (offsets[tile_idx] + sizeof(int) * 5));
       const unsigned char *data_ptr =
           reinterpret_cast<const unsigned char *>(head + offsets[tile_idx]);
 
@@ -10578,7 +10578,7 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
         // 4 byte: scan line
         // 4 byte: data size
         // ~     : pixel data(uncompressed or compressed)
-        size_t data_size = size - (offsets[y_idx] + sizeof(int) * 2);
+        size_t data_size = size_t(size - (offsets[y_idx] + sizeof(int) * 2));
         const unsigned char *data_ptr =
             reinterpret_cast<const unsigned char *>(head + offsets[y_idx]);
 
