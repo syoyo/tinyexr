@@ -124,7 +124,8 @@ extern "C" {
 #define TINYEXR_PIXELTYPE_HALF (1)
 #define TINYEXR_PIXELTYPE_FLOAT (2)
 
-#define TINYEXR_MAX_ATTRIBUTES (128)
+#define TINYEXR_MAX_HEADER_ATTRIBUTES (1024)
+#define TINYEXR_MAX_CUSTOM_ATTRIBUTES (128)
 
 #define TINYEXR_COMPRESSIONTYPE_NONE (0)
 #define TINYEXR_COMPRESSIONTYPE_RLE (1)
@@ -8201,8 +8202,8 @@ static void hufBuildEncTable(
   //    for all array entries.
   //
 
-  int hlink[HUF_ENCSIZE];
-  long long *fHeap[HUF_ENCSIZE];
+  std::vector<int> hlink(HUF_ENCSIZE);
+  std::vector<long long *> fHeap(HUF_ENCSIZE);
 
   *im = 0;
 
@@ -8261,8 +8262,8 @@ static void hufBuildEncTable(
 
   std::make_heap(&fHeap[0], &fHeap[nf], FHeapCompare());
 
-  long long scode[HUF_ENCSIZE];
-  memset(scode, 0, sizeof(long long) * HUF_ENCSIZE);
+  std::vector<long long> scode(HUF_ENCSIZE);
+  memset(scode.data(), 0, sizeof(long long) * HUF_ENCSIZE);
 
   while (nf > 1) {
     //
@@ -8334,8 +8335,8 @@ static void hufBuildEncTable(
   // code table from scode into frq.
   //
 
-  hufCanonicalCodeTable(scode);
-  memcpy(frq, scode, sizeof(long long) * HUF_ENCSIZE);
+  hufCanonicalCodeTable(scode.data());
+  memcpy(frq, scode.data(), sizeof(long long) * HUF_ENCSIZE);
 }
 
 //
@@ -8799,7 +8800,7 @@ static bool hufDecode(const long long *hcode,  // i : encoding table
   return true;
 }
 
-static void countFrequencies(long long freq[HUF_ENCSIZE],
+static void countFrequencies(std::vector<long long> &freq,
                              const unsigned short data[/*n*/], int n) {
   for (int i = 0; i < HUF_ENCSIZE; ++i) freq[i] = 0;
 
@@ -8830,21 +8831,21 @@ static int hufCompress(const unsigned short raw[], int nRaw,
                        char compressed[]) {
   if (nRaw == 0) return 0;
 
-  long long freq[HUF_ENCSIZE];
+  std::vector<long long> freq(HUF_ENCSIZE);
 
   countFrequencies(freq, raw, nRaw);
 
   int im = 0;
   int iM = 0;
-  hufBuildEncTable(freq, &im, &iM);
+  hufBuildEncTable(freq.data(), &im, &iM);
 
   char *tableStart = compressed + 20;
   char *tableEnd = tableStart;
-  hufPackEncTable(freq, im, iM, &tableEnd);
+  hufPackEncTable(freq.data(), im, iM, &tableEnd);
   int tableLength = tableEnd - tableStart;
 
   char *dataStart = tableEnd;
-  int nBits = hufEncode(freq, raw, nRaw, iM, dataStart);
+  int nBits = hufEncode(freq.data(), raw, nRaw, iM, dataStart);
   int data_length = (nBits + 7) / 8;
 
   writeUInt(compressed, im);
@@ -8989,7 +8990,7 @@ static bool CompressPiz(unsigned char *outPtr, unsigned int *outSize,
                         const unsigned char *inPtr, size_t inSize,
                         const std::vector<ChannelInfo> &channelInfo,
                         int data_width, int num_lines) {
-  unsigned char bitmap[BITMAP_SIZE];
+  std::vector<unsigned char> bitmap(BITMAP_SIZE);
   unsigned short minNonZero;
   unsigned short maxNonZero;
 
@@ -9040,11 +9041,11 @@ static bool CompressPiz(unsigned char *outPtr, unsigned int *outSize,
     }
   }
 
-  bitmapFromData(&tmpBuffer.at(0), static_cast<int>(tmpBuffer.size()), bitmap,
+  bitmapFromData(&tmpBuffer.at(0), static_cast<int>(tmpBuffer.size()), bitmap.data(),
                  minNonZero, maxNonZero);
 
   unsigned short lut[USHORT_RANGE];
-  unsigned short maxValue = forwardLutFromBitmap(bitmap, lut);
+  unsigned short maxValue = forwardLutFromBitmap(bitmap.data(), lut);
   applyLut(lut, &tmpBuffer.at(0), static_cast<int>(tmpBuffer.size()));
 
   //
@@ -9115,7 +9116,7 @@ static bool DecompressPiz(unsigned char *outPtr, const unsigned char *inPtr,
     return true;
   }
 
-  unsigned char bitmap[BITMAP_SIZE];
+  std::vector<unsigned char> bitmap(BITMAP_SIZE);
   unsigned short minNonZero;
   unsigned short maxNonZero;
 
@@ -9125,7 +9126,7 @@ static bool DecompressPiz(unsigned char *outPtr, const unsigned char *inPtr,
   return false;
 #endif
 
-  memset(bitmap, 0, BITMAP_SIZE);
+  memset(bitmap.data(), 0, BITMAP_SIZE);
 
   const unsigned char *ptr = inPtr;
   minNonZero = *(reinterpret_cast<const unsigned short *>(ptr));
@@ -9144,7 +9145,7 @@ static bool DecompressPiz(unsigned char *outPtr, const unsigned char *inPtr,
 
   unsigned short lut[USHORT_RANGE];
   memset(lut, 0, sizeof(unsigned short) * USHORT_RANGE);
-  unsigned short maxValue = reverseLutFromBitmap(bitmap, lut);
+  unsigned short maxValue = reverseLutFromBitmap(bitmap.data(), lut);
 
   //
   // Huffman decoding
@@ -10087,6 +10088,7 @@ static int ParseEXRHeader(HeaderInfo *info, bool *empty_header,
   }
 
   if (version->multipart) {
+
     if (size > 0 && marker[0] == '\0') {
       // End of header list.
       if (empty_header) {
@@ -10139,7 +10141,7 @@ static int ParseEXRHeader(HeaderInfo *info, bool *empty_header,
 
   // Read attributes
   size_t orig_size = size;
-  for (;;) {
+  for (size_t nattr = 0; nattr < TINYEXR_MAX_HEADER_ATTRIBUTES; nattr++) {
     if (0 == size) {
       return TINYEXR_ERROR_INVALID_DATA;
     } else if (marker[0] == '\0') {
@@ -10302,8 +10304,8 @@ static int ParseEXRHeader(HeaderInfo *info, bool *empty_header,
         tinyexr::swap4(reinterpret_cast<unsigned int *>(&info->chunk_count));
       }
     } else {
-      // Custom attribute(up to TINYEXR_MAX_ATTRIBUTES)
-      if (info->attributes.size() < TINYEXR_MAX_ATTRIBUTES) {
+      // Custom attribute(up to TINYEXR_MAX_CUSTOM_ATTRIBUTES)
+      if (info->attributes.size() < TINYEXR_MAX_CUSTOM_ATTRIBUTES) {
         EXRAttribute attrib;
 #ifdef _MSC_VER
         strncpy_s(attrib.name, attr_name.c_str(), 255);
@@ -10436,9 +10438,9 @@ static void ConvertHeader(EXRHeader *exr_header, const HeaderInfo &info) {
   exr_header->num_custom_attributes = static_cast<int>(info.attributes.size());
 
   if (exr_header->num_custom_attributes > 0) {
-    // TODO(syoyo): Report warning when # of attributes exceeds `TINYEXR_MAX_ATTRIBUTES`
-    if (exr_header->num_custom_attributes > TINYEXR_MAX_ATTRIBUTES) {
-      exr_header->num_custom_attributes = TINYEXR_MAX_ATTRIBUTES;
+    // TODO(syoyo): Report warning when # of attributes exceeds `TINYEXR_MAX_CUSTOM_ATTRIBUTES`
+    if (exr_header->num_custom_attributes > TINYEXR_MAX_CUSTOM_ATTRIBUTES) {
+      exr_header->num_custom_attributes = TINYEXR_MAX_CUSTOM_ATTRIBUTES;
     }
 
     exr_header->custom_attributes = static_cast<EXRAttribute *>(
