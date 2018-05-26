@@ -6947,6 +6947,16 @@ static void swap2(unsigned short *val) {
 #endif
 }
 
+static void cpy4(int *dst_val, const int *src_val) {
+  unsigned char *dst = reinterpret_cast<unsigned char *>(dst_val);
+  const unsigned char *src = reinterpret_cast<const unsigned char *>(src_val);
+
+  dst[0] = src[0];
+  dst[1] = src[1];
+  dst[2] = src[2];
+  dst[3] = src[3];
+}
+
 static void cpy4(unsigned int *dst_val, const unsigned int *src_val) {
   unsigned char *dst = reinterpret_cast<unsigned char *>(dst_val);
   const unsigned char *src = reinterpret_cast<const unsigned char *>(src_val);
@@ -9173,8 +9183,10 @@ static bool DecompressPiz(unsigned char *outPtr, const unsigned char *inPtr,
   memset(bitmap.data(), 0, BITMAP_SIZE);
 
   const unsigned char *ptr = inPtr;
-  minNonZero = *(reinterpret_cast<const unsigned short *>(ptr));
-  maxNonZero = *(reinterpret_cast<const unsigned short *>(ptr + 2));
+  //minNonZero = *(reinterpret_cast<const unsigned short *>(ptr));
+  tinyexr::cpy2(&minNonZero, reinterpret_cast<const unsigned short *>(ptr));
+  //maxNonZero = *(reinterpret_cast<const unsigned short *>(ptr + 2));
+  tinyexr::cpy2(&maxNonZero, reinterpret_cast<const unsigned short *>(ptr + 2));
   ptr += 4;
 
   if (maxNonZero >= BITMAP_SIZE) {
@@ -9197,7 +9209,8 @@ static bool DecompressPiz(unsigned char *outPtr, const unsigned char *inPtr,
 
   int length;
 
-  length = *(reinterpret_cast<const int *>(ptr));
+  //length = *(reinterpret_cast<const int *>(ptr));
+  tinyexr::cpy4(&length, reinterpret_cast<const int *>(ptr));
   ptr += sizeof(int);
 
   std::vector<unsigned short> tmpBuffer(tmpBufSize);
