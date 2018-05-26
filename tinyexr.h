@@ -6926,6 +6926,14 @@ void *mz_zip_extract_archive_file_to_heap(const char *pZip_filename,
 
 static const int kEXRVersionSize = 8;
 
+static void cpy2(unsigned short *dst_val, const unsigned short *src_val) {
+  unsigned char *dst = reinterpret_cast<unsigned char *>(dst_val);
+  const unsigned char *src = reinterpret_cast<const unsigned char *>(src_val);
+
+  dst[0] = src[0];
+  dst[1] = src[1];
+}
+
 static void swap2(unsigned short *val) {
 #ifdef MINIZ_LITTLE_ENDIAN
   (void)val;
@@ -6937,6 +6945,26 @@ static void swap2(unsigned short *val) {
   dst[0] = src[1];
   dst[1] = src[0];
 #endif
+}
+
+static void cpy4(unsigned int *dst_val, const unsigned int *src_val) {
+  unsigned char *dst = reinterpret_cast<unsigned char *>(dst_val);
+  const unsigned char *src = reinterpret_cast<const unsigned char *>(src_val);
+
+  dst[0] = src[0];
+  dst[1] = src[1];
+  dst[2] = src[2];
+  dst[3] = src[3];
+}
+
+static void cpy4(float *dst_val, const float *src_val) {
+  unsigned char *dst = reinterpret_cast<unsigned char *>(dst_val);
+  const unsigned char *src = reinterpret_cast<const unsigned char *>(src_val);
+
+  dst[0] = src[0];
+  dst[1] = src[1];
+  dst[2] = src[2];
+  dst[3] = src[3];
 }
 
 static void swap4(unsigned int *val) {
@@ -6953,6 +6981,22 @@ static void swap4(unsigned int *val) {
   dst[3] = src[0];
 #endif
 }
+
+#if 0
+static void cpy8(tinyexr::tinyexr_uint64 *dst_val, const tinyexr::tinyexr_uint64 *src_val) {
+  unsigned char *dst = reinterpret_cast<unsigned char *>(dst_val);
+  const unsigned char *src = reinterpret_cast<const unsigned char *>(src_val);
+
+  dst[0] = src[0];
+  dst[1] = src[1];
+  dst[2] = src[2];
+  dst[3] = src[3];
+  dst[4] = src[4];
+  dst[5] = src[5];
+  dst[6] = src[6];
+  dst[7] = src[7];
+}
+#endif
 
 static void swap8(tinyexr::tinyexr_uint64 *val) {
 #ifdef MINIZ_LITTLE_ENDIAN
@@ -9467,7 +9511,8 @@ static bool DecodePixelData(/* out */ unsigned char **out_images,
           for (size_t u = 0; u < static_cast<size_t>(width); u++) {
             FP16 hf;
 
-            hf.u = line_ptr[u];
+            //hf.u = line_ptr[u];
+            tinyexr::cpy2(&(hf.u), line_ptr + u);
 
             tinyexr::swap2(reinterpret_cast<unsigned short *>(&hf.u));
 
@@ -9510,7 +9555,9 @@ static bool DecodePixelData(/* out */ unsigned char **out_images,
               &outBuf.at(v * pixel_data_size * static_cast<size_t>(width) +
                          channel_offset_list[c] * static_cast<size_t>(width)));
           for (size_t u = 0; u < static_cast<size_t>(width); u++) {
-            unsigned int val = line_ptr[u];
+            unsigned int val;
+            // val = line_ptr[u];
+            tinyexr::cpy4(&val, line_ptr + u);
 
             tinyexr::swap4(&val);
 
@@ -9536,7 +9583,9 @@ static bool DecodePixelData(/* out */ unsigned char **out_images,
               v * pixel_data_size * static_cast<size_t>(x_stride) +
               channel_offset_list[c] * static_cast<size_t>(x_stride)));
           for (size_t u = 0; u < static_cast<size_t>(width); u++) {
-            float val = line_ptr[u];
+            float val;
+            //val = line_ptr[u];
+            tinyexr::cpy4(&val, line_ptr + u); 
 
             tinyexr::swap4(reinterpret_cast<unsigned int *>(&val));
 
@@ -9598,7 +9647,8 @@ static bool DecodePixelData(/* out */ unsigned char **out_images,
           for (size_t u = 0; u < static_cast<size_t>(width); u++) {
             tinyexr::FP16 hf;
 
-            hf.u = line_ptr[u];
+            //hf.u = line_ptr[u];
+            tinyexr::cpy2(&(hf.u), line_ptr + u); 
 
             tinyexr::swap2(reinterpret_cast<unsigned short *>(&hf.u));
 
@@ -9641,7 +9691,9 @@ static bool DecodePixelData(/* out */ unsigned char **out_images,
               &outBuf.at(v * pixel_data_size * static_cast<size_t>(width) +
                          channel_offset_list[c] * static_cast<size_t>(width)));
           for (size_t u = 0; u < static_cast<size_t>(width); u++) {
-            unsigned int val = line_ptr[u];
+            unsigned int val;
+            // val = line_ptr[u];
+            tinyexr::cpy4(&val, line_ptr + u); 
 
             tinyexr::swap4(&val);
 
@@ -9667,7 +9719,9 @@ static bool DecodePixelData(/* out */ unsigned char **out_images,
               &outBuf.at(v * pixel_data_size * static_cast<size_t>(width) +
                          channel_offset_list[c] * static_cast<size_t>(width)));
           for (size_t u = 0; u < static_cast<size_t>(width); u++) {
-            float val = line_ptr[u];
+            float val;
+            //val = line_ptr[u];
+            tinyexr::cpy4(&val, line_ptr + u);
 
             tinyexr::swap4(reinterpret_cast<unsigned int *>(&val));
 
@@ -9722,7 +9776,8 @@ static bool DecodePixelData(/* out */ unsigned char **out_images,
           for (size_t u = 0; u < static_cast<size_t>(width); u++) {
             tinyexr::FP16 hf;
 
-            hf.u = line_ptr[u];
+            //hf.u = line_ptr[u];
+            tinyexr::cpy2(&(hf.u), line_ptr + u);
 
             tinyexr::swap2(reinterpret_cast<unsigned short *>(&hf.u));
 
@@ -9765,7 +9820,9 @@ static bool DecodePixelData(/* out */ unsigned char **out_images,
               &outBuf.at(v * pixel_data_size * static_cast<size_t>(width) +
                          channel_offset_list[c] * static_cast<size_t>(width)));
           for (size_t u = 0; u < static_cast<size_t>(width); u++) {
-            unsigned int val = line_ptr[u];
+            unsigned int val;
+            // val = line_ptr[u];
+            tinyexr::cpy4(&val, line_ptr + u);
 
             tinyexr::swap4(&val);
 
@@ -9791,7 +9848,9 @@ static bool DecodePixelData(/* out */ unsigned char **out_images,
               &outBuf.at(v * pixel_data_size * static_cast<size_t>(width) +
                          channel_offset_list[c] * static_cast<size_t>(width)));
           for (size_t u = 0; u < static_cast<size_t>(width); u++) {
-            float val = line_ptr[u];
+            float val;
+            // val = line_ptr[u];
+            tinyexr::cpy4(&val, line_ptr + u);
 
             tinyexr::swap4(reinterpret_cast<unsigned int *>(&val));
 
@@ -9854,7 +9913,8 @@ static bool DecodePixelData(/* out */ unsigned char **out_images,
               &outBuf.at(v * pixel_data_size * static_cast<size_t>(width) +
                          channel_offset_list[c] * static_cast<size_t>(width)));
           for (size_t u = 0; u < static_cast<size_t>(width); u++) {
-            float val = line_ptr[u];
+            float val;
+            tinyexr::cpy4(&val, line_ptr + u);
 
             tinyexr::swap4(reinterpret_cast<unsigned int *>(&val));
 
@@ -9904,7 +9964,8 @@ static bool DecodePixelData(/* out */ unsigned char **out_images,
           for (int u = 0; u < width; u++) {
             tinyexr::FP16 hf;
 
-            hf.u = line_ptr[u];
+            //hf.u = line_ptr[u];
+            tinyexr::cpy2(&(hf.u), line_ptr + u);
 
             tinyexr::swap2(reinterpret_cast<unsigned short *>(&hf.u));
 
@@ -9921,7 +9982,9 @@ static bool DecodePixelData(/* out */ unsigned char **out_images,
           for (int u = 0; u < width; u++) {
             tinyexr::FP16 hf;
 
-            hf.u = line_ptr[u];
+            // address may not be aliged. use byte-wise copy for safety.#76
+            //hf.u = line_ptr[u];
+            tinyexr::cpy2(&(hf.u), line_ptr + u);
 
             tinyexr::swap2(reinterpret_cast<unsigned short *>(&hf.u));
 
@@ -9945,7 +10008,8 @@ static bool DecodePixelData(/* out */ unsigned char **out_images,
         }
 
         for (int u = 0; u < width; u++) {
-          float val = line_ptr[u];
+          float val;
+          tinyexr::cpy4(&val, line_ptr + u);
 
           tinyexr::swap4(reinterpret_cast<unsigned int *>(&val));
 
@@ -9963,7 +10027,8 @@ static bool DecodePixelData(/* out */ unsigned char **out_images,
         }
 
         for (int u = 0; u < width; u++) {
-          unsigned int val = line_ptr[u];
+          unsigned int val;
+          tinyexr::cpy4(&val, line_ptr + u);
 
           tinyexr::swap4(reinterpret_cast<unsigned int *>(&val));
 
@@ -11458,7 +11523,8 @@ size_t SaveEXRImageToMemory(const EXRImage *exr_image,
                   static_cast<size_t>(pixel_data_size * y * exr_image->width) +
                   channel_offset_list[c] *
                       static_cast<size_t>(exr_image->width)));
-              line_ptr[x] = f32.f;
+              //line_ptr[x] = f32.f;
+              tinyexr::cpy4(line_ptr + x, &(f32.f));
             }
           }
         } else if (exr_header->requested_pixel_types[c] ==
@@ -11476,7 +11542,8 @@ size_t SaveEXRImageToMemory(const EXRImage *exr_image,
                                               exr_image->width) +
                           channel_offset_list[c] *
                               static_cast<size_t>(exr_image->width)));
-              line_ptr[x] = val;
+              //line_ptr[x] = val;
+              tinyexr::cpy2(line_ptr + x, &val);
             }
           }
         } else {
@@ -11502,7 +11569,8 @@ size_t SaveEXRImageToMemory(const EXRImage *exr_image,
                                               exr_image->width) +
                           channel_offset_list[c] *
                               static_cast<size_t>(exr_image->width)));
-              line_ptr[x] = h16.u;
+              //line_ptr[x] = h16.u;
+              tinyexr::cpy2(line_ptr + x, &(h16.u));
             }
           }
         } else if (exr_header->requested_pixel_types[c] ==
@@ -11519,7 +11587,8 @@ size_t SaveEXRImageToMemory(const EXRImage *exr_image,
                   static_cast<size_t>(pixel_data_size * y * exr_image->width) +
                   channel_offset_list[c] *
                       static_cast<size_t>(exr_image->width)));
-              line_ptr[x] = val;
+              //line_ptr[x] = val;
+              tinyexr::cpy4(line_ptr + x, &val);
             }
           }
         } else {
@@ -11538,7 +11607,8 @@ size_t SaveEXRImageToMemory(const EXRImage *exr_image,
                 static_cast<size_t>(pixel_data_size * y * exr_image->width) +
                 channel_offset_list[c] *
                     static_cast<size_t>(exr_image->width)));
-            line_ptr[x] = val;
+            //line_ptr[x] = val;
+            tinyexr::cpy4(line_ptr + x, &val);
           }
         }
       }
