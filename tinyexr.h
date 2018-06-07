@@ -7317,6 +7317,11 @@ static bool ReadChannelInfo(std::vector<ChannelInfo> &channels,
       return false;
     }
 
+    const unsigned char *data_end = reinterpret_cast<const unsigned char *>(p) + 16;
+    if (data_end >= (data.data() + data.size())) {
+      return false;
+    }
+
     memcpy(&info.pixel_type, p, sizeof(int));
     p += 4;
     info.p_linear = static_cast<unsigned char>(p[0]);  // uchar
@@ -10920,6 +10925,7 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
   {
     int ret = ParseEXRHeaderFromFile(&exr_header, &exr_version, filename, err);
     if (ret != TINYEXR_SUCCESS) {
+      FreeEXRHeader(&exr_header);
       return ret;
     }
   }
