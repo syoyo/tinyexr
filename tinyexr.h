@@ -11525,6 +11525,11 @@ size_t SaveEXRImageToMemory(const EXRImage *exr_image,
       if (exr_header->pixel_types[c] == TINYEXR_PIXELTYPE_HALF) {
         if (exr_header->requested_pixel_types[c] == TINYEXR_PIXELTYPE_FLOAT) {
           for (int y = 0; y < h; y++) {
+              // Assume increasing Y
+            float *line_ptr = reinterpret_cast<float *>(&buf.at(
+                static_cast<size_t>(pixel_data_size * y * exr_image->width) +
+                channel_offset_list[c] *
+                    static_cast<size_t>(exr_image->width)));
             for (int x = 0; x < exr_image->width; x++) {
               tinyexr::FP16 h16;
               h16.u = reinterpret_cast<unsigned short **>(
@@ -11534,11 +11539,6 @@ size_t SaveEXRImageToMemory(const EXRImage *exr_image,
 
               tinyexr::swap4(reinterpret_cast<unsigned int *>(&f32.f));
 
-              // Assume increasing Y
-              float *line_ptr = reinterpret_cast<float *>(&buf.at(
-                  static_cast<size_t>(pixel_data_size * y * exr_image->width) +
-                  channel_offset_list[c] *
-                      static_cast<size_t>(exr_image->width)));
               // line_ptr[x] = f32.f;
               tinyexr::cpy4(line_ptr + x, &(f32.f));
             }
@@ -11546,18 +11546,18 @@ size_t SaveEXRImageToMemory(const EXRImage *exr_image,
         } else if (exr_header->requested_pixel_types[c] ==
                    TINYEXR_PIXELTYPE_HALF) {
           for (int y = 0; y < h; y++) {
+              // Assume increasing Y
+            unsigned short *line_ptr = reinterpret_cast<unsigned short *>(
+                &buf.at(static_cast<size_t>(pixel_data_size * y *
+                                            exr_image->width) +
+                        channel_offset_list[c] *
+                            static_cast<size_t>(exr_image->width)));
             for (int x = 0; x < exr_image->width; x++) {
               unsigned short val = reinterpret_cast<unsigned short **>(
                   exr_image->images)[c][(y + start_y) * exr_image->width + x];
 
               tinyexr::swap2(&val);
 
-              // Assume increasing Y
-              unsigned short *line_ptr = reinterpret_cast<unsigned short *>(
-                  &buf.at(static_cast<size_t>(pixel_data_size * y *
-                                              exr_image->width) +
-                          channel_offset_list[c] *
-                              static_cast<size_t>(exr_image->width)));
               // line_ptr[x] = val;
               tinyexr::cpy2(line_ptr + x, &val);
             }
@@ -11569,6 +11569,12 @@ size_t SaveEXRImageToMemory(const EXRImage *exr_image,
       } else if (exr_header->pixel_types[c] == TINYEXR_PIXELTYPE_FLOAT) {
         if (exr_header->requested_pixel_types[c] == TINYEXR_PIXELTYPE_HALF) {
           for (int y = 0; y < h; y++) {
+            // Assume increasing Y
+            unsigned short *line_ptr = reinterpret_cast<unsigned short *>(
+                &buf.at(static_cast<size_t>(pixel_data_size * y *
+                                            exr_image->width) +
+                        channel_offset_list[c] *
+                            static_cast<size_t>(exr_image->width)));
             for (int x = 0; x < exr_image->width; x++) {
               tinyexr::FP32 f32;
               f32.f = reinterpret_cast<float **>(
@@ -11579,12 +11585,6 @@ size_t SaveEXRImageToMemory(const EXRImage *exr_image,
 
               tinyexr::swap2(reinterpret_cast<unsigned short *>(&h16.u));
 
-              // Assume increasing Y
-              unsigned short *line_ptr = reinterpret_cast<unsigned short *>(
-                  &buf.at(static_cast<size_t>(pixel_data_size * y *
-                                              exr_image->width) +
-                          channel_offset_list[c] *
-                              static_cast<size_t>(exr_image->width)));
               // line_ptr[x] = h16.u;
               tinyexr::cpy2(line_ptr + x, &(h16.u));
             }
@@ -11592,17 +11592,17 @@ size_t SaveEXRImageToMemory(const EXRImage *exr_image,
         } else if (exr_header->requested_pixel_types[c] ==
                    TINYEXR_PIXELTYPE_FLOAT) {
           for (int y = 0; y < h; y++) {
+            // Assume increasing Y
+            float *line_ptr = reinterpret_cast<float *>(&buf.at(
+                static_cast<size_t>(pixel_data_size * y * exr_image->width) +
+                channel_offset_list[c] *
+                    static_cast<size_t>(exr_image->width)));
             for (int x = 0; x < exr_image->width; x++) {
               float val = reinterpret_cast<float **>(
                   exr_image->images)[c][(y + start_y) * exr_image->width + x];
 
               tinyexr::swap4(reinterpret_cast<unsigned int *>(&val));
 
-              // Assume increasing Y
-              float *line_ptr = reinterpret_cast<float *>(&buf.at(
-                  static_cast<size_t>(pixel_data_size * y * exr_image->width) +
-                  channel_offset_list[c] *
-                      static_cast<size_t>(exr_image->width)));
               // line_ptr[x] = val;
               tinyexr::cpy4(line_ptr + x, &val);
             }
@@ -11612,17 +11612,17 @@ size_t SaveEXRImageToMemory(const EXRImage *exr_image,
         }
       } else if (exr_header->pixel_types[c] == TINYEXR_PIXELTYPE_UINT) {
         for (int y = 0; y < h; y++) {
+          // Assume increasing Y
+          unsigned int *line_ptr = reinterpret_cast<unsigned int *>(&buf.at(
+              static_cast<size_t>(pixel_data_size * y * exr_image->width) +
+              channel_offset_list[c] *
+                  static_cast<size_t>(exr_image->width)));
           for (int x = 0; x < exr_image->width; x++) {
             unsigned int val = reinterpret_cast<unsigned int **>(
                 exr_image->images)[c][(y + start_y) * exr_image->width + x];
 
             tinyexr::swap4(&val);
 
-            // Assume increasing Y
-            unsigned int *line_ptr = reinterpret_cast<unsigned int *>(&buf.at(
-                static_cast<size_t>(pixel_data_size * y * exr_image->width) +
-                channel_offset_list[c] *
-                    static_cast<size_t>(exr_image->width)));
             // line_ptr[x] = val;
             tinyexr::cpy4(line_ptr + x, &val);
           }
