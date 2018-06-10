@@ -431,6 +431,7 @@ extern int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <iostream>
 #include <sstream>
 
 #include <limits>
@@ -2490,10 +2491,10 @@ tinfl_status tinfl_decompress(tinfl_decompressor *r,
   tinfl_status status = TINFL_STATUS_FAILED;
   mz_uint32 num_bits, dist, counter, num_extra;
   tinfl_bit_buf_t bit_buf;
-  const mz_uint8 *pIn_buf_cur = pIn_buf_next,
-                 *const pIn_buf_end = pIn_buf_next + *pIn_buf_size;
-  mz_uint8 *pOut_buf_cur = pOut_buf_next,
-           *const pOut_buf_end = pOut_buf_next + *pOut_buf_size;
+  const mz_uint8 *pIn_buf_cur = pIn_buf_next, *const pIn_buf_end =
+                                                  pIn_buf_next + *pIn_buf_size;
+  mz_uint8 *pOut_buf_cur = pOut_buf_next, *const pOut_buf_end =
+                                              pOut_buf_next + *pOut_buf_size;
   size_t out_buf_size_mask =
              (decomp_flags & TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF)
                  ? (size_t)-1
@@ -2910,8 +2911,9 @@ void *tinfl_decompress_mem_to_heap(const void *pSrc_buf, size_t src_buf_len,
     tinfl_status status = tinfl_decompress(
         &decomp, (const mz_uint8 *)pSrc_buf + src_buf_ofs, &src_buf_size,
         (mz_uint8 *)pBuf, pBuf ? (mz_uint8 *)pBuf + *pOut_len : NULL,
-        &dst_buf_size, (flags & ~TINFL_FLAG_HAS_MORE_INPUT) |
-                           TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF);
+        &dst_buf_size,
+        (flags & ~TINFL_FLAG_HAS_MORE_INPUT) |
+            TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF);
     if ((status < 0) || (status == TINFL_STATUS_NEEDS_MORE_INPUT)) {
       MZ_FREE(pBuf);
       *pOut_len = 0;
@@ -2964,9 +2966,8 @@ int tinfl_decompress_mem_to_callback(const void *pIn_buf, size_t *pIn_buf_size,
     tinfl_status status =
         tinfl_decompress(&decomp, (const mz_uint8 *)pIn_buf + in_buf_ofs,
                          &in_buf_size, pDict, pDict + dict_ofs, &dst_buf_size,
-                         (flags &
-                          ~(TINFL_FLAG_HAS_MORE_INPUT |
-                            TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF)));
+                         (flags & ~(TINFL_FLAG_HAS_MORE_INPUT |
+                                    TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF)));
     in_buf_ofs += in_buf_size;
     if ((dst_buf_size) &&
         (!(*pPut_buf_func)(pDict + dict_ofs, (int)dst_buf_size, pPut_buf_user)))
@@ -3091,7 +3092,9 @@ static const mz_uint8 s_tdefl_large_dist_extra[128] = {
 
 // Radix sorts tdefl_sym_freq[] array by 16-bit key m_key. Returns ptr to sorted
 // values.
-typedef struct { mz_uint16 m_key, m_sym_index; } tdefl_sym_freq;
+typedef struct {
+  mz_uint16 m_key, m_sym_index;
+} tdefl_sym_freq;
 static tdefl_sym_freq *tdefl_radix_sort_syms(mz_uint num_syms,
                                              tdefl_sym_freq *pSyms0,
                                              tdefl_sym_freq *pSyms1) {
@@ -4395,9 +4398,8 @@ mz_uint tdefl_create_comp_flags_from_zip_params(int level, int window_bits,
                                  // C and C99, so no big deal)
 #pragma warning(disable : 4244)  // 'initializing': conversion from '__int64' to
                                  // 'int', possible loss of data
-#pragma warning( \
-    disable : 4267)  // 'argument': conversion from '__int64' to 'int',
-                     // possible loss of data
+#pragma warning(disable : 4267)  // 'argument': conversion from '__int64' to
+                                 // 'int', possible loss of data
 #pragma warning(disable : 4996)  // 'strdup': The POSIX name for this item is
                                  // deprecated. Instead, use the ISO C and C++
                                  // conformant name: _strdup.
@@ -5236,9 +5238,10 @@ mz_bool mz_zip_reader_file_stat(mz_zip_archive *pZip, mz_uint file_index,
   n = MZ_READ_LE16(p + MZ_ZIP_CDH_COMMENT_LEN_OFS);
   n = MZ_MIN(n, MZ_ZIP_MAX_ARCHIVE_FILE_COMMENT_SIZE - 1);
   pStat->m_comment_size = n;
-  memcpy(pStat->m_comment, p + MZ_ZIP_CENTRAL_DIR_HEADER_SIZE +
-                               MZ_READ_LE16(p + MZ_ZIP_CDH_FILENAME_LEN_OFS) +
-                               MZ_READ_LE16(p + MZ_ZIP_CDH_EXTRA_LEN_OFS),
+  memcpy(pStat->m_comment,
+         p + MZ_ZIP_CENTRAL_DIR_HEADER_SIZE +
+             MZ_READ_LE16(p + MZ_ZIP_CDH_FILENAME_LEN_OFS) +
+             MZ_READ_LE16(p + MZ_ZIP_CDH_EXTRA_LEN_OFS),
          n);
   pStat->m_comment[n] = '\0';
 
@@ -6900,7 +6903,7 @@ void *mz_zip_extract_archive_file_to_heap(const char *pZip_filename,
 #ifdef _MSC_VER
 #pragma warning(pop)
 #endif
-}
+}  // namespace miniz
 #else
 
 // Reuse MINIZ_LITTE_ENDIAN macro
@@ -7317,7 +7320,8 @@ static bool ReadChannelInfo(std::vector<ChannelInfo> &channels,
       return false;
     }
 
-    const unsigned char *data_end = reinterpret_cast<const unsigned char *>(p) + 16;
+    const unsigned char *data_end =
+        reinterpret_cast<const unsigned char *>(p) + 16;
     if (data_end >= (data.data() + data.size())) {
       return false;
     }
@@ -7542,9 +7546,8 @@ static bool DecompressZip(unsigned char *dst,
                                  // C and C99, so no big deal)
 #pragma warning(disable : 4244)  // 'initializing': conversion from '__int64' to
                                  // 'int', possible loss of data
-#pragma warning( \
-    disable : 4267)  // 'argument': conversion from '__int64' to 'int',
-                     // possible loss of data
+#pragma warning(disable : 4267)  // 'argument': conversion from '__int64' to
+                                 // 'int', possible loss of data
 #pragma warning(disable : 4996)  // 'strdup': The POSIX name for this item is
                                  // deprecated. Instead, use the ISO C and C++
                                  // conformant name: _strdup.
@@ -8732,26 +8735,62 @@ static int hufEncode            // return: output size (in bits)
     lc += 8;                                 \
   }
 
-#define getCode(po, rlc, c, lc, in, out, oe) \
-  {                                          \
-    if (po == rlc) {                         \
-      if (lc < 8) getChar(c, lc, in);        \
-                                             \
-      lc -= 8;                               \
-                                             \
-      unsigned char cs = (c >> lc);          \
-                                             \
-      if (out + cs > oe) return false;       \
-                                             \
-      unsigned short s = out[-1];            \
-                                             \
-      while (cs-- > 0) *out++ = s;           \
-    } else if (out < oe) {                   \
-      *out++ = po;                           \
-    } else {                                 \
-      return false;                          \
-    }                                        \
+#if 0
+#define getCode(po, rlc, c, lc, in, out, ob, oe) \
+  {                                              \
+    if (po == rlc) {                             \
+      if (lc < 8) getChar(c, lc, in);            \
+                                                 \
+      lc -= 8;                                   \
+                                                 \
+      unsigned char cs = (c >> lc);              \
+                                                 \
+      if (out + cs > oe) return false;           \
+                                                 \
+      /* TinyEXR issue 78 */                     \
+      unsigned short s = out[-1];                \
+                                                 \
+      while (cs-- > 0) *out++ = s;               \
+    } else if (out < oe) {                       \
+      *out++ = po;                               \
+    } else {                                     \
+      return false;                              \
+    }                                            \
   }
+#else
+static bool getCode(int po, int rlc, long long &c, int &lc, const char *&in,
+                    const char *in_end, unsigned short *&out,
+                    const unsigned short *ob, const unsigned short *oe) {
+  (void)ob;
+  if (po == rlc) {
+    if (lc < 8) {
+      /* TinyEXR issue 78 */
+      if ((in + 1) >= in_end) {
+        return false;
+      }
+
+      getChar(c, lc, in);
+    }
+
+    lc -= 8;
+
+    unsigned char cs = (c >> lc);
+
+    if (out + cs > oe) return false;
+
+    // Bounds check for safety
+    if ((out - 1) <= ob) return false;
+    unsigned short s = out[-1];
+
+    while (cs-- > 0) *out++ = s;
+  } else if (out < oe) {
+    *out++ = po;
+  } else {
+    return false;
+  }
+  return true;
+}
+#endif
 
 //
 // Decode (uncompress) ni bits based on encoding & decoding tables:
@@ -8767,8 +8806,8 @@ static bool hufDecode(const long long *hcode,  // i : encoding table
 {
   long long c = 0;
   int lc = 0;
-  unsigned short *outb = out;
-  unsigned short *oe = out + no;
+  unsigned short *outb = out;          // begin
+  unsigned short *oe = out + no;       // end
   const char *ie = in + (ni + 7) / 8;  // input byte size
 
   //
@@ -8791,7 +8830,16 @@ static bool hufDecode(const long long *hcode,  // i : encoding table
         //
 
         lc -= pl.len;
-        getCode(pl.lit, rlc, c, lc, in, out, oe);
+        // std::cout << "lit = " << pl.lit << std::endl;
+        // std::cout << "rlc = " << rlc << std::endl;
+        // std::cout << "c = " << c << std::endl;
+        // std::cout << "lc = " << lc << std::endl;
+        // std::cout << "in = " << in << std::endl;
+        // std::cout << "out = " << out << std::endl;
+        // std::cout << "oe = " << oe << std::endl;
+        if (!getCode(pl.lit, rlc, c, lc, in, ie, out, outb, oe)) {
+          return false;
+        }
       } else {
         if (!pl.p) {
           return false;
@@ -8818,7 +8866,9 @@ static bool hufDecode(const long long *hcode,  // i : encoding table
               //
 
               lc -= l;
-              getCode(pl.p[j], rlc, c, lc, in, out, oe);
+              if (!getCode(pl.p[j], rlc, c, lc, in, ie, out, outb, oe)) {
+                return false;
+              }
               break;
             }
           }
@@ -8845,7 +8895,9 @@ static bool hufDecode(const long long *hcode,  // i : encoding table
 
     if (pl.len) {
       lc -= pl.len;
-      getCode(pl.lit, rlc, c, lc, in, out, oe);
+      if (!getCode(pl.lit, rlc, c, lc, in, ie, out, outb, oe)) {
+        return false;
+      }
     } else {
       return false;
       // invalidCode(); // wrong (long) code
@@ -8918,9 +8970,9 @@ static int hufCompress(const unsigned short raw[], int nRaw,
 }
 
 static bool hufUncompress(const char compressed[], int nCompressed,
-                          unsigned short raw[], int nRaw) {
+                          std::vector<unsigned short> *raw) {
   if (nCompressed == 0) {
-    if (nRaw != 0) return false;
+    if (raw->size() != 0) return false;
 
     return false;
   }
@@ -8961,7 +9013,8 @@ static bool hufUncompress(const char compressed[], int nCompressed,
       }
 
       hufBuildDecTable(&freq.at(0), im, iM, &hdec.at(0));
-      hufDecode(&freq.at(0), &hdec.at(0), ptr, nBits, iM, nRaw, raw);
+      hufDecode(&freq.at(0), &hdec.at(0), ptr, nBits, iM, raw->size(),
+                raw->data());
     }
     // catch (...)
     //{
@@ -9189,9 +9242,9 @@ static bool DecompressPiz(unsigned char *outPtr, const unsigned char *inPtr,
   memset(bitmap.data(), 0, BITMAP_SIZE);
 
   const unsigned char *ptr = inPtr;
-  //minNonZero = *(reinterpret_cast<const unsigned short *>(ptr));
+  // minNonZero = *(reinterpret_cast<const unsigned short *>(ptr));
   tinyexr::cpy2(&minNonZero, reinterpret_cast<const unsigned short *>(ptr));
-  //maxNonZero = *(reinterpret_cast<const unsigned short *>(ptr + 2));
+  // maxNonZero = *(reinterpret_cast<const unsigned short *>(ptr + 2));
   tinyexr::cpy2(&maxNonZero, reinterpret_cast<const unsigned short *>(ptr + 2));
   ptr += 4;
 
@@ -9215,13 +9268,12 @@ static bool DecompressPiz(unsigned char *outPtr, const unsigned char *inPtr,
 
   int length;
 
-  //length = *(reinterpret_cast<const int *>(ptr));
+  // length = *(reinterpret_cast<const int *>(ptr));
   tinyexr::cpy4(&length, reinterpret_cast<const int *>(ptr));
   ptr += sizeof(int);
 
   std::vector<unsigned short> tmpBuffer(tmpBufSize);
-  hufUncompress(reinterpret_cast<const char *>(ptr), length, &tmpBuffer.at(0),
-                static_cast<int>(tmpBufSize));
+  hufUncompress(reinterpret_cast<const char *>(ptr), length, &tmpBuffer);
 
   //
   // Wavelet decoding
@@ -11247,6 +11299,10 @@ int LoadEXRImageFromFile(EXRImage *exr_image, const EXRHeader *exr_header,
   fseek(fp, 0, SEEK_END);
   filesize = static_cast<size_t>(ftell(fp));
   fseek(fp, 0, SEEK_SET);
+
+  if (filesize < 16) {
+    return TINYEXR_ERROR_INVALID_FILE;
+  }
 
   std::vector<unsigned char> buf(filesize);  // @todo { use mmap }
   {
