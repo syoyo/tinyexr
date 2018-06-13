@@ -142,10 +142,11 @@ Scanline and tiled format are supported.
   EXRHeader exr_header;
   InitEXRHeader(&exr_header);
 
-  const char* err;
+  const char* err = NULL; // or `nullptr` in C++11 or later.
   ret = ParseEXRHeaderFromFile(&exr_header, &exr_version, argv[1], &err);
   if (ret != 0) {
     fprintf(stderr, "Parse EXR err: %s\n", err);
+    FreeEXRErrorMessage(err); // free's buffer for an error message 
     return ret;
   }
 
@@ -162,6 +163,7 @@ Scanline and tiled format are supported.
   ret = LoadEXRImageFromFile(&exr_image, &exr_header, argv[1], &err);
   if (ret != 0) {
     fprintf(stderr, "Load EXR err: %s\n", err);
+    FreeEXRErrorMessage(err); // free's buffer for an error message 
     return ret;
   }
 
@@ -195,11 +197,13 @@ Scanline and tiled format are supported.
   // 2. Read EXR headers in the EXR.
   EXRHeader **exr_headers; // list of EXRHeader pointers.
   int num_exr_headers;
+  const char *err = NULL; // or nullptr in C++11 or later
 
   // Memory for EXRHeader is allocated inside of ParseEXRMultipartHeaderFromFile,
   ret = ParseEXRMultipartHeaderFromFile(&exr_headers, &num_exr_headers, &exr_version, argv[1], &err);
   if (ret != 0) {
     fprintf(stderr, "Parse EXR err: %s\n", err);
+    FreeEXRErrorMessage(err); // free's buffer for an error message 
     return ret;
   }
 
@@ -217,6 +221,7 @@ Scanline and tiled format are supported.
   ret = LoadEXRMultipartImageFromFile(&images.at(0), const_cast<const EXRHeader**>(exr_headers), num_exr_headers, argv[1], &err);
   if (ret != 0) {
     fprintf(stderr, "Parse EXR err: %s\n", err);
+    FreeEXRErrorMessage(err); // free's buffer for an error message 
     return ret;
   }
 
@@ -289,10 +294,11 @@ Saving Scanline EXR file.
       header.requested_pixel_types[i] = TINYEXR_PIXELTYPE_HALF; // pixel type of output image to be stored in .EXR
     }
 
-    const char* err;
+    const char* err = NULL; // or nullptr in C++11 or later.
     int ret = SaveEXRImageToFile(&image, &header, argv[2], &err);
     if (ret != TINYEXR_SUCCESS) {
       fprintf(stderr, "Save EXR err: %s\n", err);
+      FreeEXRErrorMessage(err); // free's buffer for an error message 
       return ret;
     }
     printf("Saved exr file. [ %s ] \n", argv[2]);
@@ -312,7 +318,7 @@ See `example/deepview` for actual usage.
 
 ```
   const char* input = "deepimage.exr";
-  const char* err;
+  const char* err = NULL; // or nullptr
   DeepImage deepImage;
 
   int ret = LoadDeepEXR(&deepImage, input, &err);

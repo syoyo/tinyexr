@@ -134,6 +134,7 @@ main(int argc, char** argv)
     } else {
       fprintf(stderr, "Load EXR err: code = %d\n", ret);
     }
+    FreeEXRErrorMessage(err);
     return ret;
   }
   //SaveAsPFM("output.pfm", width, height, image);
@@ -219,6 +220,7 @@ main(int argc, char** argv)
     ret = LoadEXRMultipartImageFromFile(&images.at(0), const_cast<const EXRHeader**>(exr_headers), static_cast<unsigned int>(num_exr_headers), argv[1], &err);
     if (ret != 0) {
       fprintf(stderr, "Load EXR err: %s\n", err);
+      FreeEXRErrorMessage(err);
       return ret;
     }
 
@@ -243,6 +245,7 @@ main(int argc, char** argv)
     ret = ParseEXRHeaderFromFile(&exr_header, &exr_version, argv[1], &err);
     if (ret != 0) {
       fprintf(stderr, "Parse single-part EXR err: %s\n", err);
+      FreeEXRErrorMessage(err);
       return ret;
     }
 
@@ -292,6 +295,7 @@ main(int argc, char** argv)
     ret = LoadEXRImageFromFile(&exr_image, &exr_header, argv[1], &err);
     if (ret != 0) {
       fprintf(stderr, "Load EXR err: %s\n", err);
+      FreeEXRErrorMessage(err);
       return ret;
     }
 
@@ -345,6 +349,7 @@ main(int argc, char** argv)
     ret = SaveEXRImageToFile(&exr_image, &exr_header, outfilename, &err);
     if (ret != 0) {
       fprintf(stderr, "Save EXR err: %s\n", err);
+      FreeEXRErrorMessage(err);
       return ret;
     }
     printf("Saved exr file. [ %s ] \n", outfilename);

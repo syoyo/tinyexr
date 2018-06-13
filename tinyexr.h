@@ -295,6 +295,9 @@ extern int FreeEXRHeader(EXRHeader *exr_header);
 // Free's internal data of EXRImage struct
 extern int FreeEXRImage(EXRImage *exr_image);
 
+// Free's error message
+extern void FreeEXRErrorMessage(const char *msg);
+
 // Parse EXR version header of a file.
 extern int ParseEXRVersionFromFile(EXRVersion *version, const char *filename);
 
@@ -303,10 +306,12 @@ extern int ParseEXRVersionFromMemory(EXRVersion *version,
                                      const unsigned char *memory, size_t size);
 
 // Parse single-part OpenEXR header from a file and initialize `EXRHeader`.
+// When there was an error message, Application must free `err` with FreeEXRErrorMessage()
 extern int ParseEXRHeaderFromFile(EXRHeader *header, const EXRVersion *version,
                                   const char *filename, const char **err);
 
 // Parse single-part OpenEXR header from a memory and initialize `EXRHeader`.
+// When there was an error message, Application must free `err` with FreeEXRErrorMessage()
 extern int ParseEXRHeaderFromMemory(EXRHeader *header,
                                     const EXRVersion *version,
                                     const unsigned char *memory, size_t size,
@@ -314,6 +319,7 @@ extern int ParseEXRHeaderFromMemory(EXRHeader *header,
 
 // Parse multi-part OpenEXR headers from a file and initialize `EXRHeader*`
 // array.
+// When there was an error message, Application must free `err` with FreeEXRErrorMessage()
 extern int ParseEXRMultipartHeaderFromFile(EXRHeader ***headers,
                                            int *num_headers,
                                            const EXRVersion *version,
@@ -322,6 +328,7 @@ extern int ParseEXRMultipartHeaderFromFile(EXRHeader ***headers,
 
 // Parse multi-part OpenEXR headers from a memory and initialize `EXRHeader*`
 // array
+// When there was an error message, Application must free `err` with FreeEXRErrorMessage()
 extern int ParseEXRMultipartHeaderFromMemory(EXRHeader ***headers,
                                              int *num_headers,
                                              const EXRVersion *version,
@@ -333,6 +340,7 @@ extern int ParseEXRMultipartHeaderFromMemory(EXRHeader ***headers,
 // Application can free EXRImage using `FreeEXRImage`
 // Returns negative value and may set error string in `err` when there's an
 // error
+// When there was an error message, Application must free `err` with FreeEXRErrorMessage()
 extern int LoadEXRImageFromFile(EXRImage *image, const EXRHeader *header,
                                 const char *filename, const char **err);
 
@@ -342,6 +350,7 @@ extern int LoadEXRImageFromFile(EXRImage *image, const EXRHeader *header,
 // Application can free EXRImage using `FreeEXRImage`
 // Returns negative value and may set error string in `err` when there's an
 // error
+// When there was an error message, Application must free `err` with FreeEXRErrorMessage()
 extern int LoadEXRImageFromMemory(EXRImage *image, const EXRHeader *header,
                                   const unsigned char *memory,
                                   const size_t size, const char **err);
@@ -352,6 +361,7 @@ extern int LoadEXRImageFromMemory(EXRImage *image, const EXRHeader *header,
 // Application can free EXRImage using `FreeEXRImage`
 // Returns negative value and may set error string in `err` when there's an
 // error
+// When there was an error message, Application must free `err` with FreeEXRErrorMessage()
 extern int LoadEXRMultipartImageFromFile(EXRImage *images,
                                          const EXRHeader **headers,
                                          unsigned int num_parts,
@@ -364,6 +374,7 @@ extern int LoadEXRMultipartImageFromFile(EXRImage *images,
 // Application can free EXRImage using `FreeEXRImage`
 // Returns negative value and may set error string in `err` when there's an
 // error
+// When there was an error message, Application must free `err` with FreeEXRErrorMessage()
 extern int LoadEXRMultipartImageFromMemory(EXRImage *images,
                                            const EXRHeader **headers,
                                            unsigned int num_parts,
@@ -373,6 +384,7 @@ extern int LoadEXRMultipartImageFromMemory(EXRImage *images,
 // Saves multi-channel, single-frame OpenEXR image to a file.
 // Returns negative value and may set error string in `err` when there's an
 // error
+// When there was an error message, Application must free `err` with FreeEXRErrorMessage()
 extern int SaveEXRImageToFile(const EXRImage *image,
                               const EXRHeader *exr_header, const char *filename,
                               const char **err);
@@ -382,6 +394,7 @@ extern int SaveEXRImageToFile(const EXRImage *image,
 // Return the number of bytes if succes.
 // Returns negative value and may set error string in `err` when there's an
 // error
+// When there was an error message, Application must free `err` with FreeEXRErrorMessage()
 extern size_t SaveEXRImageToMemory(const EXRImage *image,
                                    const EXRHeader *exr_header,
                                    unsigned char **memory, const char **err);
@@ -390,6 +403,7 @@ extern size_t SaveEXRImageToMemory(const EXRImage *image,
 // Application must free memory of variables in DeepImage(image, offset_table)
 // Returns negative value and may set error string in `err` when there's an
 // error
+// When there was an error message, Application must free `err` with FreeEXRErrorMessage()
 extern int LoadDeepEXR(DeepImage *out_image, const char *filename,
                        const char **err);
 
@@ -412,6 +426,7 @@ extern int LoadDeepEXR(DeepImage *out_image, const char *filename,
 // RGB(A) channels.
 // Returns negative value and may set error string in `err` when there's an
 // error
+// When there was an error message, Application must free `err` with FreeEXRErrorMessage()
 extern int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
                              const unsigned char *memory, size_t size,
                              const char **err);
@@ -6928,6 +6943,17 @@ void *mz_zip_extract_archive_file_to_heap(const char *pZip_filename,
 //  return bint.c[0] == 1;
 //}
 
+static void SetErrorMessage(const std::string &msg, const char **err)
+{
+  if (err) {
+#ifdef _WIN32
+      (*err) = _strdup(msg.c_str());
+#else
+      (*err) = strdup(msg.c_str());
+#endif
+  }
+}
+
 static const int kEXRVersionSize = 8;
 
 static void cpy2(unsigned short *dst_val, const unsigned short *src_val) {
@@ -10828,9 +10854,7 @@ static int DecodeEXRImage(EXRImage *exr_image, const EXRHeader *exr_header,
                           const char **err) {
   if (exr_image == NULL || exr_header == NULL || head == NULL ||
       marker == NULL || (size <= tinyexr::kEXRVersionSize)) {
-    if (err) {
-      (*err) = "Invalid argument.";
-    }
+    tinyexr::SetErrorMessage("Invalid argument for DecodeEXRImage().", err);
     return TINYEXR_ERROR_INVALID_ARGUMENT;
   }
 
@@ -10846,26 +10870,20 @@ static int DecodeEXRImage(EXRImage *exr_image, const EXRHeader *exr_header,
   int data_width = exr_header->data_window[2] - exr_header->data_window[0];
   if (data_width >= std::numeric_limits<int>::max()) {
     // Issue 63
-    if (err) {
-      (*err) = "Invalid data window value.";
-    }
+    tinyexr::SetErrorMessage("Invalid data window value", err);
     return TINYEXR_ERROR_INVALID_DATA;
   }
   data_width++;
 
   int data_height = exr_header->data_window[3] - exr_header->data_window[1];
   if (data_height >= std::numeric_limits<int>::max()) {
-    if (err) {
-      (*err) = "Invalid data height value.";
-    }
+    tinyexr::SetErrorMessage("Invalid data height value", err);
     return TINYEXR_ERROR_INVALID_DATA;
   }
   data_height++;
 
   if ((data_width < 0) || (data_height < 0)) {
-    if (err) {
-      (*err) = "Invalid data window value.";
-    }
+    tinyexr::SetErrorMessage("data window or data height is negative.", err);
     return TINYEXR_ERROR_INVALID_DATA;
   }
 
@@ -10907,9 +10925,7 @@ static int DecodeEXRImage(EXRImage *exr_image, const EXRHeader *exr_header,
     memcpy(&offset, marker, sizeof(tinyexr::tinyexr_uint64));
     tinyexr::swap8(&offset);
     if (offset >= size) {
-      if (err) {
-        (*err) = "Invalid offset value.";
-      }
+      tinyexr::SetErrorMessage("Invalid offset value in DecodeEXRImage.", err);
       return TINYEXR_ERROR_INVALID_DATA;
     }
     marker += sizeof(tinyexr::tinyexr_uint64);  // = 8
@@ -10932,9 +10948,7 @@ static int DecodeEXRImage(EXRImage *exr_image, const EXRHeader *exr_header,
         // OK
         break;
       } else {
-        if (err) {
-          (*err) = "Cannot reconstruct lineOffset table.";
-        }
+        tinyexr::SetErrorMessage("Cannot reconstruct lineOffset table in DecodeEXRImage.", err);
         return TINYEXR_ERROR_INVALID_DATA;
       }
     }
@@ -10948,9 +10962,7 @@ static int DecodeEXRImage(EXRImage *exr_image, const EXRHeader *exr_header,
 int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
             const char **err) {
   if (out_rgba == NULL) {
-    if (err) {
-      (*err) = "Invalid argument.\n";
-    }
+    tinyexr::SetErrorMessage("Invalid argument for LoadEXR()", err);
     return TINYEXR_ERROR_INVALID_ARGUMENT;
   }
 
@@ -10967,9 +10979,7 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
     }
 
     if (exr_version.multipart || exr_version.non_image) {
-      if (err) {
-        (*err) = "Loading multipart or DeepImage is not supported yet.\n";
-      }
+      tinyexr::SetErrorMessage("Loading multipart or DeepImage is not supported  in LoadEXR() API", err);
       return TINYEXR_ERROR_INVALID_DATA;  // @fixme.
     }
   }
@@ -11033,26 +11043,20 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
     // Assume RGB(A)
 
     if (idxR == -1) {
-      if (err) {
-        (*err) = "R channel not found\n";
-      }
+      tinyexr::SetErrorMessage("R channel not found", err);
 
       // @todo { free exr_image }
       return TINYEXR_ERROR_INVALID_DATA;
     }
 
     if (idxG == -1) {
-      if (err) {
-        (*err) = "G channel not found\n";
-      }
+      tinyexr::SetErrorMessage("G channel not found", err);
       // @todo { free exr_image }
       return TINYEXR_ERROR_INVALID_DATA;
     }
 
     if (idxB == -1) {
-      if (err) {
-        (*err) = "B channel not found\n";
-      }
+      tinyexr::SetErrorMessage("B channel not found", err);
       // @todo { free exr_image }
       return TINYEXR_ERROR_INVALID_DATA;
     }
@@ -11124,9 +11128,7 @@ int ParseEXRHeaderFromMemory(EXRHeader *exr_header, const EXRVersion *version,
                              const unsigned char *memory, size_t size,
                              const char **err) {
   if (memory == NULL || exr_header == NULL) {
-    if (err) {
-      (*err) = "Invalid argument.\n";
-    }
+    tinyexr::SetErrorMessage("Invalid argument. `memory` or `exr_header` argument is null in ParseEXRHeaderFromMemory()", err);
 
     // Invalid argument
     return TINYEXR_ERROR_INVALID_ARGUMENT;
@@ -11147,11 +11149,7 @@ int ParseEXRHeaderFromMemory(EXRHeader *exr_header, const EXRVersion *version,
 
   if (ret != TINYEXR_SUCCESS) {
     if (err && !err_str.empty()) {
-#ifdef _WIN32
-      (*err) = _strdup(err_str.c_str());  // May leak
-#else
-      (*err) = strdup(err_str.c_str());  // May leak
-#endif
+      tinyexr::SetErrorMessage(err_str, err);
     }
   }
 
@@ -11167,9 +11165,7 @@ int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
                       const unsigned char *memory, size_t size,
                       const char **err) {
   if (out_rgba == NULL || memory == NULL) {
-    if (err) {
-      (*err) = "Invalid argument.\n";
-    }
+    tinyexr::SetErrorMessage("Invalid argument for LoadEXRFromMemory", err);
     return TINYEXR_ERROR_INVALID_ARGUMENT;
   }
 
@@ -11181,6 +11177,7 @@ int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
 
   int ret = ParseEXRVersionFromMemory(&exr_version, memory, size);
   if (ret != TINYEXR_SUCCESS) {
+    tinyexr::SetErrorMessage("Failed to parse EXR version", err);
     return ret;
   }
 
@@ -11220,26 +11217,20 @@ int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
   }
 
   if (idxR == -1) {
-    if (err) {
-      (*err) = "R channel not found\n";
-    }
+    tinyexr::SetErrorMessage("R channel not found", err);
 
     // @todo { free exr_image }
     return TINYEXR_ERROR_INVALID_DATA;
   }
 
   if (idxG == -1) {
-    if (err) {
-      (*err) = "G channel not found\n";
-    }
+    tinyexr::SetErrorMessage("G channel not found", err);
     // @todo { free exr_image }
     return TINYEXR_ERROR_INVALID_DATA;
   }
 
   if (idxB == -1) {
-    if (err) {
-      (*err) = "B channel not found\n";
-    }
+    tinyexr::SetErrorMessage("B channel not found", err);
     // @todo { free exr_image }
     return TINYEXR_ERROR_INVALID_DATA;
   }
@@ -11275,9 +11266,7 @@ int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
 int LoadEXRImageFromFile(EXRImage *exr_image, const EXRHeader *exr_header,
                          const char *filename, const char **err) {
   if (exr_image == NULL) {
-    if (err) {
-      (*err) = "Invalid argument.";
-    }
+    tinyexr::SetErrorMessage("Invalid argument for LoadEXRImageFromFile", err);
     return TINYEXR_ERROR_INVALID_ARGUMENT;
   }
 
@@ -11288,9 +11277,7 @@ int LoadEXRImageFromFile(EXRImage *exr_image, const EXRHeader *exr_header,
   FILE *fp = fopen(filename, "rb");
 #endif
   if (!fp) {
-    if (err) {
-      (*err) = "Cannot read file.";
-    }
+    tinyexr::SetErrorMessage("Cannot read file " + std::string(filename), err);
     return TINYEXR_ERROR_CANT_OPEN_FILE;
   }
 
@@ -11322,16 +11309,12 @@ int LoadEXRImageFromMemory(EXRImage *exr_image, const EXRHeader *exr_header,
                            const char **err) {
   if (exr_image == NULL || memory == NULL ||
       (size < tinyexr::kEXRVersionSize)) {
-    if (err) {
-      (*err) = "Invalid argument.";
-    }
+    tinyexr::SetErrorMessage("Invalid argument for LoadEXRImageFromMemory", err);
     return TINYEXR_ERROR_INVALID_ARGUMENT;
   }
 
   if (exr_header->header_len == 0) {
-    if (err) {
-      (*err) = "EXRHeader is not initialized.";
-    }
+    tinyexr::SetErrorMessage("EXRHeader variable is not initialized.", err);
     return TINYEXR_ERROR_INVALID_ARGUMENT;
   }
 
@@ -11348,26 +11331,20 @@ size_t SaveEXRImageToMemory(const EXRImage *exr_image,
                             unsigned char **memory_out, const char **err) {
   if (exr_image == NULL || memory_out == NULL ||
       exr_header->compression_type < 0) {
-    if (err) {
-      (*err) = "Invalid argument.";
-    }
+    tinyexr::SetErrorMessage("Invalid argument for SaveEXRImageToMemory", err);
     return 0;  // @fixme
   }
 
 #if !TINYEXR_USE_PIZ
   if (exr_header->compression_type == TINYEXR_COMPRESSIONTYPE_PIZ) {
-    if (err) {
-      (*err) = "PIZ compression is not supported in this build.";
-    }
+    tinyexr::SetErrorMessage("PIZ compression is not supported in this build", err);
     return 0;
   }
 #endif
 
 #if !TINYEXR_USE_ZFP
   if (exr_header->compression_type == TINYEXR_COMPRESSIONTYPE_ZFP) {
-    if (err) {
-      (*err) = "ZFP compression is not supported in this build.";
-    }
+    tinyexr::SetErrorMessage("ZFP compression is not supported in this build", err);
     return 0;
   }
 #endif
@@ -11375,9 +11352,7 @@ size_t SaveEXRImageToMemory(const EXRImage *exr_image,
 #if TINYEXR_USE_ZFP
   for (size_t i = 0; i < static_cast<size_t>(exr_header->num_channels); i++) {
     if (exr_header->requested_pixel_types[i] != TINYEXR_PIXELTYPE_FLOAT) {
-      if (err) {
-        (*err) = "Pixel type must be FLOAT for ZFP compression.";
-      }
+      tinyexr::SetErrorMessage("Pixel type must be FLOAT for ZFP compression", err);
       return 0;
     }
   }
@@ -11855,26 +11830,20 @@ int SaveEXRImageToFile(const EXRImage *exr_image, const EXRHeader *exr_header,
                        const char *filename, const char **err) {
   if (exr_image == NULL || filename == NULL ||
       exr_header->compression_type < 0) {
-    if (err) {
-      (*err) = "Invalid argument.";
-    }
+    tinyexr::SetErrorMessage("Invalid argument for SaveEXRImageToFile", err);
     return TINYEXR_ERROR_INVALID_ARGUMENT;
   }
 
 #if !TINYEXR_USE_PIZ
   if (exr_header->compression_type == TINYEXR_COMPRESSIONTYPE_PIZ) {
-    if (err) {
-      (*err) = "PIZ compression is not supported in this build.";
-    }
+    tinyexr::SetErrorMessage("PIZ compression is not supported in this build", err);
     return 0;
   }
 #endif
 
 #if !TINYEXR_USE_ZFP
   if (exr_header->compression_type == TINYEXR_COMPRESSIONTYPE_ZFP) {
-    if (err) {
-      (*err) = "ZFP compression is not supported in this build.";
-    }
+    tinyexr::SetErrorMessage("ZFP compression is not supported in this build", err);
     return 0;
   }
 #endif
@@ -11886,9 +11855,7 @@ int SaveEXRImageToFile(const EXRImage *exr_image, const EXRHeader *exr_header,
   FILE *fp = fopen(filename, "wb");
 #endif
   if (!fp) {
-    if (err) {
-      (*err) = "Cannot write a file.";
-    }
+    tinyexr::SetErrorMessage("Cannot write a file", err);
     return TINYEXR_ERROR_CANT_OPEN_FILE;
   }
 
@@ -11907,9 +11874,7 @@ int SaveEXRImageToFile(const EXRImage *exr_image, const EXRHeader *exr_header,
 
 int LoadDeepEXR(DeepImage *deep_image, const char *filename, const char **err) {
   if (deep_image == NULL) {
-    if (err) {
-      (*err) = "Invalid argument.";
-    }
+    tinyexr::SetErrorMessage("Invalid argument for LoadDeepEXR", err);
     return TINYEXR_ERROR_INVALID_ARGUMENT;
   }
 
@@ -11917,17 +11882,13 @@ int LoadDeepEXR(DeepImage *deep_image, const char *filename, const char **err) {
   FILE *fp = NULL;
   errno_t errcode = fopen_s(&fp, filename, "rb");
   if ((0 != errcode) || (!fp)) {
-    if (err) {
-      (*err) = "Cannot read file.";
-    }
+    tinyexr::SetErrorMessage("Cannot read a file " + std::string(filename), err);
     return TINYEXR_ERROR_CANT_OPEN_FILE;
   }
 #else
   FILE *fp = fopen(filename, "rb");
   if (!fp) {
-    if (err) {
-      (*err) = "Cannot read file.";
-    }
+    tinyexr::SetErrorMessage("Cannot read a file " + std::string(filename), err);
     return TINYEXR_ERROR_CANT_OPEN_FILE;
   }
 #endif
@@ -11940,9 +11901,7 @@ int LoadDeepEXR(DeepImage *deep_image, const char *filename, const char **err) {
 
   if (filesize == 0) {
     fclose(fp);
-    if (err) {
-      (*err) = "File size is zero.";
-    }
+    tinyexr::SetErrorMessage("File size is zero : " + std::string(filename), err);
     return TINYEXR_ERROR_INVALID_FILE;
   }
 
@@ -11963,9 +11922,7 @@ int LoadDeepEXR(DeepImage *deep_image, const char *filename, const char **err) {
     const char header[] = {0x76, 0x2f, 0x31, 0x01};
 
     if (memcmp(marker, header, 4) != 0) {
-      if (err) {
-        (*err) = "Invalid magic number.";
-      }
+      tinyexr::SetErrorMessage("Invalid magic number", err);
       return TINYEXR_ERROR_INVALID_MAGIC_NUMBER;
     }
     marker += 4;
@@ -11976,9 +11933,7 @@ int LoadDeepEXR(DeepImage *deep_image, const char *filename, const char **err) {
     // ver 2.0, scanline, deep bit on(0x800)
     // must be [2, 0, 0, 0]
     if (marker[0] != 2 || marker[1] != 8 || marker[2] != 0 || marker[3] != 0) {
-      if (err) {
-        (*err) = "Unsupported version or scanline.";
-      }
+      tinyexr::SetErrorMessage("Unsupported version or scanline", err);
       return TINYEXR_ERROR_UNSUPPORTED_FORMAT;
     }
 
@@ -12019,9 +11974,9 @@ int LoadDeepEXR(DeepImage *deep_image, const char *filename, const char **err) {
     if (attr_name.compare("compression") == 0) {
       compression_type = data[0];
       if (compression_type > TINYEXR_COMPRESSIONTYPE_PIZ) {
-        if (err) {
-          (*err) = "Unsupported compression type.";
-        }
+        std::stringstream ss;
+        ss << "Unsupported compression type : " << compression_type;
+        tinyexr::SetErrorMessage(ss.str(), err);
         return TINYEXR_ERROR_UNSUPPORTED_FORMAT;
       }
 
@@ -12038,18 +11993,14 @@ int LoadDeepEXR(DeepImage *deep_image, const char *filename, const char **err) {
       // ySampling: int
 
       if (!tinyexr::ReadChannelInfo(channels, data)) {
-        if (err) {
-          (*err) = "Failed to parse channel info.";
-        }
+        tinyexr::SetErrorMessage("Failed to parse channel info", err);
         return TINYEXR_ERROR_INVALID_DATA;
       }
 
       num_channels = static_cast<int>(channels.size());
 
       if (num_channels < 1) {
-        if (err) {
-          (*err) = "Invalid channels format.";
-        }
+        tinyexr::SetErrorMessage("Invalid channels format", err);
         return TINYEXR_ERROR_INVALID_DATA;
       }
 
@@ -12121,9 +12072,7 @@ int LoadDeepEXR(DeepImage *deep_image, const char *filename, const char **err) {
 #endif
     // OK
   } else {
-    if (err) {
-      (*err) = "Unsupported format.";
-    }
+    tinyexr::SetErrorMessage("Unsupported compression format", err);
     return TINYEXR_ERROR_UNSUPPORTED_FORMAT;
   }
 
@@ -12315,6 +12264,13 @@ void InitEXRImage(EXRImage *exr_image) {
   exr_image->num_tiles = 0;
 }
 
+void FreeEXRErrorMessage(const char *msg) {
+  if (msg) {
+    free(reinterpret_cast<void *>(const_cast<char *>(msg)));
+  }
+  return;
+}
+
 void InitEXRHeader(EXRHeader *exr_header) {
   if (exr_header == NULL) {
     return;
@@ -12388,9 +12344,7 @@ int FreeEXRImage(EXRImage *exr_image) {
 int ParseEXRHeaderFromFile(EXRHeader *exr_header, const EXRVersion *exr_version,
                            const char *filename, const char **err) {
   if (exr_header == NULL || exr_version == NULL || filename == NULL) {
-    if (err) {
-      (*err) = "Invalid argument.";
-    }
+    tinyexr::SetErrorMessage("Invalid argument for ParseEXRHeaderFromFile", err);
     return TINYEXR_ERROR_INVALID_ARGUMENT;
   }
 
@@ -12401,9 +12355,7 @@ int ParseEXRHeaderFromFile(EXRHeader *exr_header, const EXRVersion *exr_version,
   FILE *fp = fopen(filename, "rb");
 #endif
   if (!fp) {
-    if (err) {
-      (*err) = "Cannot read file.";
-    }
+    tinyexr::SetErrorMessage("Cannot read file " + std::string(filename), err);
     return TINYEXR_ERROR_CANT_OPEN_FILE;
   }
 
@@ -12421,9 +12373,7 @@ int ParseEXRHeaderFromFile(EXRHeader *exr_header, const EXRVersion *exr_version,
     fclose(fp);
 
     if (ret != filesize) {
-      if (err) {
-        (*err) = "fread error.";
-      }
+      tinyexr::SetErrorMessage("fread() error on " + std::string(filename), err);
       return TINYEXR_ERROR_INVALID_FILE;
     }
   }
@@ -12440,6 +12390,7 @@ int ParseEXRMultipartHeaderFromMemory(EXRHeader ***exr_headers,
   if (memory == NULL || exr_headers == NULL || num_headers == NULL ||
       exr_version == NULL) {
     // Invalid argument
+    tinyexr::SetErrorMessage("Invalid argument for ParseEXRMultipartHeaderFromMemory", err);
     return TINYEXR_ERROR_INVALID_ARGUMENT;
   }
 
@@ -12462,13 +12413,7 @@ int ParseEXRMultipartHeaderFromMemory(EXRHeader ***exr_headers,
                              marker, marker_size);
 
     if (ret != TINYEXR_SUCCESS) {
-      if (err) {
-#ifdef _WIN32
-        (*err) = _strdup(err_str.c_str());  // may leak
-#else
-        (*err) = strdup(err_str.c_str());  // may leak
-#endif
-      }
+      tinyexr::SetErrorMessage(err_str, err);
       return ret;
     }
 
@@ -12479,9 +12424,7 @@ int ParseEXRMultipartHeaderFromMemory(EXRHeader ***exr_headers,
 
     // `chunkCount` must exist in the header.
     if (info.chunk_count == 0) {
-      if (err) {
-        (*err) = "`chunkCount' attribute is not found in the header.";
-      }
+      tinyexr::SetErrorMessage("`chunkCount' attribute is not found in the header.", err);
       return TINYEXR_ERROR_INVALID_DATA;
     }
 
@@ -12516,9 +12459,7 @@ int ParseEXRMultipartHeaderFromFile(EXRHeader ***exr_headers, int *num_headers,
                                     const char *filename, const char **err) {
   if (exr_headers == NULL || num_headers == NULL || exr_version == NULL ||
       filename == NULL) {
-    if (err) {
-      (*err) = "Invalid argument.";
-    }
+    tinyexr::SetErrorMessage("Invalid argument for ParseEXRMultipartHeaderFromFile()", err);
     return TINYEXR_ERROR_INVALID_ARGUMENT;
   }
 
@@ -12529,9 +12470,7 @@ int ParseEXRMultipartHeaderFromFile(EXRHeader ***exr_headers, int *num_headers,
   FILE *fp = fopen(filename, "rb");
 #endif
   if (!fp) {
-    if (err) {
-      (*err) = "Cannot read file.";
-    }
+    tinyexr::SetErrorMessage("Cannot read file " + std::string(filename), err);
     return TINYEXR_ERROR_CANT_OPEN_FILE;
   }
 
@@ -12549,9 +12488,7 @@ int ParseEXRMultipartHeaderFromFile(EXRHeader ***exr_headers, int *num_headers,
     fclose(fp);
 
     if (ret != filesize) {
-      if (err) {
-        (*err) = "fread error.";
-      }
+      tinyexr::SetErrorMessage("`fread' error. file may be corrupted.", err);
       return TINYEXR_ERROR_INVALID_FILE;
     }
   }
@@ -12660,9 +12597,7 @@ int LoadEXRMultipartImageFromMemory(EXRImage *exr_images,
                                     const size_t size, const char **err) {
   if (exr_images == NULL || exr_headers == NULL || num_parts == 0 ||
       memory == NULL || (size <= tinyexr::kEXRVersionSize)) {
-    if (err) {
-      (*err) = "Invalid argument.";
-    }
+    tinyexr::SetErrorMessage("Invalid argument for LoadEXRMultipartImageFromMemory()", err);
     return TINYEXR_ERROR_INVALID_ARGUMENT;
   }
 
@@ -12670,9 +12605,7 @@ int LoadEXRMultipartImageFromMemory(EXRImage *exr_images,
   size_t total_header_size = 0;
   for (unsigned int i = 0; i < num_parts; i++) {
     if (exr_headers[i]->header_len == 0) {
-      if (err) {
-        (*err) = "EXRHeader is not initialized.";
-      }
+      tinyexr::SetErrorMessage("EXRHeader variable is not initialized.", err);
       return TINYEXR_ERROR_INVALID_ARGUMENT;
     }
 
@@ -12707,9 +12640,7 @@ int LoadEXRMultipartImageFromMemory(EXRImage *exr_images,
       tinyexr::swap8(&offset);
 
       if (offset >= size) {
-        if (err) {
-          (*err) = "Invalid offset size.";
-        }
+        tinyexr::SetErrorMessage("Invalid offset size in EXR header chunks.", err);
         return TINYEXR_ERROR_INVALID_DATA;
       }
 
@@ -12734,7 +12665,7 @@ int LoadEXRMultipartImageFromMemory(EXRImage *exr_images,
       tinyexr::swap4(&part_no);
 
       if (part_no != i) {
-        assert(0);
+        tinyexr::SetErrorMessage("Invalid `part number' in EXR header chunks.", err);
         return TINYEXR_ERROR_INVALID_DATA;
       }
     }
@@ -12742,6 +12673,7 @@ int LoadEXRMultipartImageFromMemory(EXRImage *exr_images,
     int ret = tinyexr::DecodeChunk(&exr_images[i], exr_headers[i], offset_table,
                                    memory, size);
     if (ret != TINYEXR_SUCCESS) {
+      tinyexr::SetErrorMessage("Error in DecodeChunk()", err);
       return ret;
     }
   }
@@ -12754,9 +12686,7 @@ int LoadEXRMultipartImageFromFile(EXRImage *exr_images,
                                   unsigned int num_parts, const char *filename,
                                   const char **err) {
   if (exr_images == NULL || exr_headers == NULL || num_parts == 0) {
-    if (err) {
-      (*err) = "Invalid argument.";
-    }
+    tinyexr::SetErrorMessage("Invalid argument for LoadEXRMultipartImageFromFile", err);
     return TINYEXR_ERROR_INVALID_ARGUMENT;
   }
 
@@ -12767,9 +12697,7 @@ int LoadEXRMultipartImageFromFile(EXRImage *exr_images,
   FILE *fp = fopen(filename, "rb");
 #endif
   if (!fp) {
-    if (err) {
-      (*err) = "Cannot read file.";
-    }
+    tinyexr::SetErrorMessage("Cannot read file " + std::string(filename), err);
     return TINYEXR_ERROR_CANT_OPEN_FILE;
   }
 
