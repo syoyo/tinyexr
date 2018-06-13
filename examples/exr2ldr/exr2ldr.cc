@@ -2,11 +2,20 @@
 #include <cstdlib>
 #include <vector>
 
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Weverything"
+#endif
+
 #define STB_IMAGE_RESIZE_IMPLEMENTATION
 #include "stb_image_resize.h"
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
+
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
 
 #include "tinyexr.h"
 
