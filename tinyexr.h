@@ -10171,7 +10171,7 @@ static void DecodeTiledPixelData(
                   num_channels, channels, channel_offset_list);
 }
 
-static void ComputeChannelLayout(std::vector<size_t> *channel_offset_list,
+static bool ComputeChannelLayout(std::vector<size_t> *channel_offset_list,
                                  int *pixel_data_size, size_t *channel_offset,
                                  int num_channels,
                                  const EXRChannelInfo *channels) {
@@ -10192,9 +10192,11 @@ static void ComputeChannelLayout(std::vector<size_t> *channel_offset_list,
       (*pixel_data_size) += sizeof(unsigned int);
       (*channel_offset) += sizeof(unsigned int);
     } else {
-      assert(0);
+      // ???
+      return false;
     }
   }
+  return true;
 }
 
 static unsigned char **AllocateImage(int num_channels,
@@ -10647,9 +10649,11 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
   std::vector<size_t> channel_offset_list;
   int pixel_data_size = 0;
   size_t channel_offset = 0;
-  tinyexr::ComputeChannelLayout(&channel_offset_list, &pixel_data_size,
+  if (!tinyexr::ComputeChannelLayout(&channel_offset_list, &pixel_data_size,
                                 &channel_offset, num_channels,
-                                exr_header->channels);
+                                exr_header->channels)) {
+    return TINYEXR_ERROR_INVALID_DATA;
+  }
 
   bool invalid_data = false;  // TODO(LTE): Use atomic lock for MT safety.
 
@@ -11002,6 +11006,7 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
   {
     int ret = LoadEXRImageFromFile(&exr_image, &exr_header, filename, err);
     if (ret != TINYEXR_SUCCESS) {
+      FreeEXRHeader(&exr_header);
       return ret;
     }
   }
@@ -11046,18 +11051,21 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
       tinyexr::SetErrorMessage("R channel not found", err);
 
       // @todo { free exr_image }
+      FreeEXRHeader(&exr_header);
       return TINYEXR_ERROR_INVALID_DATA;
     }
 
     if (idxG == -1) {
       tinyexr::SetErrorMessage("G channel not found", err);
       // @todo { free exr_image }
+      FreeEXRHeader(&exr_header);
       return TINYEXR_ERROR_INVALID_DATA;
     }
 
     if (idxB == -1) {
       tinyexr::SetErrorMessage("B channel not found", err);
       // @todo { free exr_image }
+      FreeEXRHeader(&exr_header);
       return TINYEXR_ERROR_INVALID_DATA;
     }
 

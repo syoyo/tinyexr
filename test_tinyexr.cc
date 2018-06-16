@@ -295,6 +295,7 @@ main(int argc, char** argv)
     ret = LoadEXRImageFromFile(&exr_image, &exr_header, argv[1], &err);
     if (ret != 0) {
       fprintf(stderr, "Load EXR err: %s\n", err);
+      FreeEXRHeader(&exr_header);
       FreeEXRErrorMessage(err);
       return ret;
     }
@@ -349,6 +350,7 @@ main(int argc, char** argv)
     ret = SaveEXRImageToFile(&exr_image, &exr_header, outfilename, &err);
     if (ret != 0) {
       fprintf(stderr, "Save EXR err: %s\n", err);
+      FreeEXRHeader(&exr_header);
       FreeEXRErrorMessage(err);
       return ret;
     }
