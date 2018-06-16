@@ -10926,6 +10926,12 @@ static int DecodeEXRImage(EXRImage *exr_image, const EXRHeader *exr_header,
 
   for (size_t y = 0; y < num_blocks; y++) {
     tinyexr::tinyexr_uint64 offset;
+    // Issue #81
+    if ((marker + sizeof(tinyexr_uint64)) >= (head + size)) {
+      tinyexr::SetErrorMessage("Insufficient data size in offset table.", err);
+      return TINYEXR_ERROR_INVALID_DATA;
+    }
+
     memcpy(&offset, marker, sizeof(tinyexr::tinyexr_uint64));
     tinyexr::swap8(&offset);
     if (offset >= size) {
