@@ -9577,6 +9577,11 @@ static bool DecodePixelData(/* out */ unsigned char **out_images,
                             const std::vector<size_t> &channel_offset_list) {
   if (compression_type == TINYEXR_COMPRESSIONTYPE_PIZ) {  // PIZ
 #if TINYEXR_USE_PIZ
+    if ((width == 0) || (num_lines == 0) || (pixel_data_size == 0)) {
+      // Invalid input #90
+      return false;
+    }
+
     // Allocate original data size.
     std::vector<unsigned char> outBuf(static_cast<size_t>(
         static_cast<size_t>(width * num_lines) * pixel_data_size));
