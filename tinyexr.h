@@ -10089,6 +10089,12 @@ static bool DecodePixelData(/* out */ unsigned char **out_images,
             outLine += (height - 1 - y) * x_stride;
           }
 
+          if (reinterpret_cast<const unsigned char *>(line_ptr + width) >=
+              (data_ptr + data_len)) {
+            // Insufficient data size
+            return false;
+          }
+
           for (int u = 0; u < width; u++) {
             tinyexr::FP16 hf;
 
@@ -10137,8 +10143,9 @@ static bool DecodePixelData(/* out */ unsigned char **out_images,
         }
 
         for (int u = 0; u < width; u++) {
-          if (reinterpret_cast<const unsigned char *>(line_ptr + u) >= (data_ptr + data_len)) {
-              // Corrupesed data?
+          if (reinterpret_cast<const unsigned char *>(line_ptr + u) >=
+              (data_ptr + data_len)) {
+            // Corrupesed data?
             return false;
           }
 
