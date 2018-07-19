@@ -10089,7 +10089,7 @@ static bool DecodePixelData(/* out */ unsigned char **out_images,
             outLine += (height - 1 - y) * x_stride;
           }
 
-          if (reinterpret_cast<const unsigned char *>(line_ptr + width) >=
+          if (reinterpret_cast<const unsigned char *>(line_ptr + width) >
               (data_ptr + data_len)) {
             // Insufficient data size
             return false;
@@ -10145,7 +10145,7 @@ static bool DecodePixelData(/* out */ unsigned char **out_images,
         for (int u = 0; u < width; u++) {
           if (reinterpret_cast<const unsigned char *>(line_ptr + u) >=
               (data_ptr + data_len)) {
-            // Corrupesed data?
+            // Corrupsed data?
             return false;
           }
 
@@ -10331,6 +10331,9 @@ static int ParseEXRHeader(HeaderInfo *info, bool *empty_header,
   size_t orig_size = size;
   for (size_t nattr = 0; nattr < TINYEXR_MAX_HEADER_ATTRIBUTES; nattr++) {
     if (0 == size) {
+      if (err) {
+        (*err) += "Insufficient data size for attributes.\n";
+      }
       return TINYEXR_ERROR_INVALID_DATA;
     } else if (marker[0] == '\0') {
       size--;
@@ -10343,6 +10346,9 @@ static int ParseEXRHeader(HeaderInfo *info, bool *empty_header,
     size_t marker_size;
     if (!tinyexr::ReadAttribute(&attr_name, &attr_type, &data, &marker_size,
                                 marker, size)) {
+      if (err) {
+        (*err) += "Failed to read attribute.\n";
+      }
       return TINYEXR_ERROR_INVALID_DATA;
     }
     marker += marker_size;
@@ -10413,14 +10419,14 @@ static int ParseEXRHeader(HeaderInfo *info, bool *empty_header,
 
       if (!ReadChannelInfo(info->channels, data)) {
         if (err) {
-          (*err) = "Failed to parse channel info.";
+          (*err) += "Failed to parse channel info.\n";
         }
         return TINYEXR_ERROR_INVALID_DATA;
       }
 
       if (info->channels.size() < 1) {
         if (err) {
-          (*err) = "# of channels is zero.";
+          (*err) += "# of channels is zero.\n";
         }
         return TINYEXR_ERROR_INVALID_DATA;
       }
@@ -10654,7 +10660,7 @@ static void ConvertHeader(EXRHeader *exr_header, const HeaderInfo &info) {
 
 static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
                        const std::vector<tinyexr::tinyexr_uint64> &offsets,
-                       const unsigned char *head, const size_t size) {
+                       const unsigned char *head, const size_t size, std::string *err) {
   int num_channels = exr_header->num_channels;
 
   int num_scanline_blocks = 1;
@@ -10677,6 +10683,9 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
   if (!tinyexr::ComputeChannelLayout(&channel_offset_list, &pixel_data_size,
                                      &channel_offset, num_channels,
                                      exr_header->channels)) {
+    if (err) {
+      (*err) += "Failed to compute channel layout.\n";
+    }
     return TINYEXR_ERROR_INVALID_DATA;
   }
 
@@ -10698,6 +10707,9 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
       // 4 byte : data size
       // ~      : data(uncompressed or compressed)
       if (offsets[tile_idx] + sizeof(int) * 5 > size) {
+        if (err) {
+          (*err) += "Insufficient data size.\n";
+        }
         return TINYEXR_ERROR_INVALID_DATA;
       }
 
@@ -10726,6 +10738,9 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
       tinyexr::swap4(reinterpret_cast<unsigned int *>(&data_len));
 
       if (data_len < 4 || size_t(data_len) > data_size) {
+        if (err) {
+          (*err) += "Insufficient data length.\n";
+        }
         return TINYEXR_ERROR_INVALID_DATA;
       }
 
@@ -10990,7 +11005,18 @@ static int DecodeEXRImage(EXRImage *exr_image, const EXRHeader *exr_header,
     }
   }
 
-  return DecodeChunk(exr_image, exr_header, offsets, head, size);
+  {
+    std::string e;
+    int ret = DecodeChunk(exr_image, exr_header, offsets, head, size, &e);
+
+    if (ret != TINYEXR_SUCCESS) {
+      if (!e.empty()) {
+        tinyexr::SetErrorMessage(e, err);
+      }
+    }
+
+    return ret;
+  }
 }
 
 }  // namespace tinyexr
@@ -11011,6 +11037,7 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
   {
     int ret = ParseEXRVersionFromFile(&exr_version, filename);
     if (ret != TINYEXR_SUCCESS) {
+      tinyexr::SetErrorMessage("Invalid EXR header.", err);
       return ret;
     }
 
@@ -11180,6 +11207,9 @@ int ParseEXRHeaderFromMemory(EXRHeader *exr_header, const EXRVersion *version,
   }
 
   if (size < tinyexr::kEXRVersionSize) {
+    tinyexr::SetErrorMessage(
+        "Insufficient header/data size.\n",
+        err);
     return TINYEXR_ERROR_INVALID_DATA;
   }
 
@@ -11333,6 +11363,7 @@ int LoadEXRImageFromFile(EXRImage *exr_image, const EXRHeader *exr_header,
   fseek(fp, 0, SEEK_SET);
 
   if (filesize < 16) {
+    tinyexr::SetErrorMessage("File size too short " + std::string(filename), err);
     return TINYEXR_ERROR_INVALID_FILE;
   }
 
@@ -12451,6 +12482,8 @@ int ParseEXRMultipartHeaderFromMemory(EXRHeader ***exr_headers,
   }
 
   if (size < tinyexr::kEXRVersionSize) {
+    tinyexr::SetErrorMessage(
+        "Data size too short", err);
     return TINYEXR_ERROR_INVALID_DATA;
   }
 
@@ -12731,10 +12764,13 @@ int LoadEXRMultipartImageFromMemory(EXRImage *exr_images,
       }
     }
 
+    std::string e;
     int ret = tinyexr::DecodeChunk(&exr_images[i], exr_headers[i], offset_table,
-                                   memory, size);
+                                   memory, size, &e);
     if (ret != TINYEXR_SUCCESS) {
-      tinyexr::SetErrorMessage("Error in DecodeChunk()", err);
+      if (!e.empty()) {
+        tinyexr::SetErrorMessage(e, err);
+      }
       return ret;
     }
   }
