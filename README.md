@@ -97,13 +97,17 @@ NOTE: **API is still subject to change**. See the source code for details.
 Include `tinyexr.h` with `TINYEXR_IMPLEMENTATION` flag(do this only for **one** .cc file).
 
 ```
+//Please include your own zlib-compatible API header before
+//including `tinyexr.h` when you disable `TINYEXR_USE_MINIZ`
+//#define TINYEXR_USE_MINIZ 0
+//#include "zlib.h"
 #define TINYEXR_IMPLEMENTATION
 #include "tinyexr.h"
 ```
 
 ### Compile flags
 
-* `TINYEXR_USE_MINIZ` Use embedded miniz(default = 1)
+* `TINYEXR_USE_MINIZ` Use embedded miniz(default = 1). Please include `zlib.h` header(before `tinyexr.h`) if you disable miniz support.
 * `TINYEXR_USE_PIZ` Enable PIZ compression support(default = 1)
 * `TINYEXR_USE_ZFP` Enable ZFP compression supoort(TinyEXR extension, default = 0)
 
