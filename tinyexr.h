@@ -10123,6 +10123,12 @@ static bool DecodePixelData(/* out */ unsigned char **out_images,
           outLine += (height - 1 - y) * x_stride;
         }
 
+        if (reinterpret_cast<const unsigned char *>(line_ptr + width) >
+            (data_ptr + data_len)) {
+          // Insufficient data size
+          return false;
+        }
+
         for (int u = 0; u < width; u++) {
           float val;
           tinyexr::cpy4(&val, line_ptr + u);
