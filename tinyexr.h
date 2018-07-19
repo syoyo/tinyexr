@@ -11013,6 +11013,19 @@ static int DecodeEXRImage(EXRImage *exr_image, const EXRHeader *exr_header,
       if (!e.empty()) {
         tinyexr::SetErrorMessage(e, err);
       }
+
+      // release memory(if exists)
+      if ((exr_header->num_channels > 0) && exr_image && exr_image->images) {
+        for (size_t c = 0; c < size_t(exr_header->num_channels); c++) {
+          if (exr_image->images[c]) {
+            free(exr_image->images[c]);
+            exr_image->images[c] = NULL;
+          }
+        }
+        free(exr_image->images);
+        exr_image->images = NULL;
+      }
+
     }
 
     return ret;
