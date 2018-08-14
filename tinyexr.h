@@ -7239,7 +7239,21 @@ static bool ReadAttribute(std::string *name, std::string *type,
   tinyexr::swap4(reinterpret_cast<unsigned int *>(&data_len));
 
   if (data_len == 0) {
-    return false;
+    if ((*type).compare("string") == 0) {
+      // Accept empty string attribute.
+
+      marker += sizeof(uint32_t);
+      size -= sizeof(uint32_t);
+
+      *marker_size = name_len + 1 + type_len + 1 + sizeof(uint32_t);
+
+      data->resize(1);
+      (*data)[0] = '\0';
+
+      return true;
+    } else {
+      return false;
+    }
   }
 
   marker += sizeof(uint32_t);
