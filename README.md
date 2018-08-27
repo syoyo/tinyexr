@@ -69,6 +69,7 @@ Current status of `tinyexr` is:
 
 ## New TinyEXR(v0.9.5+)
 
+* Godot. Multi-platform 2D and 3D game engine https://godotengine.org/
 * Filament. PBR engine. https://github.com/google/filament
 * PyEXR. Loading OpenEXR (.exr) images using Python. https://github.com/ialhashim/PyEXR
 
