@@ -13,6 +13,7 @@
 #include "../../tinyexr.h"
 
 // path to https://github.com/openexr/openexr-images
+// TODO(syoyo): Read openexr-images path from command argument.
 const char* kOpenEXRImagePath = "../../../openexr-images/";
 
 std::string GetPath(const char* basename) {
@@ -776,3 +777,39 @@ TEST_CASE("Regression: Issue71", "[issue71]") {
 
   free(image);
 }
+
+// LoadEXRLoadFromMemory fails to load tiled image.
+TEST_CASE("Regression: Issue93", "[issue93]") {
+  std::string filepath = GetPath("Tiles/GoldenGate.exr");
+
+  std::ifstream f(filepath.c_str(), std::ifstream::binary);
+  REQUIRE(f.good());
+
+  f.seekg(0, f.end);
+  size_t sz = static_cast<size_t>(f.tellg());
+  f.seekg(0, f.beg);
+
+  REQUIRE(sz > 16);
+
+  std::vector<unsigned char> data;
+
+  data.resize(sz);
+  f.read(reinterpret_cast<char *>(&data.at(0)),
+         static_cast<std::streamsize>(sz));
+  f.close();
+
+  const char* err;
+  int width, height;
+  float* image;
+  int ret = LoadEXRFromMemory(&image, &width, &height, data.data(), data.size(), &err);
+  REQUIRE(TINYEXR_SUCCESS == ret);
+
+  std::cout << "val = " << image[0] << ", " << image[1] << ", " << image[2] << ", " << image[3] << std::endl;
+
+  REQUIRE(0.0612183 == Approx(image[0]));
+  REQUIRE(0.0892334 == Approx(image[1]));
+  REQUIRE(0.271973 == Approx(image[2]));
+
+  free(image);
+}
+

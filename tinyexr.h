@@ -11356,18 +11356,53 @@ int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
       malloc(4 * sizeof(float) * static_cast<size_t>(exr_image.width) *
              static_cast<size_t>(exr_image.height)));
 
-  for (int i = 0; i < exr_image.width * exr_image.height; i++) {
-    (*out_rgba)[4 * i + 0] =
-        reinterpret_cast<float **>(exr_image.images)[idxR][i];
-    (*out_rgba)[4 * i + 1] =
-        reinterpret_cast<float **>(exr_image.images)[idxG][i];
-    (*out_rgba)[4 * i + 2] =
-        reinterpret_cast<float **>(exr_image.images)[idxB][i];
-    if (idxA != -1) {
-      (*out_rgba)[4 * i + 3] =
-          reinterpret_cast<float **>(exr_image.images)[idxA][i];
-    } else {
-      (*out_rgba)[4 * i + 3] = 1.0;
+  if (exr_header.tiled) {
+    for (int it = 0; it < exr_image.num_tiles; it++) {
+      for (int j = 0; j < exr_header.tile_size_y; j++)
+        for (int i = 0; i < exr_header.tile_size_x; i++) {
+          const int ii =
+              exr_image.tiles[it].offset_x * exr_header.tile_size_x + i;
+          const int jj =
+              exr_image.tiles[it].offset_y * exr_header.tile_size_y + j;
+          const int idx = ii + jj * exr_image.width;
+
+          // out of region check.
+          if (ii >= exr_image.width) {
+            continue;
+          }
+          if (jj >= exr_image.height) {
+            continue;
+          }
+          const int srcIdx = i + j * exr_header.tile_size_x;
+          unsigned char **src = exr_image.tiles[it].images;
+          (*out_rgba)[4 * idx + 0] =
+              reinterpret_cast<float **>(src)[idxR][srcIdx];
+          (*out_rgba)[4 * idx + 1] =
+              reinterpret_cast<float **>(src)[idxG][srcIdx];
+          (*out_rgba)[4 * idx + 2] =
+              reinterpret_cast<float **>(src)[idxB][srcIdx];
+          if (idxA != -1) {
+            (*out_rgba)[4 * idx + 3] =
+                reinterpret_cast<float **>(src)[idxA][srcIdx];
+          } else {
+            (*out_rgba)[4 * idx + 3] = 1.0;
+          }
+        }
+    }
+  } else {
+    for (int i = 0; i < exr_image.width * exr_image.height; i++) {
+      (*out_rgba)[4 * i + 0] =
+          reinterpret_cast<float **>(exr_image.images)[idxR][i];
+      (*out_rgba)[4 * i + 1] =
+          reinterpret_cast<float **>(exr_image.images)[idxG][i];
+      (*out_rgba)[4 * i + 2] =
+          reinterpret_cast<float **>(exr_image.images)[idxB][i];
+      if (idxA != -1) {
+        (*out_rgba)[4 * i + 3] =
+            reinterpret_cast<float **>(exr_image.images)[idxA][i];
+      } else {
+        (*out_rgba)[4 * i + 3] = 1.0;
+      }
     }
   }
 
