@@ -11898,8 +11898,8 @@ size_t SaveEXRImageToMemory(const EXRImage *exr_image,
     } else if (exr_header->compression_type == TINYEXR_COMPRESSIONTYPE_PIZ) {
 #if TINYEXR_USE_PIZ
       unsigned int bufLen =
-          1024 + static_cast<unsigned int>(
-                     1.2 * static_cast<unsigned int>(
+          8192 + static_cast<unsigned int>(
+                     2 * static_cast<unsigned int>(
                                buf.size()));  // @fixme { compute good bound. }
       std::vector<unsigned char> block(bufLen);
       unsigned int outSize = static_cast<unsigned int>(block.size());
