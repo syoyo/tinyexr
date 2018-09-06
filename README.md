@@ -88,6 +88,7 @@ Current status of `tinyexr` is:
 * [examples/exr2rgbe/](examples/exr2rgbe) EXR to .hdr converter
 * [examples/ldr2exr/](examples/exr2rgbe) LDR to EXR converter
 * [examples/exr2ldr/](examples/exr2ldr) EXR to LDR converter
+* [examples/cube2longlat/](examples/cube2longlat) Cubemap to longlat(equirectangler) converter
 
 ## Experimental
 
