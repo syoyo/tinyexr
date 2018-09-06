@@ -72,6 +72,7 @@ Current status of `tinyexr` is:
 * Godot. Multi-platform 2D and 3D game engine https://godotengine.org/
 * Filament. PBR engine. https://github.com/google/filament
 * PyEXR. Loading OpenEXR (.exr) images using Python. https://github.com/ialhashim/PyEXR
+* Your project here!
 
 ## Older TinyEXR(v0.9.0)
 
@@ -98,7 +99,7 @@ NOTE: **API is still subject to change**. See the source code for details.
 
 Include `tinyexr.h` with `TINYEXR_IMPLEMENTATION` flag(do this only for **one** .cc file).
 
-```
+```cpp
 //Please include your own zlib-compatible API header before
 //including `tinyexr.h` when you disable `TINYEXR_USE_MINIZ`
 //#define TINYEXR_USE_MINIZ 0
@@ -115,7 +116,7 @@ Include `tinyexr.h` with `TINYEXR_IMPLEMENTATION` flag(do this only for **one** 
 
 ### Quickly reading RGB(A) EXR file.
 
-```
+```cpp
   const char* input = "asakusa.exr";
   float* out; // width * height * RGBA
   int width;
@@ -129,7 +130,7 @@ Include `tinyexr.h` with `TINYEXR_IMPLEMENTATION` flag(do this only for **one** 
 
 Scanline and tiled format are supported.
 
-```
+```cpp
   // 1. Read EXR version.
   EXRVersion exr_version;
 
@@ -185,7 +186,7 @@ Scanline and tiled format are supported.
 
 Scanline and tiled format are supported.
 
-```
+```cpp
   // 1. Read EXR version.
   EXRVersion exr_version;
 
@@ -253,7 +254,7 @@ Scanline and tiled format are supported.
 
 Saving Scanline EXR file.
 
-```
+```cpp
   // See `examples/rgbe2exr/` for more details.
   bool SaveEXR(const float* rgb, int width, int height, const char* outfilename) {
 
@@ -322,7 +323,7 @@ Saving Scanline EXR file.
 Reading deep image EXR file.
 See `example/deepview` for actual usage.
 
-```
+```cpp
   const char* input = "deepimage.exr";
   const char* err = NULL; // or nullptr
   DeepImage deepImage;
