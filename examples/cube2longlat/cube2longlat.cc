@@ -146,6 +146,7 @@ static bool LoadCubemaps(const std::array<std::string, 6> face_filenames,
       std::cerr << "Unknown file extension : " << ext << std::endl;
       return false;
     }
+    std::cout << "Loaded " << face_filenames[i] << std::endl;
   }
 
   return true;
@@ -157,9 +158,9 @@ void convert_xyz_to_cube_uv(float x, float y, float z, int* index, float* u,
   float absY = fabs(y);
   float absZ = fabs(z);
 
-  int isXPositive = x > 0 ? 1 : 0;
-  int isYPositive = y > 0 ? 1 : 0;
-  int isZPositive = z > 0 ? 1 : 0;
+  int isXPositive = x > 0.0f ? 1 : 0;
+  int isYPositive = y > 0.0f ? 1 : 0;
+  int isZPositive = z > 0.0f ? 1 : 0;
 
   float maxAxis, uc, vc;
 
@@ -200,7 +201,7 @@ void convert_xyz_to_cube_uv(float x, float y, float z, int* index, float* u,
     *index = 3;
   }
   // POSITIVE Z
-  if (isZPositive && absZ >= absX && absZ >= absY) {
+  if (isZPositive && (absZ >= absX) && (absZ >= absY)) {
     // u (0 to 1) goes from -x to +x
     // v (0 to 1) goes from -y to +y
     maxAxis = absZ;
@@ -209,7 +210,7 @@ void convert_xyz_to_cube_uv(float x, float y, float z, int* index, float* u,
     *index = 4;
   }
   // NEGATIVE Z
-  if (!isZPositive && absZ >= absX && absZ >= absY) {
+  if (!isZPositive && (absZ >= absX) && (absZ >= absY)) {
     // u (0 to 1) goes from +x to -x
     // v (0 to 1) goes from -y to +y
     maxAxis = absZ;
@@ -278,16 +279,20 @@ static void SampleCubemap(const std::array<Image, 6>& cubemap_faces,
 
   v = 1.0f - v;
 
-  //std::cout << "face = " << face << std::endl;
+  // std::cout << "face = " << face << std::endl;
 
   // TODO(syoyo): Do we better consider seams on the cubemap face border?
   const Image& tex = cubemap_faces[face];
 
-  //std::cout << "n = " << n[0] << ", " << n[1] << ", " << n[2] << ", uv = " << u << ", " << v << std::endl;
+  // std::cout << "n = " << n[0] << ", " << n[1] << ", " << n[2] << ", uv = " <<
+  // u << ", " << v << std::endl;
 
-  SampleTexture(col, u, v, tex.width, tex.height, /* RGB */ 3,
-                tex.data.data());
+  SampleTexture(col, u, v, tex.width, tex.height, /* RGB */ 3, tex.data.data());
 
+// col[0] = u;
+// col[1] = v;
+// col[2] = 0.0f;
+#if 0
   if (face == 0) {
     col[0] = 1.0f; 
     col[1] = 0.0f; 
@@ -313,10 +318,12 @@ static void SampleCubemap(const std::array<Image, 6>& cubemap_faces,
     col[1] = 1.0f; 
     col[2] = 1.0f; 
   }
+#endif
 }
 
 static void CubemapToLonglat(const std::array<Image, 6>& cubemap_faces,
-                             int width, Image* longlat) {
+                             const float phi_offset, /* in angle */
+                             const int width, Image* longlat) {
   int height = width / 2;
 
   longlat->width = width;
@@ -330,12 +337,14 @@ static void CubemapToLonglat(const std::array<Image, 6>& cubemap_faces,
     for (size_t x = 0; x < size_t(width); x++) {
       float phi = ((x + 0.5f) / float(width)) * 2.0f * kPI;  // [0, 2 pi]
 
+      phi += (phi_offset) * kPI / 180.0f;
+
       float n[3];
 
       // Y-up
       n[0] = std::sin(theta) * std::cos(phi);
       n[1] = std::cos(theta);
-      n[2] = -std::sin(phi) * std::sin(phi);
+      n[2] = -std::sin(theta) * std::sin(phi);
 
       float col[3];
       SampleCubemap(cubemap_faces, n, col);
@@ -347,17 +356,18 @@ static void CubemapToLonglat(const std::array<Image, 6>& cubemap_faces,
   }
 }
 
-static unsigned char ftouc(const float f)
-{
+static unsigned char ftouc(const float f) {
   int i(f * 255.0f);
   i = std::max(0, std::min(255, i));
   return static_cast<unsigned char>(i);
 }
 
 int main(int argc, char** argv) {
+  float phi_offset = 0.0f;
+
   if (argc < 9) {
     printf(
-        "Usage: cube2longlat nx.exr ny.exr nz.exr px.exr py.exr pz.exr "
+        "Usage: cube2longlat px.exr nx.exr py.exr ny.exr pz.exr nz.exr "
         "output_width output.exr\n");
     exit(-1);
   }
@@ -375,6 +385,10 @@ int main(int argc, char** argv) {
 
   std::string output_filename = argv[8];
 
+  if (argc > 9) {
+    phi_offset = atof(argv[9]);
+  }
+
   std::array<Image, 6> cubemaps;
 
   if (!LoadCubemaps(face_filenames, &cubemaps)) {
@@ -384,7 +398,7 @@ int main(int argc, char** argv) {
 
   Image longlat;
 
-  CubemapToLonglat(cubemaps, output_width, &longlat);
+  CubemapToLonglat(cubemaps, phi_offset, output_width, &longlat);
 
   {
     std::string ext = GetFileExtension(output_filename);
@@ -443,6 +457,8 @@ int main(int argc, char** argv) {
       }
     }
   }
+
+  std::cout << "Write " << output_filename << std::endl;
 
   return 0;
 }

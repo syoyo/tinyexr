@@ -1,2 +1,24 @@
-all:
-	clang++ -g -fsanitize=address -std=c++11 -O2 -o cube2longlat -I../../ cube2longlat.cc ../../tinyexr.cc
+INC_DIR = -I../../
+
+INCLUDES := ../../tinyexr.h
+OBJS := tinyexr.o cube2longlat.o
+
+CXXFLAGS := -fsanitize=address -std=c++11 -O2
+LDFLAGS := -fsanitize=address
+
+TARGET=cube2longlat
+ 
+all: $(TARGET)
+
+$(TARGET): $(OBJS)
+	$(CXX) -o $(TARGET) $(LDFLAGS) $(OBJS)
+
+tinyexr.o: ../../tinyexr.cc
+	$(CXX) $(CXXFLAGS) -c $(INC_DIR) $<
+
+cube2longlat.o: cube2longlat.cc
+	$(CXX) $(CXXFLAGS) -c $(INC_DIR) $<
+
+.PHONY: clean
+clean:
+	rm -rf $(TARGET) $(OBJS)
