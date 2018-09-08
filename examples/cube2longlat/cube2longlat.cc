@@ -6,11 +6,14 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
+#include "cxxopts.hpp"
+
 #include <array>
 #include <cmath>
 #include <iostream>
 #include <string>
 #include <vector>
+#include <limits>
 
 // From Filament.
 static inline void RGBMtoLinear(const float rgbm[4], float linear[3]) {
@@ -152,11 +155,85 @@ static bool LoadCubemaps(const std::array<std::string, 6> face_filenames,
   return true;
 }
 
-void convert_xyz_to_cube_uv(float x, float y, float z, int* index, float* u,
+static float sectorize(float value) {
+  float x = (value < 0.0f) ? 0.0f : 1.0f; // step(0.0, value)
+  return x * 2.0f - 1.0f; // [-1, 1]
+}
+
+#if 0 // for reference
+static void convert_xyz_to_octahedral_uv(float x, float y, float z, float* u,
                             float* v) {
-  float absX = fabs(x);
-  float absY = fabs(y);
-  float absZ = fabs(z);
+
+  float normal[3];
+  float denom = std::fabs(x) + std::fabs(y) + std::fabs(z);
+
+  normal[0] = x / denom;
+  normal[1] = y / denom;
+  normal[2] = z / denom;
+
+  if (normal[1] > 0.0f) {
+    (*u) = normal[0] * 0.5f + 0.5f;
+    (*v) = normal[2] * 0.5f + 0.5f;
+  } else {
+    float suv[2];
+    suv[0] = sectorize(normal[0]);
+    suv[1] = sectorize(normal[2]);
+
+    float uv[2];
+    uv[0] = suv[0] - suv[0] * std::fabs(normal[2]);
+    uv[1] = suv[1] - suv[1] * std::fabs(normal[0]);
+
+    (*u) = uv[0] * 0.5f + 0.5f;
+    (*v) = uv[1] * 0.5f + 0.5f;
+  }
+}
+#endif
+
+static void uv_to_normal_rect_oct(float u, float v, float *x, float *y, float *z) {
+  float uv[2];
+    
+  uv[0] = u * 2.0f - 1.0f;
+  uv[1] = v * 2.0f - 1.0f;
+
+  float auv[2];
+  auv[0] = std::fabs(uv[0]);
+  auv[1] = std::fabs(uv[1]);
+
+  float suv[2];
+  suv[0] = sectorize(auv[0]);
+  suv[1] = sectorize(auv[1]);
+
+  float l = auv[0] + auv[1];
+
+  if (l > 1.0f) {
+    uv[0] = (1.0f - auv[1]) * suv[0];
+    uv[1] = (1.0f - auv[0]) * suv[1];
+  }
+
+  float n[3];
+  n[0] = uv[0];
+  n[1] = 1.0f - l;
+  n[2] = uv[1];
+
+  // normalize.
+  {
+    const float d2 = n[0] * n[0] + n[1] * n[1] + n[2] * n[2];   
+    if (d2 > std::numeric_limits<float>::epsilon()) {
+      const float d = 1.0f / std::sqrt(d2);
+
+      n[0] *= d;
+      n[1] *= d;
+      n[1] *= d;
+    }
+  }
+}
+
+
+static void convert_xyz_to_cube_uv(float x, float y, float z, int* index, float* u,
+                            float* v) {
+  float absX = std::fabs(x);
+  float absY = std::fabs(y);
+  float absZ = std::fabs(z);
 
   int isXPositive = x > 0.0f ? 1 : 0;
   int isYPositive = y > 0.0f ? 1 : 0;
@@ -352,6 +429,34 @@ static void CubemapToLonglat(const std::array<Image, 6>& cubemap_faces,
       longlat->data[3 * size_t(y * width + x) + 0] = col[0];
       longlat->data[3 * size_t(y * width + x) + 1] = col[1];
       longlat->data[3 * size_t(y * width + x) + 2] = col[2];
+    }
+  }
+}
+
+// TODO(syoyo): Rotation
+static void CubemapToOctahedral(const std::array<Image, 6>& cubemap_faces,
+                             const int width, Image* octahedral) {
+  octahedral->width = width;
+  octahedral->height = width;
+  octahedral->data.resize(size_t(width * width * 3));  // RGB
+
+  const float kPI = 3.141592f;
+
+  for (size_t y = 0; y < size_t(width); y++) {
+    float v = (y + 0.5f) / float(width);
+    for (size_t x = 0; x < size_t(width); x++) {
+      float u = (x + 0.5f) / float(width);
+
+      // uv -> normal
+      float n[3];
+      uv_to_normal_rect_oct(u, v, &n[0], &n[1], &n[2]);
+      
+      float col[3];
+      SampleCubemap(cubemap_faces, n, col);
+
+      octahedral->data[3 * size_t(y * width + x) + 0] = col[0];
+      octahedral->data[3 * size_t(y * width + x) + 1] = col[1];
+      octahedral->data[3 * size_t(y * width + x) + 2] = col[2];
     }
   }
 }
