@@ -10095,9 +10095,9 @@ static bool DecodePixelData(/* out */ unsigned char **out_images,
             unsigned short *outLine =
                 reinterpret_cast<unsigned short *>(out_images[c]);
             if (line_order == 0) {
-              outLine += (y + v) * x_stride;
+              outLine += (size_t(y) + v) * size_t(x_stride);
             } else {
-              outLine += (height - 1 - (y + v)) * x_stride;
+              outLine += (size_t(height) - 1 - (size_t(y) + v)) * size_t(x_stride);
             }
 
             for (int u = 0; u < width; u++) {
@@ -10113,9 +10113,9 @@ static bool DecodePixelData(/* out */ unsigned char **out_images,
           } else if (requested_pixel_types[c] == TINYEXR_PIXELTYPE_FLOAT) {
             float *outLine = reinterpret_cast<float *>(out_images[c]);
             if (line_order == 0) {
-              outLine += (y + v) * x_stride;
+              outLine += (size_t(y) + v) * size_t(x_stride);
             } else {
-              outLine += (height - 1 - (y + v)) * x_stride;
+              outLine += (size_t(height) - 1 - (size_t(y) + v)) * size_t(x_stride);
             }
 
             if (reinterpret_cast<const unsigned char *>(line_ptr + width) >
@@ -10148,9 +10148,9 @@ static bool DecodePixelData(/* out */ unsigned char **out_images,
 
           float *outLine = reinterpret_cast<float *>(out_images[c]);
           if (line_order == 0) {
-            outLine += (y + v) * x_stride;
+            outLine += (size_t(y) + v) * size_t(x_stride);
           } else {
-            outLine += (height - 1 - (y + v)) * x_stride;
+            outLine += (size_t(height) - 1 - (size_t(y) + v)) * size_t(x_stride);
           }
 
           if (reinterpret_cast<const unsigned char *>(line_ptr + width) >
@@ -10175,9 +10175,9 @@ static bool DecodePixelData(/* out */ unsigned char **out_images,
           unsigned int *outLine =
               reinterpret_cast<unsigned int *>(out_images[c]);
           if (line_order == 0) {
-            outLine += (y + v) * x_stride;
+            outLine += (size_t(y) + v) * size_t(x_stride);
           } else {
-            outLine += (height - 1 - (y + v)) * x_stride;
+            outLine += (size_t(height) - 1 - (size_t(y) + v)) * size_t(x_stride);
           }
 
           for (int u = 0; u < width; u++) {
