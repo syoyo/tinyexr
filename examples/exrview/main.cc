@@ -332,19 +332,15 @@ void computeBokeh(float bokeh, int w, int h) {
         bVal[i] = new float[4];
     }
 
-//    float gVal[100][4] = {0};
-
-    //  float bVal[100][4] = {0};
-
     // horizontal
     fprintf(stderr, "horizontal \n");
     for(int x = 0; x < w; x++) {
         for(int y = 0; y < h; y++) {
             for(int i = -KERNEL_RADIUS; i <= KERNEL_RADIUS; i++) {
                 int horizontalTex = int(x + i * bokeh);
-                if (x + i < 0) {
+                if (horizontalTex < 0) {
                     horizontalTex = int(x - i * bokeh);
-                } else if (x + i >= w) {
+                } else if (horizontalTex >= w) {
                     horizontalTex = int(x - i * bokeh);
                 }
                 float rTexel = gInitialExrRGBA[4 * (y * gExrWidth + horizontalTex) + 0];
@@ -377,20 +373,18 @@ void computeBokeh(float bokeh, int w, int h) {
         }
     }
     fprintf(stderr, "pass step1 \n");
-    // float rVertical[(w) * (h)][4] = {{0}};
-    // float gVertical[(w) * (h)][4] = {{0}};
-    // float bVertical[(w) * (h)][4] = {{0}};
+
     //vertical
-    for(int x = KERNEL_RADIUS; x < w - KERNEL_RADIUS; x++) {
-        for(int y = KERNEL_RADIUS; y < h - KERNEL_RADIUS; y++) {
+    for(int x = 0; x < w; x++) {
+        for(int y = 0; y < h; y++) {
             float rVertical[4] = {0, 0, 0, 0};
             float gVertical[4] = {0, 0, 0, 0};
             float bVertical[4] = {0, 0, 0, 0};
             for(int i = -KERNEL_RADIUS; i <= KERNEL_RADIUS; i++) {
                 int verticalTex = int(y + i * bokeh);
-                if (y + i < 0) {
+                if (verticalTex < 0) {
                     verticalTex = int(y - i * bokeh);
-                } else if (y + i >= h) {
+                } else if (verticalTex >= h) {
                     verticalTex = int(y - i * bokeh);
                 }
                 float rTexel[4] = {rVal[verticalTex * gExrWidth + x][0],
