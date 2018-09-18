@@ -279,6 +279,7 @@ extern int LoadEXR(float **out_rgba, int *width, int *height,
 // Save image as fp16(HALF) format when `save_as_fp16` is positive non-zero
 // value.
 // Save image as fp32(FLOAT) format when `save_as_fp16` is 0.
+// Use ZIP compression by default.
 extern int SaveEXR(const float *data, const int width, const int height,
                    const int components, const int save_as_fp16,
                    const char *filename);
@@ -12911,12 +12912,15 @@ int SaveEXR(const float *data, int width, int height, int components,
     return TINYEXR_ERROR_INVALID_ARGUMENT;
   }
 
-  // Assume at least 16x16 pixels.
-  if (width < 16) return TINYEXR_ERROR_INVALID_ARGUMENT;
-  if (height < 16) return TINYEXR_ERROR_INVALID_ARGUMENT;
-
   EXRHeader header;
   InitEXRHeader(&header);
+
+  if ((width < 16) && (height < 16)) {
+    // No compression for small image.
+    header.compression_type = TINYEXR_COMPRESSIONTYPE_NONE;
+  } else {
+    header.compression_type = TINYEXR_COMPRESSIONTYPE_ZIP;
+  }
 
   EXRImage image;
   InitEXRImage(&image);
