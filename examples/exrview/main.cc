@@ -47,10 +47,8 @@ int gHeight = 512;
 GLuint gTexId;
 float gIntensityScale = 1.0;
 float gGamma = 1.0;
-float gBokeh = 0.0;
 int gExrWidth, gExrHeight;
 float* gExrRGBA;
-float* gInitialExrRGBA;
 int gMousePosX, gMousePosY;
 
 struct nk_context* ctx;
@@ -166,7 +164,7 @@ LinkShader(
   GLuint& fragShader)
 {
   GLint val = 0;
-
+  
   if (prog != 0) {
     glDeleteProgram(prog);
   }
@@ -249,206 +247,6 @@ void InspectPixel(float rgba[4], int x, int y) {
   rgba[1] = gExrRGBA[4 * (y * gExrWidth + x) + 1];
   rgba[2] = gExrRGBA[4 * (y * gExrWidth + x) + 2];
   rgba[3] = gExrRGBA[4 * (y * gExrWidth + x) + 3];
-
-}
-
-void multComplex(float reP, float imP, float reQ, float imQ,
-                 float &reResult, float &imResult)
-{
-    reResult = reP * reQ - imP * imQ;
-    imResult = reP * imQ + imP * reQ;
-}
-
-float vdot(float reA, float imA, float reB, float imB) {
-    return reA * reB + imA * imB;
-}
-
-const float MAX_FILTER_SIZE = 1.0;
-const int KERNEL_RADIUS = 8;
-const int KERNEL_COUNT = 17;
-const float Kernel0BracketsRealXY_ImZW[4] = {-0.038708,0.943062,-0.025574,0.660892};
-const float Kernel0Weights_RealX_ImY[2] = {0.411259,-0.548794};
-const float Kernel0_RealX_ImY_RealZ_ImW[17][4] = {
-        {/*XY: Non Bracketed*/0.014096,-0.022658,/*Bracketed WZ:*/0.055991,0.004413},
-        {/*XY: Non Bracketed*/-0.020612,-0.025574,/*Bracketed WZ:*/0.019188,0.000000},
-        {/*XY: Non Bracketed*/-0.038708,0.006957,/*Bracketed WZ:*/0.000000,0.049223},
-        {/*XY: Non Bracketed*/-0.021449,0.040468,/*Bracketed WZ:*/0.018301,0.099929},
-        {/*XY: Non Bracketed*/0.013015,0.050223,/*Bracketed WZ:*/0.054845,0.114689},
-        {/*XY: Non Bracketed*/0.042178,0.038585,/*Bracketed WZ:*/0.085769,0.097080},
-        {/*XY: Non Bracketed*/0.057972,0.019812,/*Bracketed WZ:*/0.102517,0.068674},
-        {/*XY: Non Bracketed*/0.063647,0.005252,/*Bracketed WZ:*/0.108535,0.046643},
-        {/*XY: Non Bracketed*/0.064754,0.000000,/*Bracketed WZ:*/0.109709,0.038697},
-        {/*XY: Non Bracketed*/0.063647,0.005252,/*Bracketed WZ:*/0.108535,0.046643},
-        {/*XY: Non Bracketed*/0.057972,0.019812,/*Bracketed WZ:*/0.102517,0.068674},
-        {/*XY: Non Bracketed*/0.042178,0.038585,/*Bracketed WZ:*/0.085769,0.097080},
-        {/*XY: Non Bracketed*/0.013015,0.050223,/*Bracketed WZ:*/0.054845,0.114689},
-        {/*XY: Non Bracketed*/-0.021449,0.040468,/*Bracketed WZ:*/0.018301,0.099929},
-        {/*XY: Non Bracketed*/-0.038708,0.006957,/*Bracketed WZ:*/0.000000,0.049223},
-        {/*XY: Non Bracketed*/-0.020612,-0.025574,/*Bracketed WZ:*/0.019188,0.000000},
-        {/*XY: Non Bracketed*/0.014096,-0.022658,/*Bracketed WZ:*/0.055991,0.004413}
-};
-
-const float Kernel1BracketsRealXY_ImZW[4] = {0.000115,0.559524,0.000000,0.178226};
-const float Kernel1Weights_RealX_ImY[2] = {0.513282,4.561110};
-const float Kernel1_RealX_ImY_RealZ_ImW[17][4] = {
-        {/*XY: Non Bracketed*/0.000115,0.009116,/*Bracketed WZ:*/0.000000,0.051147},
-        {/*XY: Non Bracketed*/0.005324,0.013416,/*Bracketed WZ:*/0.009311,0.075276},
-        {/*XY: Non Bracketed*/0.013753,0.016519,/*Bracketed WZ:*/0.024376,0.092685},
-        {/*XY: Non Bracketed*/0.024700,0.017215,/*Bracketed WZ:*/0.043940,0.096591},
-        {/*XY: Non Bracketed*/0.036693,0.015064,/*Bracketed WZ:*/0.065375,0.084521},
-        {/*XY: Non Bracketed*/0.047976,0.010684,/*Bracketed WZ:*/0.085539,0.059948},
-        {/*XY: Non Bracketed*/0.057015,0.005570,/*Bracketed WZ:*/0.101695,0.031254},
-        {/*XY: Non Bracketed*/0.062782,0.001529,/*Bracketed WZ:*/0.112002,0.008578},
-        {/*XY: Non Bracketed*/0.064754,0.000000,/*Bracketed WZ:*/0.115526,0.000000},
-        {/*XY: Non Bracketed*/0.062782,0.001529,/*Bracketed WZ:*/0.112002,0.008578},
-        {/*XY: Non Bracketed*/0.057015,0.005570,/*Bracketed WZ:*/0.101695,0.031254},
-        {/*XY: Non Bracketed*/0.047976,0.010684,/*Bracketed WZ:*/0.085539,0.059948},
-        {/*XY: Non Bracketed*/0.036693,0.015064,/*Bracketed WZ:*/0.065375,0.084521},
-        {/*XY: Non Bracketed*/0.024700,0.017215,/*Bracketed WZ:*/0.043940,0.096591},
-        {/*XY: Non Bracketed*/0.013753,0.016519,/*Bracketed WZ:*/0.024376,0.092685},
-        {/*XY: Non Bracketed*/0.005324,0.013416,/*Bracketed WZ:*/0.009311,0.075276},
-        {/*XY: Non Bracketed*/0.000115,0.009116,/*Bracketed WZ:*/0.000000,0.051147}
-};
-
-void computeBokeh(float bokeh, int w, int h) {
-    fprintf(stderr, "compute bokeh \n");
-
-    // for (int i = 0; i < size_x; i++) {
-    //     delete[] array[i];
-    // }
-    // delete[] array;
-    float **rVal = new float*[w * h];
-    for (int i = 0; i < w * h; i++) {
-        rVal[i] = new float[4];
-    }
-
-    float **gVal = new float*[w * h];
-    for (int i = 0; i < w * h; i++) {
-        gVal[i] = new float[4];
-    }
-
-    float **bVal = new float*[w * h];
-    for (int i = 0; i < w * h; i++) {
-        bVal[i] = new float[4];
-    }
-
-    // horizontal
-    fprintf(stderr, "horizontal \n");
-    for(int x = 0; x < w; x++) {
-        for(int y = 0; y < h; y++) {
-            for(int i = -KERNEL_RADIUS; i <= KERNEL_RADIUS; i++) {
-                int horizontalTex = int(x + i * bokeh);
-                if (horizontalTex < 0) {
-                    horizontalTex = int(x - i * bokeh);
-                } else if (horizontalTex >= w) {
-                    horizontalTex = int(x - i * bokeh);
-                }
-                float rTexel = gInitialExrRGBA[4 * (y * gExrWidth + horizontalTex) + 0];
-                float gTexel = gInitialExrRGBA[4 * (y * gExrWidth + horizontalTex) + 1];
-                float bTexel = gInitialExrRGBA[4 * (y * gExrWidth + horizontalTex) + 2];
-                float c0_c1[4] = {
-                    Kernel0_RealX_ImY_RealZ_ImW[i + KERNEL_RADIUS][0],
-                    Kernel0_RealX_ImY_RealZ_ImW[i + KERNEL_RADIUS][1],
-                    Kernel1_RealX_ImY_RealZ_ImW[i + KERNEL_RADIUS][0],
-                    Kernel1_RealX_ImY_RealZ_ImW[i + KERNEL_RADIUS][1]
-                };
-
-                //fprintf(stderr, "rVal \n");
-                // val.xyzw image texel RGB
-                rVal[y * gExrWidth + x][0] += rTexel * c0_c1[0];
-                rVal[y * gExrWidth + x][1] += rTexel * c0_c1[1];
-                rVal[y * gExrWidth + x][2] += rTexel * c0_c1[2];
-                rVal[y * gExrWidth + x][3] += rTexel * c0_c1[3];
-                //fprintf(stderr, "gVal \n");
-                gVal[y * gExrWidth + x][0] += gTexel * c0_c1[0];
-                gVal[y * gExrWidth + x][1] += gTexel * c0_c1[1];
-                gVal[y * gExrWidth + x][2] += gTexel * c0_c1[2];
-                gVal[y * gExrWidth + x][3] += gTexel * c0_c1[3];
-                //fprintf(stderr, "bVal \n");
-                bVal[y * gExrWidth + x][0] += bTexel * c0_c1[0];
-                bVal[y * gExrWidth + x][1] += bTexel * c0_c1[1];
-                bVal[y * gExrWidth + x][2] += bTexel * c0_c1[2];
-                bVal[y * gExrWidth + x][3] += bTexel * c0_c1[3];
-            }
-        }
-    }
-    fprintf(stderr, "pass step1 \n");
-
-    //vertical
-    for(int x = 0; x < w; x++) {
-        for(int y = 0; y < h; y++) {
-            float rVertical[4] = {0, 0, 0, 0};
-            float gVertical[4] = {0, 0, 0, 0};
-            float bVertical[4] = {0, 0, 0, 0};
-            for(int i = -KERNEL_RADIUS; i <= KERNEL_RADIUS; i++) {
-                int verticalTex = int(y + i * bokeh);
-                if (verticalTex < 0) {
-                    verticalTex = int(y - i * bokeh);
-                } else if (verticalTex >= h) {
-                    verticalTex = int(y - i * bokeh);
-                }
-                float rTexel[4] = {rVal[verticalTex * gExrWidth + x][0],
-                                   rVal[verticalTex * gExrWidth + x][1],
-                                   rVal[verticalTex * gExrWidth + x][2],
-                                   rVal[verticalTex * gExrWidth + x][3]};
-                float gTexel[4] = {gVal[verticalTex * gExrWidth + x][0],
-                                   gVal[verticalTex * gExrWidth + x][1],
-                                   gVal[verticalTex * gExrWidth + x][2],
-                                   gVal[verticalTex * gExrWidth + x][3]};
-                float bTexel[4] = {bVal[verticalTex * gExrWidth + x][0],
-                                   bVal[verticalTex * gExrWidth + x][1],
-                                   bVal[verticalTex * gExrWidth + x][2],
-                                   bVal[verticalTex * gExrWidth + x][3]};
-                //fprintf(stderr, "AfterTex \n");
-                float c0_c1[4] = {
-                    Kernel0_RealX_ImY_RealZ_ImW[i + KERNEL_RADIUS][0],
-                    Kernel0_RealX_ImY_RealZ_ImW[i + KERNEL_RADIUS][1],
-                    Kernel1_RealX_ImY_RealZ_ImW[i + KERNEL_RADIUS][0],
-                    Kernel1_RealX_ImY_RealZ_ImW[i + KERNEL_RADIUS][1]
-                };
-
-                float re, im;
-                multComplex(rTexel[0], rTexel[1], c0_c1[0], c0_c1[1],
-                            re, im);
-                rVertical[0] += re;
-                rVertical[1] += im;
-                multComplex(rTexel[2], rTexel[3], c0_c1[2], c0_c1[3],
-                            re, im);
-                rVertical[2] += re;
-                rVertical[3] += im;
-
-                multComplex(gTexel[0], gTexel[1], c0_c1[0], c0_c1[1],
-                            re, im);
-                gVertical[0] += re;
-                gVertical[1] += im;
-                multComplex(gTexel[2], gTexel[3], c0_c1[2], c0_c1[3],
-                            re, im);
-                gVertical[2] += re;
-                gVertical[3] += im;
-
-                multComplex(bTexel[0], bTexel[1], c0_c1[0], c0_c1[1],
-                            re, im);
-                bVertical[0] += re;
-                bVertical[1] += im;
-                multComplex(bTexel[2], bTexel[3], c0_c1[2], c0_c1[3],
-                            re, im);
-                bVertical[2] += re;
-                bVertical[3] += im;
-            }
-
-            float red = vdot(rVertical[0], rVertical[1], Kernel0Weights_RealX_ImY[0], Kernel0Weights_RealX_ImY[1]) +
-                vdot(rVertical[2], rVertical[3], Kernel1Weights_RealX_ImY[0], Kernel1Weights_RealX_ImY[1]);
-            float green = vdot(gVertical[0], gVertical[1], Kernel0Weights_RealX_ImY[0], Kernel0Weights_RealX_ImY[1]) +
-                vdot(gVertical[2], gVertical[3], Kernel1Weights_RealX_ImY[0], Kernel1Weights_RealX_ImY[1]);
-            float blue = vdot(bVertical[0], bVertical[1], Kernel0Weights_RealX_ImY[0], Kernel0Weights_RealX_ImY[1]) +
-                vdot(bVertical[2], bVertical[3], Kernel1Weights_RealX_ImY[0], Kernel1Weights_RealX_ImY[1]);
-
-            gExrRGBA[4 * (y * gExrWidth + x) + 0] = red;
-            gExrRGBA[4 * (y * gExrWidth + x) + 1] = green;
-            gExrRGBA[4 * (y * gExrWidth + x) + 2] = blue;
-        }
-    }
-    fprintf(stderr, "Done \n");
 }
 
 int main(int argc, char** argv) {
@@ -469,7 +267,7 @@ int main(int argc, char** argv) {
         puts("User pressed cancel.");
         exit(-1);
     }
-    else
+    else 
     {
         printf("Error: %s\n", NFD_GetError() );
         exit(-1);
@@ -490,8 +288,6 @@ int main(int argc, char** argv) {
     if (!ret) {
       exit(-1);
     }
-    ret = exrio::LoadEXRRGBA(&gInitialExrRGBA, &gExrWidth, &gExrHeight, filename);
-    //memcpy(gInitialExrRGBA, gExrRGBA, sizeof(gExrRGBA));
   }
 
   window = new b3gDefaultOpenGLWindow;
@@ -666,22 +462,10 @@ int main(int argc, char** argv) {
         if (nk_slider_float(ctx, 0, &gGamma, 10.0, 0.01f)) {
             fprintf(stdout, "Gamma: %f\n", gGamma);
         }
-        nk_label(ctx, "Bokeh", NK_TEXT_LEFT);
-        if (nk_slider_float(ctx, 0, &gBokeh, 1.0, 0.01f)) {
-            fprintf(stdout, "Bokeh: %f\n", gBokeh);
-
-            computeBokeh(gBokeh, gExrWidth, gExrHeight);
-
-            glBindTexture(GL_TEXTURE_2D, gTexId);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, gExrWidth, gExrHeight,
-                         0, GL_RGBA, GL_FLOAT, gExrRGBA);
-        }
 
         nk_label(ctx, "RAW pixel value", NK_TEXT_LEFT);
         char txt[1024];
-        sprintf(txt, "(%d, %d) = %f, %f, %f, %f",
-                gMousePosX, gMousePosY,
-                pixel[0], pixel[1], pixel[2], pixel[3]);
+        sprintf(txt, "(%d, %d) = %f, %f, %f, %f", gMousePosX, gMousePosY, pixel[0], pixel[1], pixel[2], pixel[3]);
         nk_text(ctx, txt, strlen(txt), NK_TEXT_LEFT);
 
 #if 0
