@@ -47,12 +47,12 @@ int gHeight = 512;
 GLuint gTexId;
 float gIntensityScale = 1.0;
 float gGamma = 1.0;
-float gBokeh = 0.0;
+float gBokeh = 0.75;
 int gExrWidth, gExrHeight;
 float* gExrRGBA;
 float* gInitialExrRGBA;
 float* gDepthExrRGBA;
-float gFocusDepth;
+float gFocusDepth = 0.22;
 int gMousePosX, gMousePosY;
 
 struct nk_context* ctx;
@@ -265,9 +265,12 @@ float vdot(float reA, float imA, float reB, float imB) {
     return reA * reB + imA * imB;
 }
 
+// These kernels are computed by CircularDofFilterGenerator
+// https://github.com/kecho/CircularDofFilterGenerator
 const float MAX_FILTER_SIZE = 1.0;
 const int KERNEL_RADIUS = 8;
 const int KERNEL_COUNT = 17;
+// # of Component ... 2
 const float Kernel0BracketsRealXY_ImZW[4] = {-0.038708,0.943062,-0.025574,0.660892};
 const float Kernel0Weights_RealX_ImY[2] = {0.411259,-0.548794};
 const float Kernel0_RealX_ImY_RealZ_ImW[17][4] = {
@@ -312,7 +315,7 @@ const float Kernel1_RealX_ImY_RealZ_ImW[17][4] = {
         {/*XY: Non Bracketed*/0.000115,0.009116,/*Bracketed WZ:*/0.000000,0.051147}
 };
 
-// # of Component 1
+// # of Component ... 1
 const float C0Kernel0BracketsRealXY_ImZW[4] = {0.022490,0.048231,-0.017701,0.199448};
 const float C0Kernel0Weights_RealX_ImY[2] = {5.268909,-0.886528};
 const float C0Kernel0_RealX_ImY_RealZ_ImW[17][4] = {
@@ -334,235 +337,6 @@ const float C0Kernel0_RealX_ImY_RealZ_ImW[17][4] = {
 	{/*XY: Non Bracketed*/0.028133,-0.012569,/*Bracketed WZ:*/0.116999,0.025728},
 	{/*XY: Non Bracketed*/0.028949,-0.017701,/*Bracketed WZ:*/0.133906,0.000000}
 };
-
-void computeBokehNear(float bokeh, int x, int y, int w, int h) {
-    float **rVal = new float*[w * h];
-    for (int i = 0; i < w * h; i++) {
-        rVal[i] = new float[2];
-    }
-
-    float **gVal = new float*[w * h];
-    for (int i = 0; i < w * h; i++) {
-        gVal[i] = new float[2];
-    }
-
-    float **bVal = new float*[w * h];
-    for (int i = 0; i < w * h; i++) {
-        bVal[i] = new float[2];
-    }
-
-    // horizontal
-    fprintf(stderr, "horizontal \n");
-    for(int i = -KERNEL_RADIUS; i <= KERNEL_RADIUS; i++) {
-        int horizontalTex = int(x + i * bokeh);
-        if (horizontalTex < 0) {
-            horizontalTex = int(x - i * bokeh);
-        } else if (horizontalTex >= w) {
-            horizontalTex = int(x - i * bokeh);
-        }
-        
-        float rTexel = gInitialExrRGBA[4 * (y * gExrWidth + horizontalTex) + 0];
-        float gTexel = gInitialExrRGBA[4 * (y * gExrWidth + horizontalTex) + 1];
-        float bTexel = gInitialExrRGBA[4 * (y * gExrWidth + horizontalTex) + 2];
-        
-        float c0[2] = {
-            C0Kernel0_RealX_ImY_RealZ_ImW[i + KERNEL_RADIUS][0],
-            C0Kernel0_RealX_ImY_RealZ_ImW[i + KERNEL_RADIUS][1]
-        };
-        //fprintf(stderr, "rVal \n");
-        // val.xyzw image texel RGB
-        rVal[y * gExrWidth + x][0] += rTexel * c0[0];
-        rVal[y * gExrWidth + x][1] += rTexel * c0[1];
-        //fprintf(stderr, "gVal \n");
-        gVal[y * gExrWidth + x][0] += gTexel * c0[0];
-        gVal[y * gExrWidth + x][1] += gTexel * c0[1];
-        //fprintf(stderr, "bVal \n");
-        bVal[y * gExrWidth + x][0] += bTexel * c0[0];
-        bVal[y * gExrWidth + x][1] += bTexel * c0[1];
-    }
-
-    //vertical
-    fprintf(stderr, "vertical \n");
-    float rVertical[2] = {0, 0};
-    float gVertical[2] = {0, 0};
-    float bVertical[2] = {0, 0};
-    for(int i = -KERNEL_RADIUS; i <= KERNEL_RADIUS; i++) {
-        int verticalTex = int(y + i * bokeh);
-        if (verticalTex < 0) {
-            verticalTex = int(y - i * bokeh);
-        } else if (verticalTex >= h) {
-            verticalTex = int(y - i * bokeh);
-        }
-        float rTexel[2] = {rVal[verticalTex * gExrWidth + x][0],
-                           rVal[verticalTex * gExrWidth + x][1]};
-        float gTexel[2] = {gVal[verticalTex * gExrWidth + x][0],
-                           gVal[verticalTex * gExrWidth + x][1]};
-        float bTexel[2] = {bVal[verticalTex * gExrWidth + x][0],
-                           bVal[verticalTex * gExrWidth + x][1]};
-
-        float c0[2] = {
-            C0Kernel0_RealX_ImY_RealZ_ImW[i + KERNEL_RADIUS][0],
-            C0Kernel0_RealX_ImY_RealZ_ImW[i + KERNEL_RADIUS][1]
-        };
-        float re, im;
-        multComplex(rTexel[0], rTexel[1], c0[0], c0[1],
-                    re, im);
-        rVertical[0] += re;
-        rVertical[1] += im;
-                
-        multComplex(gTexel[0], gTexel[1], c0[0], c0[1],
-                    re, im);
-        gVertical[0] += re;
-        gVertical[1] += im;
-
-        multComplex(bTexel[0], bTexel[1], c0[0], c0[1],
-                    re, im);
-        bVertical[0] += re;
-        bVertical[1] += im;
-    }
-
-    float red = vdot(rVertical[0], rVertical[1], C0Kernel0Weights_RealX_ImY[0], C0Kernel0Weights_RealX_ImY[1]);
-    float green = vdot(gVertical[0], gVertical[1], C0Kernel0Weights_RealX_ImY[0], C0Kernel0Weights_RealX_ImY[1]);
-    float blue = vdot(bVertical[0], bVertical[1], C0Kernel0Weights_RealX_ImY[0], C0Kernel0Weights_RealX_ImY[1]);
-
-    gExrRGBA[4 * (y * gExrWidth + x) + 0] = red;
-    gExrRGBA[4 * (y * gExrWidth + x) + 1] = green;
-    gExrRGBA[4 * (y * gExrWidth + x) + 2] = blue;
-    fprintf(stderr, "Done \n");
-}
-
-void computeBokehFar(float bokeh, int x, int y, int w, int h) {
- fprintf(stderr, "compute bokeh \n");
-
-    // for (int i = 0; i < size_x; i++) {
-    //     delete[] array[i];
-    // }
-    // delete[] array;
-    float **rVal = new float*[w * h];
-    for (int i = 0; i < w * h; i++) {
-        rVal[i] = new float[4];
-    }
-
-    float **gVal = new float*[w * h];
-    for (int i = 0; i < w * h; i++) {
-        gVal[i] = new float[4];
-    }
-
-    float **bVal = new float*[w * h];
-    for (int i = 0; i < w * h; i++) {
-        bVal[i] = new float[4];
-    }
-
-    // horizontal
-    fprintf(stderr, "horizontal \n");
-    for(int i = -KERNEL_RADIUS; i <= KERNEL_RADIUS; i++) {
-        int horizontalTex = int(x + i * bokeh);
-        if (horizontalTex < 0) {
-            horizontalTex = int(x - i * bokeh);
-        } else if (horizontalTex >= w) {
-            horizontalTex = int(x - i * bokeh);
-        }
-        float rTexel = gInitialExrRGBA[4 * (y * gExrWidth + horizontalTex) + 0];
-        float gTexel = gInitialExrRGBA[4 * (y * gExrWidth + horizontalTex) + 1];
-        float bTexel = gInitialExrRGBA[4 * (y * gExrWidth + horizontalTex) + 2];
-        float c0_c1[4] = {
-            Kernel0_RealX_ImY_RealZ_ImW[i + KERNEL_RADIUS][0],
-            Kernel0_RealX_ImY_RealZ_ImW[i + KERNEL_RADIUS][1],
-            Kernel1_RealX_ImY_RealZ_ImW[i + KERNEL_RADIUS][0],
-            Kernel1_RealX_ImY_RealZ_ImW[i + KERNEL_RADIUS][1]
-        };
-
-        //fprintf(stderr, "rVal \n");
-        // val.xyzw image texel RGB
-        rVal[y * gExrWidth + x][0] += rTexel * c0_c1[0];
-        rVal[y * gExrWidth + x][1] += rTexel * c0_c1[1];
-        rVal[y * gExrWidth + x][2] += rTexel * c0_c1[2];
-        rVal[y * gExrWidth + x][3] += rTexel * c0_c1[3];
-        //fprintf(stderr, "gVal \n");
-        gVal[y * gExrWidth + x][0] += gTexel * c0_c1[0];
-        gVal[y * gExrWidth + x][1] += gTexel * c0_c1[1];
-        gVal[y * gExrWidth + x][2] += gTexel * c0_c1[2];
-        gVal[y * gExrWidth + x][3] += gTexel * c0_c1[3];
-        //fprintf(stderr, "bVal \n");
-        bVal[y * gExrWidth + x][0] += bTexel * c0_c1[0];
-        bVal[y * gExrWidth + x][1] += bTexel * c0_c1[1];
-        bVal[y * gExrWidth + x][2] += bTexel * c0_c1[2];
-        bVal[y * gExrWidth + x][3] += bTexel * c0_c1[3];
-    }
-    fprintf(stderr, "pass step1 \n");
-
-    //vertical
-    float rVertical[4] = {0, 0, 0, 0};
-    float gVertical[4] = {0, 0, 0, 0};
-    float bVertical[4] = {0, 0, 0, 0};
-    for(int i = -KERNEL_RADIUS; i <= KERNEL_RADIUS; i++) {
-        int verticalTex = int(y + i * bokeh);
-        if (verticalTex < 0) {
-            verticalTex = int(y - i * bokeh);
-        } else if (verticalTex >= h) {
-            verticalTex = int(y - i * bokeh);
-        }
-        float rTexel[4] = {rVal[verticalTex * gExrWidth + x][0],
-                           rVal[verticalTex * gExrWidth + x][1],
-                           rVal[verticalTex * gExrWidth + x][2],
-                           rVal[verticalTex * gExrWidth + x][3]};
-        float gTexel[4] = {gVal[verticalTex * gExrWidth + x][0],
-                           gVal[verticalTex * gExrWidth + x][1],
-                           gVal[verticalTex * gExrWidth + x][2],
-                           gVal[verticalTex * gExrWidth + x][3]};
-        float bTexel[4] = {bVal[verticalTex * gExrWidth + x][0],
-                           bVal[verticalTex * gExrWidth + x][1],
-                           bVal[verticalTex * gExrWidth + x][2],
-                           bVal[verticalTex * gExrWidth + x][3]};
-        //fprintf(stderr, "AfterTex \n");
-        float c0_c1[4] = {
-            Kernel0_RealX_ImY_RealZ_ImW[i + KERNEL_RADIUS][0],
-            Kernel0_RealX_ImY_RealZ_ImW[i + KERNEL_RADIUS][1],
-            Kernel1_RealX_ImY_RealZ_ImW[i + KERNEL_RADIUS][0],
-            Kernel1_RealX_ImY_RealZ_ImW[i + KERNEL_RADIUS][1]
-        };
-
-        float re, im;
-        multComplex(rTexel[0], rTexel[1], c0_c1[0], c0_c1[1],
-                    re, im);
-        rVertical[0] += re;
-        rVertical[1] += im;
-        multComplex(rTexel[2], rTexel[3], c0_c1[2], c0_c1[3],
-                    re, im);
-        rVertical[2] += re;
-        rVertical[3] += im;
-
-        multComplex(gTexel[0], gTexel[1], c0_c1[0], c0_c1[1],
-                    re, im);
-        gVertical[0] += re;
-        gVertical[1] += im;
-        multComplex(gTexel[2], gTexel[3], c0_c1[2], c0_c1[3],
-                    re, im);
-        gVertical[2] += re;
-        gVertical[3] += im;
-
-        multComplex(bTexel[0], bTexel[1], c0_c1[0], c0_c1[1],
-                    re, im);
-        bVertical[0] += re;
-        bVertical[1] += im;
-        multComplex(bTexel[2], bTexel[3], c0_c1[2], c0_c1[3],
-                    re, im);
-        bVertical[2] += re;
-        bVertical[3] += im;
-    }
-
-    float red = vdot(rVertical[0], rVertical[1], Kernel0Weights_RealX_ImY[0], Kernel0Weights_RealX_ImY[1]) +
-        vdot(rVertical[2], rVertical[3], Kernel1Weights_RealX_ImY[0], Kernel1Weights_RealX_ImY[1]);
-    float green = vdot(gVertical[0], gVertical[1], Kernel0Weights_RealX_ImY[0], Kernel0Weights_RealX_ImY[1]) +
-        vdot(gVertical[2], gVertical[3], Kernel1Weights_RealX_ImY[0], Kernel1Weights_RealX_ImY[1]);
-    float blue = vdot(bVertical[0], bVertical[1], Kernel0Weights_RealX_ImY[0], Kernel0Weights_RealX_ImY[1]) +
-        vdot(bVertical[2], bVertical[3], Kernel1Weights_RealX_ImY[0], Kernel1Weights_RealX_ImY[1]);
-
-    gExrRGBA[4 * (y * gExrWidth + x) + 0] = red;
-    gExrRGBA[4 * (y * gExrWidth + x) + 1] = green;
-    gExrRGBA[4 * (y * gExrWidth + x) + 2] = blue;
-    fprintf(stderr, "Done \n");
-}
 
 void applyBokeh(float bokeh, float focusDepth, int w, int h) {
     float **rVal = new float*[w * h];
@@ -594,23 +368,22 @@ void applyBokeh(float bokeh, float focusDepth, int w, int h) {
                     } else if (horizontalTex >= w) {
                         horizontalTex = int(x - i * bokeh);
                     }
-        
+
                     float rTexel = gInitialExrRGBA[4 * (y * gExrWidth + horizontalTex) + 0];
                     float gTexel = gInitialExrRGBA[4 * (y * gExrWidth + horizontalTex) + 1];
                     float bTexel = gInitialExrRGBA[4 * (y * gExrWidth + horizontalTex) + 2];
-        
+
                     float c0[2] = {
                         C0Kernel0_RealX_ImY_RealZ_ImW[i + KERNEL_RADIUS][0],
                         C0Kernel0_RealX_ImY_RealZ_ImW[i + KERNEL_RADIUS][1]
                     };
-                    //fprintf(stderr, "rVal \n");
-                    // val.xyzw image texel RGB
+
                     rVal[y * gExrWidth + x][0] += rTexel * c0[0];
                     rVal[y * gExrWidth + x][1] += rTexel * c0[1];
-                    //fprintf(stderr, "gVal \n");
+
                     gVal[y * gExrWidth + x][0] += gTexel * c0[0];
                     gVal[y * gExrWidth + x][1] += gTexel * c0[1];
-                    //fprintf(stderr, "bVal \n");
+
                     bVal[y * gExrWidth + x][0] += bTexel * c0[0];
                     bVal[y * gExrWidth + x][1] += bTexel * c0[1];
                 }
@@ -633,18 +406,16 @@ void applyBokeh(float bokeh, float focusDepth, int w, int h) {
                         Kernel1_RealX_ImY_RealZ_ImW[i + KERNEL_RADIUS][1]
                     };
 
-                    //fprintf(stderr, "rVal \n");
-                    // val.xyzw image texel RGB
                     rVal[y * gExrWidth + x][0] += rTexel * c0_c1[0];
                     rVal[y * gExrWidth + x][1] += rTexel * c0_c1[1];
                     rVal[y * gExrWidth + x][2] += rTexel * c0_c1[2];
                     rVal[y * gExrWidth + x][3] += rTexel * c0_c1[3];
-                    //fprintf(stderr, "gVal \n");
+
                     gVal[y * gExrWidth + x][0] += gTexel * c0_c1[0];
                     gVal[y * gExrWidth + x][1] += gTexel * c0_c1[1];
                     gVal[y * gExrWidth + x][2] += gTexel * c0_c1[2];
                     gVal[y * gExrWidth + x][3] += gTexel * c0_c1[3];
-                    //fprintf(stderr, "bVal \n");
+
                     bVal[y * gExrWidth + x][0] += bTexel * c0_c1[0];
                     bVal[y * gExrWidth + x][1] += bTexel * c0_c1[1];
                     bVal[y * gExrWidth + x][2] += bTexel * c0_c1[2];
@@ -686,7 +457,7 @@ void applyBokeh(float bokeh, float focusDepth, int w, int h) {
                                 re, im);
                     rVertical[0] += re;
                     rVertical[1] += im;
-                
+
                     multComplex(gTexel[0], gTexel[1], c0[0], c0[1],
                                 re, im);
                     gVertical[0] += re;
@@ -705,7 +476,7 @@ void applyBokeh(float bokeh, float focusDepth, int w, int h) {
                 gExrRGBA[4 * (y * gExrWidth + x) + 0] = red;
                 gExrRGBA[4 * (y * gExrWidth + x) + 1] = green;
                 gExrRGBA[4 * (y * gExrWidth + x) + 2] = blue;
-                
+
             } else if (focusDepth + dofRadius < depth) {
                 // far
                 float rVertical[4] = {0, 0, 0, 0};
@@ -730,7 +501,7 @@ void applyBokeh(float bokeh, float focusDepth, int w, int h) {
                                        bVal[verticalTex * gExrWidth + x][1],
                                        bVal[verticalTex * gExrWidth + x][2],
                                        bVal[verticalTex * gExrWidth + x][3]};
-                    //fprintf(stderr, "AfterTex \n");
+
                     float c0_c1[4] = {
                         Kernel0_RealX_ImY_RealZ_ImW[i + KERNEL_RADIUS][0],
                         Kernel0_RealX_ImY_RealZ_ImW[i + KERNEL_RADIUS][1],
@@ -838,7 +609,7 @@ int main(int argc, char** argv) {
       exit(-1);
     }
     ret = exrio::LoadEXRRGBA(&gInitialExrRGBA, &gExrWidth, &gExrHeight, filename);
-    //memcpy(gInitialExrRGBA, gExrRGBA, sizeof(gExrRGBA));
+
     ret = exrio::LoadEXRRGBA(&gDepthExrRGBA, &gExrWidth, &gExrHeight, depthFilename);
     if (!ret) {
       exit(-1);
@@ -988,7 +759,6 @@ int main(int argc, char** argv) {
   }
   checkErrors("link shader");
 
-
   while (!window->requestedExit()) {
     window->startRendering();
 
@@ -1023,7 +793,7 @@ int main(int argc, char** argv) {
             fprintf(stdout, "Bokeh: %f\n", gBokeh);
 
             applyBokeh(gBokeh, gFocusDepth, gExrWidth, gExrHeight);
-            
+
             glBindTexture(GL_TEXTURE_2D, gTexId);
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, gExrWidth, gExrHeight,
                          0, GL_RGBA, GL_FLOAT, gExrRGBA);
@@ -1034,7 +804,7 @@ int main(int argc, char** argv) {
             fprintf(stdout, "FocusDepth: %f\n", gFocusDepth);
 
             applyBokeh(gBokeh, gFocusDepth, gExrWidth, gExrHeight);
-            
+
             glBindTexture(GL_TEXTURE_2D, gTexId);
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, gExrWidth, gExrHeight,
                          0, GL_RGBA, GL_FLOAT, gExrRGBA);

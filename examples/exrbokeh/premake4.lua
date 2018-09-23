@@ -9,7 +9,7 @@ sources = {
    }
 
 -- premake4.lua
-solution "EXRViewSolution"
+solution "EXRBokehSolution"
    configurations { "Release", "Debug" }
 
    platforms { "native", "x64", "x32" }
@@ -21,7 +21,7 @@ solution "EXRViewSolution"
    initGlew()
 
    -- A project defines one build target
-   project "exrview"
+   project "exrbokeh"
       kind "ConsoleApp"
       language "C++"
       files { sources }
@@ -78,9 +78,9 @@ solution "EXRViewSolution"
       configuration "Debug"
          defines { "DEBUG" } -- -DDEBUG
          flags { "Symbols" }
-         targetname "exrview_debug"
+         targetname "exrbokeh_debug"
 
       configuration "Release"
          -- defines { "NDEBUG" } -- -NDEBUG
          flags { "Symbols", "Optimize" }
-         targetname "exrview"
+         targetname "exrbokeh"
