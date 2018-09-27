@@ -11667,8 +11667,6 @@ size_t SaveEXRImageToMemory(const EXRImage *exr_image,
           sizeof(
               tinyexr::tinyexr_int64);  // sizeof(header) + sizeof(offsetTable)
 
-  std::vector<unsigned char> data;
-
   std::vector<std::vector<unsigned char> > data_list(
       static_cast<size_t>(num_blocks));
   std::vector<size_t> channel_offset_list(
@@ -11967,14 +11965,13 @@ size_t SaveEXRImageToMemory(const EXRImage *exr_image,
     }
   }  // omp parallel
 
-  for (size_t i = 0; i < static_cast<size_t>(num_blocks); i++) {
-    data.insert(data.end(), data_list[i].begin(), data_list[i].end());
-
-    offsets[i] = offset;
-    tinyexr::swap8(reinterpret_cast<tinyexr::tinyexr_uint64 *>(&offsets[i]));
-    offset += data_list[i].size();
+  for ( size_t i = 0; i < static_cast<size_t>(num_blocks); i++ ) {
+	  offsets[i] = offset;
+	  tinyexr::swap8( reinterpret_cast<tinyexr::tinyexr_uint64 *>(&offsets[i]) );
+	  offset += data_list[i].size();
   }
 
+  size_t totalSize = static_cast<size_t>( offset );
   {
     memory.insert(
         memory.end(), reinterpret_cast<unsigned char *>(&offsets.at(0)),
@@ -11982,14 +11979,17 @@ size_t SaveEXRImageToMemory(const EXRImage *exr_image,
             sizeof(tinyexr::tinyexr_uint64) * static_cast<size_t>(num_blocks));
   }
 
-  { memory.insert(memory.end(), data.begin(), data.end()); }
+  assert( memory.size() > 0 );
+  (*memory_out) = static_cast<unsigned char *>(malloc( totalSize ));
+  memcpy( (*memory_out), &memory.at( 0 ), memory.size() );
+  unsigned char *memory_ptr = *memory_out + memory.size();
 
-  assert(memory.size() > 0);
+  for ( size_t i = 0; i < static_cast<size_t>(num_blocks); i++ ) {
+	  memcpy( memory_ptr, &data_list[i].at(0), data_list[i].size() );
+	  memory_ptr += data_list[i].size();
+  }
 
-  (*memory_out) = static_cast<unsigned char *>(malloc(memory.size()));
-  memcpy((*memory_out), &memory.at(0), memory.size());
-
-  return memory.size();  // OK
+  return totalSize;  // OK
 }
 
 int SaveEXRImageToFile(const EXRImage *exr_image, const EXRHeader *exr_header,
