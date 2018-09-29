@@ -1,15 +1,17 @@
 # exrbokeh
 
+Expoerimenal Bokeh(DoF) effect with EXR RGB-D input.
+
 ## Requirements
 
 * premake5
-* Visual Studio 2015(2013 will work)
+* Visual Studio 2017 or later
 * OpenGL 2.x
 * GTK+3(optional and Linux only. Used for file dialog support on Linux)
 
 ## Build on Windows
 
-    $ premake5 vs2015
+    $ premake5 vs2017
 
 ## Build on Linux
 
