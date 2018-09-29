@@ -26,37 +26,37 @@ solution "EXRViewSolution"
       language "C++"
       files { sources }
 
-      includedirs { "./", "../../" }
+      includedirs { "./", "../../", "../common" }
 
       if os.is("Windows") then
          defines { "USE_NATIVEFILEDIALOG" }
          files{
-            "OpenGLWindow/Win32OpenGLWindow.cpp",
-            "OpenGLWindow/Win32OpenGLWindow.h",
-            "OpenGLWindow/Win32Window.cpp",
-            "OpenGLWindow/Win32Window.h",
+            "../common/OpenGLWindow/Win32OpenGLWindow.cpp",
+            "../common/OpenGLWindow/Win32OpenGLWindow.h",
+            "../common/OpenGLWindow/Win32Window.cpp",
+            "../common/OpenGLWindow/Win32Window.h",
             }
-         includedirs { "./ThirdPartyLibs/nativefiledialog/src/include/" }
+         includedirs { "../common/ThirdPartyLibs/nativefiledialog/src/include/" }
          files  {
-            "ThirdPartyLibs/nativefiledialog/src/nfd_common.c",
-            "ThirdPartyLibs/nativefiledialog/src/nfd_win.cpp"
+            "../comon/ThirdPartyLibs/nativefiledialog/src/nfd_common.c",
+            "../comon/ThirdPartyLibs/nativefiledialog/src/nfd_win.cpp"
          }
       end
       if os.is("Linux") then
          files {
-            "OpenGLWindow/X11OpenGLWindow.cpp",
-            "OpenGLWindow/X11OpenGLWindows.h"
+            "../common/OpenGLWindow/X11OpenGLWindow.cpp",
+            "../common/OpenGLWindow/X11OpenGLWindows.h"
             }
          links {"X11", "pthread", "dl"}
 
          if _OPTIONS["with-gtk3nfd"] then -- NFD + GTK3
             defines { "USE_NATIVEFILEDIALOG" }
-            includedirs { "./ThirdPartyLibs/nativefiledialog/src/include/" }
+            includedirs { "../common/ThirdPartyLibs/nativefiledialog/src/include/" }
             buildoptions { "`pkg-config --cflags gtk+-3.0`" }
             linkoptions { "`pkg-config --libs gtk+-3.0`" }
             files  {
-               "ThirdPartyLibs/nativefiledialog/src/nfd_common.c",
-               "ThirdPartyLibs/nativefiledialog/src/nfd_gtk.c"
+               "../common/ThirdPartyLibs/nativefiledialog/src/nfd_common.c",
+               "../common/ThirdPartyLibs/nativefiledialog/src/nfd_gtk.c"
             }
          end
 
@@ -65,13 +65,13 @@ solution "EXRViewSolution"
          defines { "USE_NATIVEFILEDIALOG" }
          links {"Cocoa.framework"}
          files {
-                "OpenGLWindow/MacOpenGLWindow.h",
-                "OpenGLWindow/MacOpenGLWindow.mm",
+                "../common/OpenGLWindow/MacOpenGLWindow.h",
+                "../common/OpenGLWindow/MacOpenGLWindow.mm",
                }
-         includedirs { "./ThirdPartyLibs/nativefiledialog/src/include/" }
+         includedirs { "../common/ThirdPartyLibs/nativefiledialog/src/include/" }
          files  {
-            "ThirdPartyLibs/nativefiledialog/src/nfd_common.c",
-            "ThirdPartyLibs/nativefiledialog/src/nfd_cocoa.m"
+            "../common/ThirdPartyLibs/nativefiledialog/src/nfd_common.c",
+            "../common/ThirdPartyLibs/nativefiledialog/src/nfd_cocoa.m"
          }
       end
 

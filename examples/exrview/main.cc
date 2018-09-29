@@ -363,7 +363,7 @@ int main(int argc, char** argv) {
     /*struct nk_font *cousine = nk_font_atlas_add_from_file(atlas,
      * "../../../extra_font/Cousine-Regular.ttf", 13, 0);*/
     struct nk_font *droid = nk_font_atlas_add_from_file(atlas,
-     "./DroidSans.ttf", 14, 0);
+     "../common/DroidSans.ttf", 14, 0);
     nk_btgui_font_stash_end();
     if (droid) {
       nk_style_set_font(ctx, &droid->handle);

@@ -50,9 +50,9 @@
 			configuration {"Windows"}
 			defines { "GLEW_STATIC"}
 			includedirs {
-					projectRootDir .. "ThirdPartyLibs/Glew"
+					projectRootDir .. "../common/ThirdPartyLibs/Glew"
 			}
-			files { projectRootDir .. "ThirdPartyLibs/Glew/glew.c"}
+			files { projectRootDir .. "../common/ThirdPartyLibs/Glew/glew.c"}
 		end
 		if os.is("Linux") then
 			configuration{"Linux"}
@@ -63,9 +63,9 @@
 				print("Using static glew and dynamic loading of glx functions")
 			 	defines { "GLEW_STATIC","GLEW_DYNAMIC_LOAD_ALL_GLX_FUNCTIONS=1"}
                         	includedirs {
-                                        projectRootDir .. "ThirdPartyLibs/Glew"
+                                        projectRootDir .. "../common/ThirdPartyLibs/Glew"
                         	}
-                        	files { projectRootDir .. "ThirdPartyLibs/Glew/glew.c"}
+                        	files { projectRootDir .. "../common/ThirdPartyLibs/Glew/glew.c"}
 				links {"dl"}
 			end
 
@@ -80,7 +80,7 @@
 			else
 				print("No X11/X.h found, using dynamic loading of X11")
 				includedirs {
-                                        projectRootDir .. "ThirdPartyLibs/optionalX11"
+                                        projectRootDir .. "../common/ThirdPartyLibs/optionalX11"
                                 }
 				defines {"DYNAMIC_LOAD_X11_FUNCTIONS"}	
 				links {"dl","pthread"}
