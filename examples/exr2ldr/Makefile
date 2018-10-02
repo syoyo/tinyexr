@@ -1,2 +1,2 @@
 all:
-	g++ -O2 -o exr2ldr -I../../ exr2ldr.cc ../../tinyexr.cc
+	clang++ -g -fsanitize=address -O2 -o exr2ldr -I../common  -I../../ exr2ldr.cc ../../tinyexr.cc
