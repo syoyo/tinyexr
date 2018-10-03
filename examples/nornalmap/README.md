@@ -6,7 +6,7 @@ Load bump or vector displacement map and convert it to normal map.
 
 ## TODO
 
-* [ ] Mip map generation with normal map prefiltering
+* [ ] Roughness map generation with normal map prefiltering
 
 ## Licenses
 

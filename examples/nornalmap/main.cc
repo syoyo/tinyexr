@@ -18,6 +18,8 @@
 #pragma clang diagnostic pop
 #endif
 
+#include "prefilter.inc"
+
 namespace {
 
 static void vnormalize(float v[3]) {
