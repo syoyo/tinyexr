@@ -138,9 +138,13 @@ main(int argc, char** argv)
     return ret;
   }
   //SaveAsPFM("output.pfm", width, height, image);
-  ret = SaveEXR(image, width, height, 4 /* =RGBA*/, 1 /* = save as fp16 format */, "output.exr");
+  ret = SaveEXR(image, width, height, 4 /* =RGBA*/, 1 /* = save as fp16 format */, "output.exr", &err);
   if (ret != TINYEXR_SUCCESS) {
-    fprintf(stderr, "Failed to save EXR image. code = %d\n", ret);
+    if (err) {
+      fprintf(stderr, "Load EXR err: %s(code %d)\n", err, ret);
+    } else {
+      fprintf(stderr, "Failed to save EXR image. code = %d\n", ret);
+    }
   }
   free(image);
 #else
