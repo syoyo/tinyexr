@@ -403,10 +403,16 @@ int main(int argc, char** argv) {
   {
     std::string ext = GetFileExtension(output_filename);
     if ((ext.compare("exr") == 0) || (ext.compare("EXR") == 0)) {
+      const char *err;
       int ret = SaveEXR(longlat.data.data(), longlat.width, longlat.height,
-                        /* RGB */ 3, /* fp16 */ 0, output_filename.c_str());
+                        /* RGB */ 3, /* fp16 */ 0, output_filename.c_str(), &err);
       if (ret != TINYEXR_SUCCESS) {
-        std::cout << "Failed to save image as EXR. code = " << ret << std::endl;
+        if (err) {
+          std::cout << "Failed to save image as EXR. msg = " << err << ", code = " << ret << std::endl;
+          FreeEXRErrorMessage(err);
+        } else {
+          std::cout << "Failed to save image as EXR. code = " << ret << std::endl;
+        }
         return EXIT_FAILURE;
       }
     } else if ((ext.compare("rgbm") == 0) || (ext.compare("RGBM") == 0)) {
