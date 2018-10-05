@@ -257,9 +257,15 @@ int main(int argc, char **argv)
     // assume EXR.
     float *rgba = nullptr;
     int width, height;
-    int ret = SaveEXR(dst.data(), int(src_width), int(src_height), /* component */3, /* fp16 */0, output_filename.c_str());
+    const char *err = nullptr;
+    int ret = SaveEXR(dst.data(), int(src_width), int(src_height), /* component */3, /* fp16 */0, output_filename.c_str(), &err);
     if (TINYEXR_SUCCESS != ret) {
-      std::cerr << "Failed to save EXR file [" << input_filename << "] code = " << ret << std::endl;
+      if (err) {
+        std::cerr << "Failed to save EXR file [" << input_filename << "] err = " << err << ", code = " << ret << std::endl;
+        FreeEXRErrorMessage(err);
+      } else {
+        std::cerr << "Failed to save EXR file [" << input_filename << "] code = " << ret << std::endl;
+      }
       return EXIT_FAILURE;
     }
   }
