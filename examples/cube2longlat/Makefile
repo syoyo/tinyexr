@@ -1,4 +1,4 @@
-INC_DIR = -I../../
+INC_DIR = -I../../ -I../common
 
 INCLUDES := ../../tinyexr.h
 OBJS := tinyexr.o cube2longlat.o

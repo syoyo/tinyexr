@@ -11984,8 +11984,10 @@ size_t SaveEXRImageToMemory(const EXRImage *exr_image,
             sizeof(tinyexr::tinyexr_uint64) * static_cast<size_t>(num_blocks));
   }
 
-  tinyexr::SetErrorMessage("Output memory size is zero", err);
-  return 0;
+  if ( memory.size() == 0 ) {
+    tinyexr::SetErrorMessage("Output memory size is zero", err);
+    return 0;
+  }
 
   (*memory_out) = static_cast<unsigned char *>(malloc(totalSize));
   memcpy((*memory_out), &memory.at(0), memory.size());
@@ -12036,7 +12038,6 @@ int SaveEXRImageToFile(const EXRImage *exr_image, const EXRHeader *exr_header,
 
   unsigned char *mem = NULL;
   size_t mem_size = SaveEXRImageToMemory(exr_image, exr_header, &mem, err);
-  std::cout << "memsize = " << mem_size << std::endl;
   if (mem_size == 0) {
     return TINYEXR_ERROR_SERIALZATION_FAILED;
   }

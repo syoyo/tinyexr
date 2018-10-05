@@ -1,2 +1,2 @@
 all:
-	g++ -O2 -o ldr2exr -I../../ ldr2exr.cc ../../tinyexr.cc
+	g++ -O2 -o ldr2exr -I../common -I../../ ldr2exr.cc ../../tinyexr.cc
