@@ -62,7 +62,7 @@ int main(int argc, char **argv) {
   assert(sz == original_size);
   ret =
       SaveEXR(reinterpret_cast<const float *>(data2), width, height,
-              4 /* =RGBA*/, 1 /* = save as fp16 format */, "decompressed.exr");
+              4 /* =RGBA*/, 0 /* = save as fp16 format */, "decompressed.exr");
   if (ret != TINYEXR_SUCCESS) {
     fprintf(stderr, "Failed to save EXR image. code = %d\n", ret);
   }

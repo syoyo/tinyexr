@@ -238,7 +238,7 @@ int noc_packer_uncompress(
 end:
     free(buf);
     free(cols_in);
-    return nb_rows;
+    return nb_rows * row_size;
 }
 
 #endif // NOC_PACKER_IMPLEMENTATION
