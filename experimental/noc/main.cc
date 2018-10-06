@@ -36,10 +36,10 @@ int main(int argc, char **argv) {
     float a;
   };
 
-  const struct noc_packer_column cols[] = {{"r", 'f', 0, 4},
-                                           {"g", 'f', 4, 4},
-                                           {"b", 'f', 8, 4},
-                                           {"a", 'f', 12, 4},
+  const struct noc_packer_column cols[] = {{"r", 'f', 0, 4, .precision=8},
+                                           {"g", 'f', 4, 4, .precision=8},
+                                           {"b", 'f', 8, 4, .precision=8},
+                                           {"a", 'f', 12, 4, .precision=8},
                                            {}};
 
   char *buf;
@@ -62,8 +62,12 @@ int main(int argc, char **argv) {
   assert(sz == original_size);
   ret =
       SaveEXR(reinterpret_cast<const float *>(data2), width, height,
-              4 /* =RGBA*/, 0 /* = save as fp16 format */, "decompressed.exr");
+              4 /* =RGBA*/, 0 /* = save as fp16 format */, "decompressed.exr", &err);
   if (ret != TINYEXR_SUCCESS) {
+    if (err) {
+      fprintf(stderr, "Err = %s\n", err);
+      FreeEXRErrorMessage(err);
+    }
     fprintf(stderr, "Failed to save EXR image. code = %d\n", ret);
   }
 
