@@ -12927,8 +12927,10 @@ int SaveEXR(const float *data, int width, int height, int components,
   if ((components == 1) || components == 3 || components == 4) {
     // OK
   } else {
-    tinyexr::SetErrorMessage(
-        "Unsupported component value : " + std::to_string(components), err);
+    std::stringstream ss;
+    ss << "Unsupported component value : " << components << std::endl;
+
+    tinyexr::SetErrorMessage(ss.str(), err);
     return TINYEXR_ERROR_INVALID_ARGUMENT;
   }
 
