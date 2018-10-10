@@ -122,9 +122,20 @@ Include `tinyexr.h` with `TINYEXR_IMPLEMENTATION` flag(do this only for **one** 
   float* out; // width * height * RGBA
   int width;
   int height;
-  const char* err;
+  const char* err = NULL; // or nullptr in C++11
 
   int ret = LoadEXR(&out, &width, &height, input, &err);
+
+  if (ret != TINYEXR_SUCCESS) {
+    if (err) {
+       fprintf(stderr, "ERR : %s\n", err);
+       FreeEXRErrorMessage(err); // release memory of error message.
+    }
+  } else {
+    ...
+    free(out); // relase memory of image data
+  }
+
 ```
 
 ### Loading Singlepart EXR from a file.
