@@ -72,6 +72,7 @@ Current status of `tinyexr` is:
 * Godot. Multi-platform 2D and 3D game engine https://godotengine.org/
 * Filament. PBR engine. https://github.com/google/filament
 * PyEXR. Loading OpenEXR (.exr) images using Python. https://github.com/ialhashim/PyEXR
+* The-Forge. The Forge Cross-Platform Rendering Framework PC, Linux, Ray Tracing, macOS / iOS, Android, XBOX, PS4 https://github.com/ConfettiFX/The-Forge
 * Your project here!
 
 ## Older TinyEXR(v0.9.0)
