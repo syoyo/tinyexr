@@ -183,6 +183,7 @@ Scanline and tiled format are supported.
   ret = LoadEXRImageFromFile(&exr_image, &exr_header, argv[1], &err);
   if (ret != 0) {
     fprintf(stderr, "Load EXR err: %s\n", err);
+    FreeEXRHeader(&exr_header);
     FreeEXRErrorMessage(err); // free's buffer for an error message 
     return ret;
   }
@@ -193,6 +194,7 @@ Scanline and tiled format are supported.
 
   // 4. Free image data
   FreeEXRImage(&exr_image);
+  FreeEXRHeader(&exr_header);
 ```
 
 ### Loading Multipart EXR from a file.
