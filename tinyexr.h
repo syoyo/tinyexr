@@ -11147,21 +11147,53 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
     }
   }
 
-  if ((idxA == 0) && (idxR == -1) && (idxG == -1) && (idxB == -1)) {
-    // Alpha channel only.
+  if (exr_header.num_channels == 1) {
+    // Grayscale channel only.
 
-    if (exr_header.tiled) {
-      // todo.implement this
-    }
     (*out_rgba) = reinterpret_cast<float *>(
         malloc(4 * sizeof(float) * static_cast<size_t>(exr_image.width) *
                static_cast<size_t>(exr_image.height)));
-    for (int i = 0; i < exr_image.width * exr_image.height; i++) {
-      const float val = reinterpret_cast<float **>(exr_image.images)[0][i];
-      (*out_rgba)[4 * i + 0] = val;
-      (*out_rgba)[4 * i + 1] = val;
-      (*out_rgba)[4 * i + 2] = val;
-      (*out_rgba)[4 * i + 3] = val;
+
+    if (exr_header.tiled) {
+      // todo.implement this
+
+      for (int it = 0; it < exr_image.num_tiles; it++) {
+        for (int j = 0; j < exr_header.tile_size_y; j++) {
+          for (int i = 0; i < exr_header.tile_size_x; i++) {
+            const int ii =
+                exr_image.tiles[it].offset_x * exr_header.tile_size_x + i;
+            const int jj =
+                exr_image.tiles[it].offset_y * exr_header.tile_size_y + j;
+            const int idx = ii + jj * exr_image.width;
+
+            // out of region check.
+            if (ii >= exr_image.width) {
+              continue;
+            }
+            if (jj >= exr_image.height) {
+              continue;
+            }
+            const int srcIdx = i + j * exr_header.tile_size_x;
+            unsigned char **src = exr_image.tiles[it].images;
+            (*out_rgba)[4 * idx + 0] =
+                reinterpret_cast<float **>(src)[0][srcIdx];
+            (*out_rgba)[4 * idx + 1] =
+                reinterpret_cast<float **>(src)[0][srcIdx];
+            (*out_rgba)[4 * idx + 2] =
+                reinterpret_cast<float **>(src)[0][srcIdx];
+            (*out_rgba)[4 * idx + 3] =
+                reinterpret_cast<float **>(src)[0][srcIdx];
+          }
+        }
+      }
+    } else {
+      for (int i = 0; i < exr_image.width * exr_image.height; i++) {
+        const float val = reinterpret_cast<float **>(exr_image.images)[0][i];
+        (*out_rgba)[4 * i + 0] = val;
+        (*out_rgba)[4 * i + 1] = val;
+        (*out_rgba)[4 * i + 2] = val;
+        (*out_rgba)[4 * i + 3] = val;
+      }
     }
   } else {
     // Assume RGB(A)
@@ -11193,7 +11225,7 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
                static_cast<size_t>(exr_image.height)));
     if (exr_header.tiled) {
       for (int it = 0; it < exr_image.num_tiles; it++) {
-        for (int j = 0; j < exr_header.tile_size_y; j++)
+        for (int j = 0; j < exr_header.tile_size_y; j++) {
           for (int i = 0; i < exr_header.tile_size_x; i++) {
             const int ii =
                 exr_image.tiles[it].offset_x * exr_header.tile_size_x + i;
@@ -11223,6 +11255,7 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
               (*out_rgba)[4 * idx + 3] = 1.0;
             }
           }
+        }
       }
     } else {
       for (int i = 0; i < exr_image.width * exr_image.height; i++) {
