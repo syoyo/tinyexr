@@ -813,3 +813,53 @@ TEST_CASE("Regression: Issue93", "[issue93]") {
   free(image);
 }
 
+// PIZ decompress bug(issue 100)
+TEST_CASE("Regression: Issue100", "[issue100]") {
+  std::string filepath = "./regression/piz-bug-issue-100.exr";
+
+  std::ifstream f(filepath.c_str(), std::ifstream::binary);
+  REQUIRE(f.good());
+
+  f.seekg(0, f.end);
+  size_t sz = static_cast<size_t>(f.tellg());
+  f.seekg(0, f.beg);
+
+  REQUIRE(sz > 16);
+
+  std::vector<unsigned char> data;
+
+  data.resize(sz);
+  f.read(reinterpret_cast<char *>(&data.at(0)),
+         static_cast<std::streamsize>(sz));
+  f.close();
+
+  const char* err = nullptr;
+  int width, height;
+  float* image;
+  int ret = LoadEXRFromMemory(&image, &width, &height, data.data(), data.size(), &err);
+  if (err) {
+    std::cerr << "issue100 err " << err << std::endl;
+    FreeEXRErrorMessage(err);
+  }
+  REQUIRE(TINYEXR_SUCCESS == ret);
+  REQUIRE(35 == width);
+  REQUIRE(1 == height);
+
+  // pixel should be white.
+
+  std::cout << "pixel[0] = " << image[0] << ", " << image[1] << ", " << image[2] << ", " << image[3] << std::endl;
+  std::cout << "pixel[34] = " << image[4*34+0] << ", " << image[4*34+1] << ", " << image[4*34+2] << ", " << image[4*34+3] << std::endl;
+
+  REQUIRE(0.0 == Approx(image[0]));
+  REQUIRE(0.0 == Approx(image[1]));
+  REQUIRE(0.0 == Approx(image[2]));
+  REQUIRE(0.0 == Approx(image[3]));
+
+  REQUIRE(1.0 == Approx(image[4*34+0]));
+  REQUIRE(1.0 == Approx(image[4*34+1]));
+  REQUIRE(1.0 == Approx(image[4*34+2]));
+  REQUIRE(1.0 == Approx(image[4*34+3]));
+
+  free(image);
+}
+
