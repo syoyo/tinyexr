@@ -274,6 +274,12 @@ extern int LoadEXR(float **out_rgba, int *width, int *height,
                    const char *filename, const char **err);
 
 // @deprecated { to be removed. }
+// Simple wrapper API for ParseEXRHeaderFromFile.
+// checking given file is a EXR file(by just look up header)
+// @return TINYEXR_SUCCEES for EXR image, TINYEXR_ERROR_INVALID_HEADER for others
+extern int IsEXR(const char *filename);
+
+// @deprecated { to be removed. }
 // Saves single-frame OpenEXR image. Assume EXR image contains RGB(A) channels.
 // components must be 1(Grayscale), 3(RGB) or 4(RGBA).
 // Input image format is: `float x width x height`, or `float x RGB(A) x width x
@@ -11281,6 +11287,17 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
   FreeEXRHeader(&exr_header);
   FreeEXRImage(&exr_image);
 
+  return TINYEXR_SUCCESS;
+}
+
+int IsEXR(const char *filename) {
+  EXRVersion exr_version;
+
+  int ret = ParseEXRVersionFromFile(&exr_version, filename);
+  if (ret != TINYEXR_SUCCESS) {
+    return TINYEXR_ERROR_INVALID_HEADER;
+  }
+  
   return TINYEXR_SUCCESS;
 }
 
