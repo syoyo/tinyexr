@@ -10736,6 +10736,15 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
   int data_width = exr_header->data_window[2] - exr_header->data_window[0] + 1;
   int data_height = exr_header->data_window[3] - exr_header->data_window[1] + 1;
 
+  if ((data_width < 0) || (data_height < 0)) {
+    if (err) {
+      std::stringstream ss;
+      ss << "Invalid data width or data height: " << data_width << ", " << data_height << std::endl;
+      (*err) += ss.str();
+    }
+    return TINYEXR_ERROR_INVALID_DATA;
+  }
+
   size_t num_blocks = offsets.size();
 
   std::vector<size_t> channel_offset_list;
@@ -10830,6 +10839,17 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
       exr_image->num_tiles = static_cast<int>(num_tiles);
     }
   } else {  // scanline format
+
+    // Don't allow too large image(256GB * pixel_data_size or more). Workaround for #104.
+    size_t data_len = size_t(data_width) * size_t(data_height) * size_t(num_channels);
+    if ((data_len == 0) || (data_len >= 0x4000000000)) {
+      if (err) {
+        std::stringstream ss;
+        ss << "Image data size is zero or too large: width = " << data_width << ", height = " << data_height << ", channels = " << num_channels << std::endl;
+        (*err) += ss.str();
+      }
+      return TINYEXR_ERROR_INVALID_DATA;
+    }
 
     exr_image->images = tinyexr::AllocateImage(
         num_channels, exr_header->channels, exr_header->requested_pixel_types,
