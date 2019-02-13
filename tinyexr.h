@@ -7004,6 +7004,10 @@ static void swap2(unsigned short *val) {
 #endif
 }
 
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wunused-function"
+#endif
 static void cpy4(int *dst_val, const int *src_val) {
   unsigned char *dst = reinterpret_cast<unsigned char *>(dst_val);
   const unsigned char *src = reinterpret_cast<const unsigned char *>(src_val);
@@ -7033,6 +7037,9 @@ static void cpy4(float *dst_val, const float *src_val) {
   dst[2] = src[2];
   dst[3] = src[3];
 }
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
 
 static void swap4(unsigned int *val) {
 #ifdef MINIZ_LITTLE_ENDIAN
