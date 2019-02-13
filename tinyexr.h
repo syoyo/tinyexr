@@ -7041,10 +7041,6 @@ static void cpy4(float *dst_val, const float *src_val) {
 #pragma clang diagnostic pop
 #endif
 
-#ifdef __clang__
-#pragma clang diagnostic pop
-#endif
-
 static void swap4(unsigned int *val) {
 #ifdef MINIZ_LITTLE_ENDIAN
   (void)val;
@@ -10844,8 +10840,8 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
   } else {  // scanline format
 
     // Don't allow too large image(256GB * pixel_data_size or more). Workaround for #104.
-    size_t data_len = size_t(data_width) * size_t(data_height) * size_t(num_channels);
-    if ((data_len == 0) || (data_len >= 0x4000000000)) {
+    size_t total_data_len = size_t(data_width) * size_t(data_height) * size_t(num_channels);
+    if ((total_data_len == 0) || (total_data_len >= 0x4000000000)) {
       if (err) {
         std::stringstream ss;
         ss << "Image data size is zero or too large: width = " << data_width << ", height = " << data_height << ", channels = " << num_channels << std::endl;
