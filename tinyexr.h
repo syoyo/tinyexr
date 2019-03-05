@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2014 - 2018, Syoyo Fujita and many contributors.
+Copyright (c) 2014 - 2019, Syoyo Fujita and many contributors.
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -276,7 +276,8 @@ extern int LoadEXR(float **out_rgba, int *width, int *height,
 // @deprecated { to be removed. }
 // Simple wrapper API for ParseEXRHeaderFromFile.
 // checking given file is a EXR file(by just look up header)
-// @return TINYEXR_SUCCEES for EXR image, TINYEXR_ERROR_INVALID_HEADER for others
+// @return TINYEXR_SUCCEES for EXR image, TINYEXR_ERROR_INVALID_HEADER for
+// others
 extern int IsEXR(const char *filename);
 
 // @deprecated { to be removed. }
@@ -469,7 +470,7 @@ extern int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <iostream>
+//#include <iostream>
 #include <sstream>
 
 #include <limits>
@@ -2537,10 +2538,10 @@ tinfl_status tinfl_decompress(tinfl_decompressor *r,
   tinfl_status status = TINFL_STATUS_FAILED;
   mz_uint32 num_bits, dist, counter, num_extra;
   tinfl_bit_buf_t bit_buf;
-  const mz_uint8 *pIn_buf_cur = pIn_buf_next,
-                 *const pIn_buf_end = pIn_buf_next + *pIn_buf_size;
-  mz_uint8 *pOut_buf_cur = pOut_buf_next,
-           *const pOut_buf_end = pOut_buf_next + *pOut_buf_size;
+  const mz_uint8 *pIn_buf_cur = pIn_buf_next, *const pIn_buf_end =
+                                                  pIn_buf_next + *pIn_buf_size;
+  mz_uint8 *pOut_buf_cur = pOut_buf_next, *const pOut_buf_end =
+                                              pOut_buf_next + *pOut_buf_size;
   size_t out_buf_size_mask =
              (decomp_flags & TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF)
                  ? (size_t)-1
@@ -2957,8 +2958,9 @@ void *tinfl_decompress_mem_to_heap(const void *pSrc_buf, size_t src_buf_len,
     tinfl_status status = tinfl_decompress(
         &decomp, (const mz_uint8 *)pSrc_buf + src_buf_ofs, &src_buf_size,
         (mz_uint8 *)pBuf, pBuf ? (mz_uint8 *)pBuf + *pOut_len : NULL,
-        &dst_buf_size, (flags & ~TINFL_FLAG_HAS_MORE_INPUT) |
-                           TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF);
+        &dst_buf_size,
+        (flags & ~TINFL_FLAG_HAS_MORE_INPUT) |
+            TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF);
     if ((status < 0) || (status == TINFL_STATUS_NEEDS_MORE_INPUT)) {
       MZ_FREE(pBuf);
       *pOut_len = 0;
@@ -3011,9 +3013,8 @@ int tinfl_decompress_mem_to_callback(const void *pIn_buf, size_t *pIn_buf_size,
     tinfl_status status =
         tinfl_decompress(&decomp, (const mz_uint8 *)pIn_buf + in_buf_ofs,
                          &in_buf_size, pDict, pDict + dict_ofs, &dst_buf_size,
-                         (flags &
-                          ~(TINFL_FLAG_HAS_MORE_INPUT |
-                            TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF)));
+                         (flags & ~(TINFL_FLAG_HAS_MORE_INPUT |
+                                    TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF)));
     in_buf_ofs += in_buf_size;
     if ((dst_buf_size) &&
         (!(*pPut_buf_func)(pDict + dict_ofs, (int)dst_buf_size, pPut_buf_user)))
@@ -3138,7 +3139,9 @@ static const mz_uint8 s_tdefl_large_dist_extra[128] = {
 
 // Radix sorts tdefl_sym_freq[] array by 16-bit key m_key. Returns ptr to sorted
 // values.
-typedef struct { mz_uint16 m_key, m_sym_index; } tdefl_sym_freq;
+typedef struct {
+  mz_uint16 m_key, m_sym_index;
+} tdefl_sym_freq;
 static tdefl_sym_freq *tdefl_radix_sort_syms(mz_uint num_syms,
                                              tdefl_sym_freq *pSyms0,
                                              tdefl_sym_freq *pSyms1) {
@@ -5282,9 +5285,10 @@ mz_bool mz_zip_reader_file_stat(mz_zip_archive *pZip, mz_uint file_index,
   n = MZ_READ_LE16(p + MZ_ZIP_CDH_COMMENT_LEN_OFS);
   n = MZ_MIN(n, MZ_ZIP_MAX_ARCHIVE_FILE_COMMENT_SIZE - 1);
   pStat->m_comment_size = n;
-  memcpy(pStat->m_comment, p + MZ_ZIP_CENTRAL_DIR_HEADER_SIZE +
-                               MZ_READ_LE16(p + MZ_ZIP_CDH_FILENAME_LEN_OFS) +
-                               MZ_READ_LE16(p + MZ_ZIP_CDH_EXTRA_LEN_OFS),
+  memcpy(pStat->m_comment,
+         p + MZ_ZIP_CENTRAL_DIR_HEADER_SIZE +
+             MZ_READ_LE16(p + MZ_ZIP_CDH_FILENAME_LEN_OFS) +
+             MZ_READ_LE16(p + MZ_ZIP_CDH_EXTRA_LEN_OFS),
          n);
   pStat->m_comment[n] = '\0';
 
@@ -8853,7 +8857,7 @@ static bool getCode(int po, int rlc, long long &c, int &lc, const char *&in,
     if (out + cs > oe) return false;
 
     // Bounds check for safety
-    // Issue 100.  
+    // Issue 100.
     if ((out - 1) < ob) return false;
     unsigned short s = out[-1];
 
@@ -9687,16 +9691,18 @@ static bool DecodePixelData(/* out */ unsigned char **out_images,
             } else {  // HALF -> FLOAT
               FP32 f32 = half_to_float(hf);
               float *image = reinterpret_cast<float **>(out_images)[c];
+              size_t offset = 0;
               if (line_order == 0) {
-                image += (static_cast<size_t>(line_no) + v) *
+                offset = (static_cast<size_t>(line_no) + v) *
                              static_cast<size_t>(x_stride) +
                          u;
               } else {
-                image += static_cast<size_t>(
+                offset = static_cast<size_t>(
                              (height - 1 - (line_no + static_cast<int>(v)))) *
                              static_cast<size_t>(x_stride) +
                          u;
               }
+              image += offset;
               *image = f32.f;
             }
           }
@@ -9823,16 +9829,19 @@ static bool DecodePixelData(/* out */ unsigned char **out_images,
             } else {  // HALF -> FLOAT
               tinyexr::FP32 f32 = half_to_float(hf);
               float *image = reinterpret_cast<float **>(out_images)[c];
+              size_t offset = 0;
               if (line_order == 0) {
-                image += (static_cast<size_t>(line_no) + v) *
+                offset = (static_cast<size_t>(line_no) + v) *
                              static_cast<size_t>(x_stride) +
                          u;
               } else {
-                image += (static_cast<size_t>(height) - 1U -
+                offset = (static_cast<size_t>(height) - 1U -
                           (static_cast<size_t>(line_no) + v)) *
                              static_cast<size_t>(x_stride) +
                          u;
               }
+              image += offset;
+
               *image = f32.f;
             }
           }
@@ -10738,10 +10747,26 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
   if ((data_width < 0) || (data_height < 0)) {
     if (err) {
       std::stringstream ss;
-      ss << "Invalid data width or data height: " << data_width << ", " << data_height << std::endl;
+      ss << "Invalid data width or data height: " << data_width << ", "
+         << data_height << std::endl;
       (*err) += ss.str();
     }
     return TINYEXR_ERROR_INVALID_DATA;
+  }
+
+  // Do not allow too large data_width and data_height. header invalid?
+  {
+    const int threshold = 1024 * 8192;  // heuristics
+    if ((data_width > threshold) || (data_height > threshold)) {
+      if (err) {
+        std::stringstream ss;
+        ss << "data_with or data_height too large. data_width: " << data_width
+           << ", "
+           << "data_height = " << data_height << std::endl;
+        (*err) += ss.str();
+      }
+      return TINYEXR_ERROR_INVALID_DATA;
+    }
   }
 
   size_t num_blocks = offsets.size();
@@ -10761,6 +10786,25 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
   bool invalid_data = false;  // TODO(LTE): Use atomic lock for MT safety.
 
   if (exr_header->tiled) {
+    // value check
+    if (exr_header->tile_size_x < 0) {
+      if (err) {
+        std::stringstream ss;
+        ss << "Invalid tile size x : " << exr_header->tile_size_x << "\n";
+        (*err) += ss.str();
+      }
+      return TINYEXR_ERROR_INVALID_HEADER;
+    }
+
+    if (exr_header->tile_size_y < 0) {
+      if (err) {
+        std::stringstream ss;
+        ss << "Invalid tile size y : " << exr_header->tile_size_y << "\n";
+        (*err) += ss.str();
+      }
+      return TINYEXR_ERROR_INVALID_HEADER;
+    }
+
     size_t num_tiles = offsets.size();  // = # of blocks
 
     exr_image->tiles = static_cast<EXRTile *>(
@@ -10839,12 +10883,16 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
     }
   } else {  // scanline format
 
-    // Don't allow too large image(256GB * pixel_data_size or more). Workaround for #104.
-    size_t total_data_len = size_t(data_width) * size_t(data_height) * size_t(num_channels);
+    // Don't allow too large image(256GB * pixel_data_size or more). Workaround
+    // for #104.
+    size_t total_data_len =
+        size_t(data_width) * size_t(data_height) * size_t(num_channels);
     if ((total_data_len == 0) || (total_data_len >= 0x4000000000)) {
       if (err) {
         std::stringstream ss;
-        ss << "Image data size is zero or too large: width = " << data_width << ", height = " << data_height << ", channels = " << num_channels << std::endl;
+        ss << "Image data size is zero or too large: width = " << data_width
+           << ", height = " << data_height << ", channels = " << num_channels
+           << std::endl;
         (*err) += ss.str();
       }
       return TINYEXR_ERROR_INVALID_DATA;
@@ -10878,6 +10926,10 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
         tinyexr::swap4(reinterpret_cast<unsigned int *>(&data_len));
 
         if (size_t(data_len) > data_size) {
+          invalid_data = true;
+        } else if (data_len == 0) {
+          // TODO(syoyo): May be ok to raise the threshold for example `data_len
+          // < 4`
           invalid_data = true;
         } else {
           int end_line_no = (std::min)(line_no + num_scanline_blocks,
@@ -10918,6 +10970,10 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
   }
 
   if (invalid_data) {
+    if (err) {
+      std::stringstream ss;
+      (*err) += "Invalid data found when decoding pixels.\n";
+    }
     return TINYEXR_ERROR_INVALID_DATA;
   }
 
@@ -10994,7 +11050,7 @@ static int DecodeEXRImage(EXRImage *exr_image, const EXRHeader *exr_header,
   int data_width = exr_header->data_window[2] - exr_header->data_window[0];
   if (data_width >= std::numeric_limits<int>::max()) {
     // Issue 63
-    tinyexr::SetErrorMessage("Invalid data window value", err);
+    tinyexr::SetErrorMessage("Invalid data width value", err);
     return TINYEXR_ERROR_INVALID_DATA;
   }
   data_width++;
@@ -11007,8 +11063,21 @@ static int DecodeEXRImage(EXRImage *exr_image, const EXRHeader *exr_header,
   data_height++;
 
   if ((data_width < 0) || (data_height < 0)) {
-    tinyexr::SetErrorMessage("data window or data height is negative.", err);
+    tinyexr::SetErrorMessage("data width or data height is negative.", err);
     return TINYEXR_ERROR_INVALID_DATA;
+  }
+
+  // Do not allow too large data_width and data_height. header invalid?
+  {
+    const int threshold = 1024 * 8192;  // heuristics
+    if (data_width > threshold) {
+      tinyexr::SetErrorMessage("data width too large.", err);
+      return TINYEXR_ERROR_INVALID_DATA;
+    }
+    if (data_height > threshold) {
+      tinyexr::SetErrorMessage("data height too large.", err);
+      return TINYEXR_ERROR_INVALID_DATA;
+    }
   }
 
   // Read offset tables.
@@ -11189,7 +11258,6 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
                static_cast<size_t>(exr_image.height)));
 
     if (exr_header.tiled) {
-
       for (int it = 0; it < exr_image.num_tiles; it++) {
         for (int j = 0; j < exr_header.tile_size_y; j++) {
           for (int i = 0; i < exr_header.tile_size_x; i++) {
@@ -11324,7 +11392,7 @@ int IsEXR(const char *filename) {
   if (ret != TINYEXR_SUCCESS) {
     return TINYEXR_ERROR_INVALID_HEADER;
   }
-  
+
   return TINYEXR_SUCCESS;
 }
 
@@ -11433,7 +11501,6 @@ int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
                static_cast<size_t>(exr_image.height)));
 
     if (exr_header.tiled) {
-
       for (int it = 0; it < exr_image.num_tiles; it++) {
         for (int j = 0; j < exr_header.tile_size_y; j++) {
           for (int i = 0; i < exr_header.tile_size_x; i++) {
@@ -12114,7 +12181,7 @@ size_t SaveEXRImageToMemory(const EXRImage *exr_image,
             sizeof(tinyexr::tinyexr_uint64) * static_cast<size_t>(num_blocks));
   }
 
-  if ( memory.size() == 0 ) {
+  if (memory.size() == 0) {
     tinyexr::SetErrorMessage("Output memory size is zero", err);
     return 0;
   }
@@ -12285,6 +12352,9 @@ int LoadDeepEXR(DeepImage *deep_image, const char *filename, const char **err) {
     size_t marker_size;
     if (!tinyexr::ReadAttribute(&attr_name, &attr_type, &data, &marker_size,
                                 marker, size)) {
+      std::stringstream ss;
+      ss << "Failed to parse attribute\n";
+      tinyexr::SetErrorMessage(ss.str(), err);
       return TINYEXR_ERROR_INVALID_DATA;
     }
     marker += marker_size;
