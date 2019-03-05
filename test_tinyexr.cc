@@ -47,7 +47,7 @@ SaveAsPFM(const char* filename, int width, int height, float* data)
     rgb[3*i+1] = data[4*i+1];
     rgb[3*i+2] = data[4*i+2];
   }
-  
+
   fwrite(&rgb.at(0), sizeof(float), static_cast<size_t>(width * height * 3), fp);
 
   fclose(fp);
@@ -141,14 +141,14 @@ main(int argc, char** argv)
   ret = SaveEXR(image, width, height, 4 /* =RGBA*/, 1 /* = save as fp16 format */, "output.exr", &err);
   if (ret != TINYEXR_SUCCESS) {
     if (err) {
-      fprintf(stderr, "Load EXR err: %s(code %d)\n", err, ret);
+      fprintf(stderr, "Save EXR err: %s(code %d)\n", err, ret);
     } else {
       fprintf(stderr, "Failed to save EXR image. code = %d\n", ret);
     }
   }
   free(image);
 #else
-    
+
   EXRVersion exr_version;
 
   int ret = ParseEXRVersionFromFile(&exr_version, argv[1]);
@@ -162,7 +162,7 @@ main(int argc, char** argv)
     exr_version.long_name,
     exr_version.non_image,
     exr_version.multipart);
-    
+
   if (exr_version.multipart) {
 
     EXRHeader **exr_headers; // list of EXRHeader pointers.
@@ -176,7 +176,7 @@ main(int argc, char** argv)
 
     printf("num parts = %d\n", num_exr_headers);
 
-    for (size_t i = 0; i < static_cast<size_t>(num_exr_headers); i++) { 
+    for (size_t i = 0; i < static_cast<size_t>(num_exr_headers); i++) {
       const EXRHeader &exr_header = *(exr_headers[i]);
 
       printf("Part: %lu\n", static_cast<unsigned long>(i));
