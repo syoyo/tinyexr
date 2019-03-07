@@ -470,7 +470,6 @@ extern int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-//#include <iostream>
 #include <sstream>
 
 #include <limits>
@@ -9351,6 +9350,10 @@ static bool DecompressPiz(unsigned char *outPtr, const unsigned char *inPtr,
   tinyexr::cpy4(&length, reinterpret_cast<const int *>(ptr));
   ptr += sizeof(int);
 
+  if (size_t((ptr - inPtr) + length) > inLen) {
+    return false;
+  }
+
   std::vector<unsigned short> tmpBuffer(tmpBufSize);
   hufUncompress(reinterpret_cast<const char *>(ptr), length, &tmpBuffer);
 
@@ -9645,8 +9648,9 @@ static bool DecodePixelData(/* out */ unsigned char **out_images,
         reinterpret_cast<unsigned char *>(&outBuf.at(0)), data_ptr, tmpBufLen,
         data_len, static_cast<int>(num_channels), channels, width, num_lines);
 
-    assert(ret);
-    (void)ret;
+    if (!ret) {
+      return false;
+    }
 
     // For PIZ_COMPRESSION:
     //   pixel sample data for channel 0 for scanline 0
@@ -10925,7 +10929,9 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
         tinyexr::swap4(reinterpret_cast<unsigned int *>(&line_no));
         tinyexr::swap4(reinterpret_cast<unsigned int *>(&data_len));
 
-        if (size_t(data_len) > data_size) {
+        if (line_no < 0) {
+          invalid_data = true;
+        } else if (size_t(data_len) > data_size) {
           invalid_data = true;
         } else if (data_len == 0) {
           // TODO(syoyo): May be ok to raise the threshold for example `data_len
