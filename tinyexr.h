@@ -472,6 +472,8 @@ extern int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
 #include <cstring>
 #include <sstream>
 
+// #include <iostream> // debug
+
 #include <limits>
 #include <string>
 #include <vector>
@@ -7792,13 +7794,19 @@ static void CompressRle(unsigned char *dst,
   }
 }
 
-static void DecompressRle(unsigned char *dst,
+static bool DecompressRle(unsigned char *dst,
                           const unsigned long uncompressed_size,
                           const unsigned char *src, unsigned long src_size) {
   if (uncompressed_size == src_size) {
     // Data is not compressed(Issue 40).
     memcpy(dst, src, src_size);
-    return;
+    return true;
+  }
+
+  // Workaround for issue #112.
+  // TODO(syoyo): Add more robust out-of-bounds check in `rleUncompress`.
+  if (src_size <= 2) {
+    return false;
   }
 
   std::vector<unsigned char> tmpBuf(uncompressed_size);
@@ -7807,8 +7815,9 @@ static void DecompressRle(unsigned char *dst,
                           static_cast<int>(uncompressed_size),
                           reinterpret_cast<const signed char *>(src),
                           reinterpret_cast<char *>(&tmpBuf.at(0)));
-  assert(ret == static_cast<int>(uncompressed_size));
-  (void)ret;
+  if (ret != static_cast<int>(uncompressed_size)) {
+    return false;
+  }
 
   //
   // Apply EXR-specific? postprocess. Grabbed from OpenEXR's
@@ -7847,6 +7856,8 @@ static void DecompressRle(unsigned char *dst,
         break;
     }
   }
+
+  return true;
 }
 
 #if TINYEXR_USE_PIZ
@@ -9918,10 +9929,15 @@ static bool DecodePixelData(/* out */ unsigned char **out_images,
                                       pixel_data_size);
 
     unsigned long dstLen = static_cast<unsigned long>(outBuf.size());
-    assert(dstLen > 0);
-    tinyexr::DecompressRle(reinterpret_cast<unsigned char *>(&outBuf.at(0)),
+    if (dstLen == 0) {
+      return false;
+    }
+
+    if (!tinyexr::DecompressRle(reinterpret_cast<unsigned char *>(&outBuf.at(0)),
                            dstLen, data_ptr,
-                           static_cast<unsigned long>(data_len));
+                           static_cast<unsigned long>(data_len))) {
+      return false;
+    }
 
     // For RLE_COMPRESSION:
     //   pixel sample data for channel 0 for scanline 0
@@ -10929,20 +10945,18 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
         tinyexr::swap4(reinterpret_cast<unsigned int *>(&line_no));
         tinyexr::swap4(reinterpret_cast<unsigned int *>(&data_len));
 
-        if (line_no < 0) {
-          invalid_data = true;
-        } else if (size_t(data_len) > data_size) {
+        if (size_t(data_len) > data_size) {
           invalid_data = true;
         } else if (data_len == 0) {
           // TODO(syoyo): May be ok to raise the threshold for example `data_len
           // < 4`
           invalid_data = true;
         } else {
+          // line_no may be negative.
           int end_line_no = (std::min)(line_no + num_scanline_blocks,
                                        (exr_header->data_window[3] + 1));
 
           int num_lines = end_line_no - line_no;
-          // assert(num_lines > 0);
 
           if (num_lines <= 0) {
             invalid_data = true;
@@ -10951,7 +10965,16 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
             data_ptr += 8;
 
             // Adjust line_no with data_window.bmin.y
-            line_no -= exr_header->data_window[1];
+
+            // overflow check
+            tinyexr_int64 lno = static_cast<tinyexr_int64>(line_no) - static_cast<tinyexr_int64>(exr_header->data_window[1]);
+            if (lno > std::numeric_limits<int>::max()) {
+              line_no = -1; // invalid
+            } else if (lno < -std::numeric_limits<int>::max()) {
+              line_no = -1; // invalid
+            } else {
+              line_no -= exr_header->data_window[1];
+            }
 
             if (line_no < 0) {
               invalid_data = true;
