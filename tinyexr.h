@@ -7700,7 +7700,8 @@ static int rleUncompress(int inLength, int maxLength, const signed char in[],
       int count = -(static_cast<int>(*in++));
       inLength -= count + 1;
 
-      if (0 > (maxLength -= count)) return 0;
+      // Fixes #116: Add bounds check to in buffer.
+      if ((0 > (maxLength -= count)) || (inLength < 0)) return 0;
 
       memcpy(out, in, count);
       out += count;
