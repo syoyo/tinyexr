@@ -79,10 +79,11 @@ static void draw_samples() {
     float py = 2.0f * ((gDeepImage.height - y - 1) / (float)gDeepImage.height) -
                1.0f; // upside down?
     int sampleNum = gDeepImage.offset_table[y][gDeepImage.width - 1];
-    for (int x = 0; x < gDeepImage.width - 1; x++) {
+
+    int s_start = 0; //gDeepImage.offset_table[y][x];
+    for (int x = 0; x < gDeepImage.width; x++) {
       float px = 2.0f * (x / (float)gDeepImage.width) - 1.0f;
-      int s_start = gDeepImage.offset_table[y][x];
-      int s_end = gDeepImage.offset_table[y][x + 1];
+      int s_end = gDeepImage.offset_table[y][x];
       if (s_start >= sampleNum || s_end >= sampleNum) {
         continue;
       }
@@ -120,6 +121,8 @@ static void draw_samples() {
         glColor3f(red, green, blue);
         glVertex3f(px, py, pz);
       }
+
+      s_start = s_end;
     }
   }
 
