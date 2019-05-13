@@ -80,7 +80,7 @@ static void draw_samples() {
                1.0f; // upside down?
     int sampleNum = gDeepImage.offset_table[y][gDeepImage.width - 1];
 
-    int s_start = 0; //gDeepImage.offset_table[y][x];
+    int s_start = 0; // First pixel data starts at 0
     for (int x = 0; x < gDeepImage.width; x++) {
       float px = 2.0f * (x / (float)gDeepImage.width) - 1.0f;
       int s_end = gDeepImage.offset_table[y][x];
