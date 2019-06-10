@@ -8570,7 +8570,7 @@ static bool hufUnpackEncTable(
   int lc = 0;
 
   for (; im <= iM; im++) {
-    if (p - *pcode > ni) {
+    if (p - *pcode >= ni) {
       return false;
     }
 
