@@ -10908,7 +10908,8 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
     // for #104.
     size_t total_data_len =
         size_t(data_width) * size_t(data_height) * size_t(num_channels);
-    if ((total_data_len == 0) || (total_data_len >= 0x4000000000)) {
+    const bool total_data_len_overflown = sizeof(void*) == 8 ? (total_data_len >= 0x4000000000) : false;
+    if ((total_data_len == 0) || total_data_len_overflown ) {
       if (err) {
         std::stringstream ss;
         ss << "Image data size is zero or too large: width = " << data_width
