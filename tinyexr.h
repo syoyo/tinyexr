@@ -472,7 +472,7 @@ extern int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
 #include <cstring>
 #include <sstream>
 
-// #include <iostream> // debug
+//#include <iostream> // debug
 
 #include <limits>
 #include <string>
@@ -7013,6 +7013,11 @@ static void swap2(unsigned short *val) {
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunused-function"
 #endif
+
+#ifdef __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
+#endif
 static void cpy4(int *dst_val, const int *src_val) {
   unsigned char *dst = reinterpret_cast<unsigned char *>(dst_val);
   const unsigned char *src = reinterpret_cast<const unsigned char *>(src_val);
@@ -7044,6 +7049,10 @@ static void cpy4(float *dst_val, const float *src_val) {
 }
 #ifdef __clang__
 #pragma clang diagnostic pop
+#endif
+
+#ifdef __GNUC__
+#pragma GCC diagnostic pop
 #endif
 
 static void swap4(unsigned int *val) {
@@ -10948,6 +10957,11 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
         tinyexr::swap4(reinterpret_cast<unsigned int *>(&data_len));
 
         if (size_t(data_len) > data_size) {
+          invalid_data = true;
+
+        } else if ((line_no > (2 << 20)) || (line_no < -(2 << 20))) {
+          // Too large value. Assume this is invalid
+          // 2**20 = 1048576 = heuristic value.
           invalid_data = true;
         } else if (data_len == 0) {
           // TODO(syoyo): May be ok to raise the threshold for example `data_len
