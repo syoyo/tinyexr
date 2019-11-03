@@ -554,6 +554,10 @@ namespace miniz {
 #pragma clang diagnostic ignored "-Wtautological-constant-compare"
 #endif
 
+#if __has_warning("-Wextra-semi-stmt")
+#pragma clang diagnostic ignored "-Wextra-semi-stmt"
+#endif
+
 #endif
 
 /* miniz.c v1.15 - public domain deflate/inflate, zlib-subset, ZIP
@@ -7625,6 +7629,9 @@ static bool DecompressZip(unsigned char *dst,
 #ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wsign-conversion"
+#if __has_warning("-Wextra-semi-stmt")
+#pragma clang diagnostic ignored "-Wextra-semi-stmt"
+#endif
 #endif
 
 #ifdef _MSC_VER
@@ -7884,6 +7891,10 @@ static bool DecompressRle(unsigned char *dst,
 
 #if __has_warning("-Wcast-qual")
 #pragma clang diagnostic ignored "-Wcast-qual"
+#endif
+
+#if __has_warning("-Wextra-semi-stmt")
+#pragma clang diagnostic ignored "-Wextra-semi-stmt"
 #endif
 
 #endif
