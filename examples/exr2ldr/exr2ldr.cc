@@ -82,7 +82,7 @@ int main(int argc, char** argv)
   if (argc > 6 && (strcmp(argv[6], "-i") == 0 || strcmp(argv[6], "--ignore-alpha") == 0)) {
     ignore_alpha = true;
   }
-    
+
   int width, height;
   float* rgba;
   const char* err;
@@ -104,6 +104,8 @@ int main(int argc, char** argv)
   assert(ret != 0);
 
   bool ok = SaveImage(argv[2], &buf.at(0), scale, gamma, dst_width, dst_height, ignore_alpha);
+
+  free(rgba);
 
   return (ok ? 0 : -1);
 }
