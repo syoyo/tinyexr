@@ -25,7 +25,9 @@ std::string GetPath(const char* basename) {
 TEST_CASE("asakusa", "[Load]") {
   EXRVersion exr_version;
   EXRImage exr_image;
+  InitEXRImage(&exr_image);
   EXRHeader exr_header;
+  InitEXRHeader(&exr_header);
   const char* err = NULL;
   int ret = ParseEXRVersionFromFile(&exr_version, "../../asakusa.exr");
   REQUIRE(TINYEXR_SUCCESS == ret);
@@ -34,6 +36,9 @@ TEST_CASE("asakusa", "[Load]") {
                                &err);
   REQUIRE(NULL == err);
   REQUIRE(TINYEXR_SUCCESS == ret);
+
+  FreeEXRImage(&exr_image);
+  FreeEXRHeader(&exr_header);
 }
 
 TEST_CASE("ScanLines", "[Load]") {
@@ -393,8 +398,8 @@ TEST_CASE("Beachball/multipart.0001.exr|Load", "[Load]") {
   }
 
   for (int i = 0; i < num_exr_headers; i++) {
-    FreeEXRHeader(exr_headers[i]);
-    free(exr_headers[i]);
+    FreeEXRHeader(exr_headers[i]); // free content
+    free(exr_headers[i]); // free pointer
   }
   free(exr_headers);
 }
@@ -611,6 +616,10 @@ TEST_CASE("Compressed is smaller than uncompressed", "[Issue40]") {
   const char* err;
   int const ret = SaveEXRImageToFile(&image, &header, "issue40.exr", &err);
   REQUIRE(ret == TINYEXR_SUCCESS);
+
+  free(header.channels);
+  free(header.requested_pixel_types);
+  free(header.pixel_types);
 }
 
 //TEST_CASE("Regression: Issue54", "[fuzzing]") {
@@ -654,9 +663,12 @@ TEST_CASE("Regression: Issue50", "[fuzzing]") {
   InitEXRHeader(&header);
   InitEXRImage(&image);
 
-  const char* err;
+  const char* err = nullptr;
   ret = ParseEXRHeaderFromFile(&header, &exr_version, filepath.c_str(), &err);
   REQUIRE(TINYEXR_SUCCESS == false);
+  if (ret) {
+    FreeEXRErrorMessage(err);
+  }
 
   FreeEXRHeader(&header);
   //FreeEXRImage(&image);
@@ -677,9 +689,12 @@ TEST_CASE("Regression: Issue57", "[fuzzing]") {
   InitEXRHeader(&header);
   InitEXRImage(&image);
 
-  const char* err;
+  const char* err = nullptr;
   ret = ParseEXRHeaderFromFile(&header, &exr_version, filepath.c_str(), &err);
   REQUIRE(TINYEXR_SUCCESS == false);
+  if (err) {
+    FreeEXRErrorMessage(err);
+  }
 
   FreeEXRHeader(&header);
   //FreeEXRImage(&image);
@@ -700,9 +715,12 @@ TEST_CASE("Regression: Issue56", "[fuzzing]") {
   InitEXRHeader(&header);
   InitEXRImage(&image);
 
-  const char* err;
+  const char* err = nullptr;
   ret = ParseEXRHeaderFromFile(&header, &exr_version, filepath.c_str(), &err);
   REQUIRE(TINYEXR_SUCCESS == false);
+  if (err) {
+    FreeEXRErrorMessage(err);
+  }
 
   FreeEXRHeader(&header);
   //FreeEXRImage(&image);
@@ -723,9 +741,12 @@ TEST_CASE("Regression: Issue61", "[fuzzing]") {
   InitEXRHeader(&header);
   InitEXRImage(&image);
 
-  const char* err;
+  const char* err = nullptr;
   ret = ParseEXRHeaderFromFile(&header, &exr_version, filepath.c_str(), &err);
   REQUIRE(TINYEXR_SUCCESS == false);
+  if (err) {
+    FreeEXRErrorMessage(err);
+  }
 
   FreeEXRHeader(&header);
   //FreeEXRImage(&image);
@@ -746,9 +767,12 @@ TEST_CASE("Regression: Issue60", "[fuzzing]") {
   InitEXRHeader(&header);
   InitEXRImage(&image);
 
-  const char* err;
+  const char* err = nullptr;
   ret = ParseEXRHeaderFromFile(&header, &exr_version, filepath.c_str(), &err);
   REQUIRE(TINYEXR_SUCCESS == false);
+  if (err) {
+    FreeEXRErrorMessage(err);
+  }
 
   FreeEXRHeader(&header);
   //FreeEXRImage(&image);

@@ -1,15 +1,15 @@
 .PHONY: clean
 
-CXX ?= g++
-CXXFLAGS = -g -O2 -DCATCH_CONFIG_NO_CPP11
+CXX = clang++
+CXXFLAGS = -fsanitize=address,undefined -g -O2 -std=c++11
 
-tester: tester.cc
+tester: tester.cc ../../tinyexr.h
 	$(CXX) $(CXXFLAGS) -o tester tester.cc
 
 all: tester
 
 check: tester
-	./tester	
+	./tester
 
 clean:
 	rm -rf tester

@@ -472,7 +472,7 @@ extern int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
 #include <cstring>
 #include <sstream>
 
-//#include <iostream> // debug
+// #include <iostream> // debug
 
 #include <limits>
 #include <string>
@@ -481,6 +481,12 @@ extern int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
 #if __cplusplus > 199711L
 // C++11
 #include <cstdint>
+
+#if defined(TINYEXR_USE_THREAD)
+#include <atomic>
+#include <thread>
+#endif
+
 #endif  // __cplusplus > 199711L
 
 #ifdef _OPENMP
@@ -9954,9 +9960,9 @@ static bool DecodePixelData(/* out */ unsigned char **out_images,
       return false;
     }
 
-    if (!tinyexr::DecompressRle(reinterpret_cast<unsigned char *>(&outBuf.at(0)),
-                           dstLen, data_ptr,
-                           static_cast<unsigned long>(data_len))) {
+    if (!tinyexr::DecompressRle(
+            reinterpret_cast<unsigned char *>(&outBuf.at(0)), dstLen, data_ptr,
+            static_cast<unsigned long>(data_len))) {
       return false;
     }
 
@@ -10272,7 +10278,7 @@ static bool DecodePixelData(/* out */ unsigned char **out_images,
   return true;
 }
 
-static void DecodeTiledPixelData(
+static bool DecodeTiledPixelData(
     unsigned char **out_images, int *width, int *height,
     const int *requested_pixel_types, const unsigned char *data_ptr,
     size_t data_len, int compression_type, int line_order, int data_width,
@@ -10298,11 +10304,11 @@ static void DecodeTiledPixelData(
   }
 
   // Image size = tile size.
-  DecodePixelData(out_images, requested_pixel_types, data_ptr, data_len,
-                  compression_type, line_order, (*width), tile_size_y,
-                  /* stride */ tile_size_x, /* y */ 0, /* line_no */ 0,
-                  (*height), pixel_data_size, num_attributes, attributes,
-                  num_channels, channels, channel_offset_list);
+  return DecodePixelData(out_images, requested_pixel_types, data_ptr, data_len,
+                         compression_type, line_order, (*width), tile_size_y,
+                         /* stride */ tile_size_x, /* y */ 0, /* line_no */ 0,
+                         (*height), pixel_data_size, num_attributes, attributes,
+                         num_channels, channels, channel_offset_list);
 }
 
 static bool ComputeChannelLayout(std::vector<size_t> *channel_offset_list,
@@ -10851,85 +10857,141 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
     exr_image->tiles = static_cast<EXRTile *>(
         calloc(sizeof(EXRTile), static_cast<size_t>(num_tiles)));
 
-    for (size_t tile_idx = 0; tile_idx < num_tiles; tile_idx++) {
-      // Allocate memory for each tile.
-      exr_image->tiles[tile_idx].images = tinyexr::AllocateImage(
-          num_channels, exr_header->channels, exr_header->requested_pixel_types,
-          exr_header->tile_size_x, exr_header->tile_size_y);
+    int err_code = TINYEXR_SUCCESS;
 
-      // 16 byte: tile coordinates
-      // 4 byte : data size
-      // ~      : data(uncompressed or compressed)
-      if (offsets[tile_idx] + sizeof(int) * 5 > size) {
-        if (err) {
-          (*err) += "Insufficient data size.\n";
-        }
-        return TINYEXR_ERROR_INVALID_DATA;
-      }
+#if (__cplusplus > 199711L) && defined(TINYEXR_USE_THREAD)
 
-      size_t data_size = size_t(size - (offsets[tile_idx] + sizeof(int) * 5));
-      const unsigned char *data_ptr =
-          reinterpret_cast<const unsigned char *>(head + offsets[tile_idx]);
+    std::vector<std::thread> workers;
+    std::atomic<size_t> tile_count(0);
 
-      int tile_coordinates[4];
-      memcpy(tile_coordinates, data_ptr, sizeof(int) * 4);
-      tinyexr::swap4(reinterpret_cast<unsigned int *>(&tile_coordinates[0]));
-      tinyexr::swap4(reinterpret_cast<unsigned int *>(&tile_coordinates[1]));
-      tinyexr::swap4(reinterpret_cast<unsigned int *>(&tile_coordinates[2]));
-      tinyexr::swap4(reinterpret_cast<unsigned int *>(&tile_coordinates[3]));
-
-      // @todo{ LoD }
-      if (tile_coordinates[2] != 0) {
-        return TINYEXR_ERROR_UNSUPPORTED_FEATURE;
-      }
-      if (tile_coordinates[3] != 0) {
-        return TINYEXR_ERROR_UNSUPPORTED_FEATURE;
-      }
-
-      int data_len;
-      memcpy(&data_len, data_ptr + 16,
-             sizeof(int));  // 16 = sizeof(tile_coordinates)
-      tinyexr::swap4(reinterpret_cast<unsigned int *>(&data_len));
-
-      if (data_len < 4 || size_t(data_len) > data_size) {
-        if (err) {
-          (*err) += "Insufficient data length.\n";
-        }
-        return TINYEXR_ERROR_INVALID_DATA;
-      }
-
-      // Move to data addr: 20 = 16 + 4;
-      data_ptr += 20;
-
-      tinyexr::DecodeTiledPixelData(
-          exr_image->tiles[tile_idx].images,
-          &(exr_image->tiles[tile_idx].width),
-          &(exr_image->tiles[tile_idx].height),
-          exr_header->requested_pixel_types, data_ptr,
-          static_cast<size_t>(data_len), exr_header->compression_type,
-          exr_header->line_order, data_width, data_height, tile_coordinates[0],
-          tile_coordinates[1], exr_header->tile_size_x, exr_header->tile_size_y,
-          static_cast<size_t>(pixel_data_size),
-          static_cast<size_t>(exr_header->num_custom_attributes),
-          exr_header->custom_attributes,
-          static_cast<size_t>(exr_header->num_channels), exr_header->channels,
-          channel_offset_list);
-
-      exr_image->tiles[tile_idx].offset_x = tile_coordinates[0];
-      exr_image->tiles[tile_idx].offset_y = tile_coordinates[1];
-      exr_image->tiles[tile_idx].level_x = tile_coordinates[2];
-      exr_image->tiles[tile_idx].level_y = tile_coordinates[3];
-
-      exr_image->num_tiles = static_cast<int>(num_tiles);
+    int num_threads = std::max(1, int(std::thread::hardware_concurrency()));
+    if (num_threads > int(num_tiles)) {
+      num_threads = int(num_tiles);
     }
+
+    for (int t = 0; t < num_threads; t++) {
+      workers.emplace_back(std::thread([&]() {
+        size_t tile_idx = 0;
+        while ((tile_idx = tile_count++) < num_tiles) {
+
+#else
+    for (size_t tile_idx = 0; tile_idx < num_tiles; tile_idx++) {
+#endif
+          // Allocate memory for each tile.
+          exr_image->tiles[tile_idx].images = tinyexr::AllocateImage(
+              num_channels, exr_header->channels,
+              exr_header->requested_pixel_types, exr_header->tile_size_x,
+              exr_header->tile_size_y);
+
+          // 16 byte: tile coordinates
+          // 4 byte : data size
+          // ~      : data(uncompressed or compressed)
+          if (offsets[tile_idx] + sizeof(int) * 5 > size) {
+            // TODO(LTE): atomic
+            if (err) {
+              (*err) += "Insufficient data size.\n";
+            }
+            err_code = TINYEXR_ERROR_INVALID_DATA;
+            break;
+          }
+
+          size_t data_size =
+              size_t(size - (offsets[tile_idx] + sizeof(int) * 5));
+          const unsigned char *data_ptr =
+              reinterpret_cast<const unsigned char *>(head + offsets[tile_idx]);
+
+          int tile_coordinates[4];
+          memcpy(tile_coordinates, data_ptr, sizeof(int) * 4);
+          tinyexr::swap4(
+              reinterpret_cast<unsigned int *>(&tile_coordinates[0]));
+          tinyexr::swap4(
+              reinterpret_cast<unsigned int *>(&tile_coordinates[1]));
+          tinyexr::swap4(
+              reinterpret_cast<unsigned int *>(&tile_coordinates[2]));
+          tinyexr::swap4(
+              reinterpret_cast<unsigned int *>(&tile_coordinates[3]));
+
+          // @todo{ LoD }
+          if (tile_coordinates[2] != 0) {
+            err_code = TINYEXR_ERROR_UNSUPPORTED_FEATURE;
+            break;
+          }
+          if (tile_coordinates[3] != 0) {
+            err_code = TINYEXR_ERROR_UNSUPPORTED_FEATURE;
+            break;
+          }
+
+          int data_len;
+          memcpy(&data_len, data_ptr + 16,
+                 sizeof(int));  // 16 = sizeof(tile_coordinates)
+          tinyexr::swap4(reinterpret_cast<unsigned int *>(&data_len));
+
+          if (data_len < 4 || size_t(data_len) > data_size) {
+            // TODO(LTE): atomic
+            if (err) {
+              (*err) += "Insufficient data length.\n";
+            }
+            err_code = TINYEXR_ERROR_INVALID_DATA;
+            break;
+          }
+
+          // Move to data addr: 20 = 16 + 4;
+          data_ptr += 20;
+
+          bool ret = tinyexr::DecodeTiledPixelData(
+              exr_image->tiles[tile_idx].images,
+              &(exr_image->tiles[tile_idx].width),
+              &(exr_image->tiles[tile_idx].height),
+              exr_header->requested_pixel_types, data_ptr,
+              static_cast<size_t>(data_len), exr_header->compression_type,
+              exr_header->line_order, data_width, data_height,
+              tile_coordinates[0], tile_coordinates[1], exr_header->tile_size_x,
+              exr_header->tile_size_y, static_cast<size_t>(pixel_data_size),
+              static_cast<size_t>(exr_header->num_custom_attributes),
+              exr_header->custom_attributes,
+              static_cast<size_t>(exr_header->num_channels),
+              exr_header->channels, channel_offset_list);
+
+          if (!ret) {
+            // TODO(LTE): atomic
+            if (err) {
+              (*err) += "Failed to decode tile data.\n";
+            }
+            err_code = TINYEXR_ERROR_INVALID_DATA;
+          }
+
+          exr_image->tiles[tile_idx].offset_x = tile_coordinates[0];
+          exr_image->tiles[tile_idx].offset_y = tile_coordinates[1];
+          exr_image->tiles[tile_idx].level_x = tile_coordinates[2];
+          exr_image->tiles[tile_idx].level_y = tile_coordinates[3];
+
+#if (__cplusplus > 199711L) && defined(TINYEXR_USE_THREAD)
+        }
+      }));
+    }  // num_thread loop
+
+    for (auto &t : workers) {
+      t.join();
+    }
+
+#else
+    }
+#endif
+
+    if (err_code != TINYEXR_SUCCESS) {
+      return err_code;
+    }
+
+    exr_image->num_tiles = static_cast<int>(num_tiles);
   } else {  // scanline format
 
     // Don't allow too large image(256GB * pixel_data_size or more). Workaround
     // for #104.
     size_t total_data_len =
         size_t(data_width) * size_t(data_height) * size_t(num_channels);
-    const bool total_data_len_overflown = sizeof(void*) == 8 ? (total_data_len >= 0x4000000000) : false;
-    if ((total_data_len == 0) || total_data_len_overflown ) {
+    const bool total_data_len_overflown =
+        sizeof(void *) == 8 ? (total_data_len >= 0x4000000000) : false;
+    if ((total_data_len == 0) || total_data_len_overflown) {
       if (err) {
         std::stringstream ss;
         ss << "Image data size is zero or too large: width = " << data_width
@@ -10944,85 +11006,118 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
         num_channels, exr_header->channels, exr_header->requested_pixel_types,
         data_width, data_height);
 
+#if (__cplusplus > 199711L) && defined(TINYEXR_USE_THREAD)
+    std::vector<std::thread> workers;
+    std::atomic<int> y_count(0);
+
+    int num_threads = std::max(1, int(std::thread::hardware_concurrency()));
+    if (num_threads > int(num_blocks)) {
+      num_threads = int(num_blocks);
+    }
+
+    for (int t = 0; t < num_threads; t++) {
+      workers.emplace_back(std::thread([&]() {
+        int y = 0;
+        while ((y = y_count++) < int(num_blocks)) {
+
+#else
+
 #ifdef _OPENMP
 #pragma omp parallel for
 #endif
     for (int y = 0; y < static_cast<int>(num_blocks); y++) {
-      size_t y_idx = static_cast<size_t>(y);
 
-      if (offsets[y_idx] + sizeof(int) * 2 > size) {
-        invalid_data = true;
-      } else {
-        // 4 byte: scan line
-        // 4 byte: data size
-        // ~     : pixel data(uncompressed or compressed)
-        size_t data_size = size_t(size - (offsets[y_idx] + sizeof(int) * 2));
-        const unsigned char *data_ptr =
-            reinterpret_cast<const unsigned char *>(head + offsets[y_idx]);
+#endif
+          size_t y_idx = static_cast<size_t>(y);
 
-        int line_no;
-        memcpy(&line_no, data_ptr, sizeof(int));
-        int data_len;
-        memcpy(&data_len, data_ptr + 4, sizeof(int));
-        tinyexr::swap4(reinterpret_cast<unsigned int *>(&line_no));
-        tinyexr::swap4(reinterpret_cast<unsigned int *>(&data_len));
-
-        if (size_t(data_len) > data_size) {
-          invalid_data = true;
-
-        } else if ((line_no > (2 << 20)) || (line_no < -(2 << 20))) {
-          // Too large value. Assume this is invalid
-          // 2**20 = 1048576 = heuristic value.
-          invalid_data = true;
-        } else if (data_len == 0) {
-          // TODO(syoyo): May be ok to raise the threshold for example `data_len
-          // < 4`
-          invalid_data = true;
-        } else {
-          // line_no may be negative.
-          int end_line_no = (std::min)(line_no + num_scanline_blocks,
-                                       (exr_header->data_window[3] + 1));
-
-          int num_lines = end_line_no - line_no;
-
-          if (num_lines <= 0) {
+          if (offsets[y_idx] + sizeof(int) * 2 > size) {
             invalid_data = true;
           } else {
-            // Move to data addr: 8 = 4 + 4;
-            data_ptr += 8;
+            // 4 byte: scan line
+            // 4 byte: data size
+            // ~     : pixel data(uncompressed or compressed)
+            size_t data_size =
+                size_t(size - (offsets[y_idx] + sizeof(int) * 2));
+            const unsigned char *data_ptr =
+                reinterpret_cast<const unsigned char *>(head + offsets[y_idx]);
 
-            // Adjust line_no with data_window.bmin.y
+            int line_no;
+            memcpy(&line_no, data_ptr, sizeof(int));
+            int data_len;
+            memcpy(&data_len, data_ptr + 4, sizeof(int));
+            tinyexr::swap4(reinterpret_cast<unsigned int *>(&line_no));
+            tinyexr::swap4(reinterpret_cast<unsigned int *>(&data_len));
 
-            // overflow check
-            tinyexr_int64 lno = static_cast<tinyexr_int64>(line_no) - static_cast<tinyexr_int64>(exr_header->data_window[1]);
-            if (lno > std::numeric_limits<int>::max()) {
-              line_no = -1; // invalid
-            } else if (lno < -std::numeric_limits<int>::max()) {
-              line_no = -1; // invalid
-            } else {
-              line_no -= exr_header->data_window[1];
-            }
+            if (size_t(data_len) > data_size) {
+              invalid_data = true;
 
-            if (line_no < 0) {
+            } else if ((line_no > (2 << 20)) || (line_no < -(2 << 20))) {
+              // Too large value. Assume this is invalid
+              // 2**20 = 1048576 = heuristic value.
+              invalid_data = true;
+            } else if (data_len == 0) {
+              // TODO(syoyo): May be ok to raise the threshold for example
+              // `data_len < 4`
               invalid_data = true;
             } else {
-              if (!tinyexr::DecodePixelData(
-                      exr_image->images, exr_header->requested_pixel_types,
-                      data_ptr, static_cast<size_t>(data_len),
-                      exr_header->compression_type, exr_header->line_order,
-                      data_width, data_height, data_width, y, line_no,
-                      num_lines, static_cast<size_t>(pixel_data_size),
-                      static_cast<size_t>(exr_header->num_custom_attributes),
-                      exr_header->custom_attributes,
-                      static_cast<size_t>(exr_header->num_channels),
-                      exr_header->channels, channel_offset_list)) {
+              // line_no may be negative.
+              int end_line_no = (std::min)(line_no + num_scanline_blocks,
+                                           (exr_header->data_window[3] + 1));
+
+              int num_lines = end_line_no - line_no;
+
+              if (num_lines <= 0) {
                 invalid_data = true;
+              } else {
+                // Move to data addr: 8 = 4 + 4;
+                data_ptr += 8;
+
+                // Adjust line_no with data_window.bmin.y
+
+                // overflow check
+                tinyexr_int64 lno =
+                    static_cast<tinyexr_int64>(line_no) -
+                    static_cast<tinyexr_int64>(exr_header->data_window[1]);
+                if (lno > std::numeric_limits<int>::max()) {
+                  line_no = -1;  // invalid
+                } else if (lno < -std::numeric_limits<int>::max()) {
+                  line_no = -1;  // invalid
+                } else {
+                  line_no -= exr_header->data_window[1];
+                }
+
+                if (line_no < 0) {
+                  invalid_data = true;
+                } else {
+                  if (!tinyexr::DecodePixelData(
+                          exr_image->images, exr_header->requested_pixel_types,
+                          data_ptr, static_cast<size_t>(data_len),
+                          exr_header->compression_type, exr_header->line_order,
+                          data_width, data_height, data_width, y, line_no,
+                          num_lines, static_cast<size_t>(pixel_data_size),
+                          static_cast<size_t>(
+                              exr_header->num_custom_attributes),
+                          exr_header->custom_attributes,
+                          static_cast<size_t>(exr_header->num_channels),
+                          exr_header->channels, channel_offset_list)) {
+                    invalid_data = true;
+                  }
+                }
               }
             }
           }
+
+#if (__cplusplus > 199711L) && defined(TINYEXR_USE_THREAD)
         }
-      }
+      }));
+    }
+
+    for (auto &t : workers) {
+      t.join();
+    }
+#else
     }  // omp parallel
+#endif
   }
 
   if (invalid_data) {
@@ -11966,6 +12061,8 @@ size_t SaveEXRImageToMemory(const EXRImage *exr_image,
     }
   }
 #endif
+
+  // TOOD(LTE): C++11 thread
 
 // Use signed int since some OpenMP compiler doesn't allow unsigned type for
 // `parallel for`
