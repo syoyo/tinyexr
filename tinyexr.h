@@ -105,6 +105,11 @@ extern "C" {
 // http://computation.llnl.gov/projects/floating-point-compression
 #endif
 
+#ifndef TINYEXR_USE_THREAD
+#define TINYEXR_USE_THREAD (0)  // No threaded loading.
+// http://computation.llnl.gov/projects/floating-point-compression
+#endif
+
 #define TINYEXR_SUCCESS (0)
 #define TINYEXR_ERROR_INVALID_MAGIC_NUMBER (-1)
 #define TINYEXR_ERROR_INVALID_EXR_VERSION (-2)
@@ -482,7 +487,7 @@ extern int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
 // C++11
 #include <cstdint>
 
-#if defined(TINYEXR_USE_THREAD)
+#if TINYEXR_USE_THREAD
 #include <atomic>
 #include <thread>
 #endif
@@ -10859,7 +10864,7 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
 
     int err_code = TINYEXR_SUCCESS;
 
-#if (__cplusplus > 199711L) && defined(TINYEXR_USE_THREAD)
+#if (__cplusplus > 199711L) && (TINYEXR_USE_THREAD > 0)
 
     std::vector<std::thread> workers;
     std::atomic<size_t> tile_count(0);
@@ -10965,7 +10970,7 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
           exr_image->tiles[tile_idx].level_x = tile_coordinates[2];
           exr_image->tiles[tile_idx].level_y = tile_coordinates[3];
 
-#if (__cplusplus > 199711L) && defined(TINYEXR_USE_THREAD)
+#if (__cplusplus > 199711L) && (TINYEXR_USE_THREAD > 0)
         }
       }));
     }  // num_thread loop
@@ -11006,7 +11011,7 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
         num_channels, exr_header->channels, exr_header->requested_pixel_types,
         data_width, data_height);
 
-#if (__cplusplus > 199711L) && defined(TINYEXR_USE_THREAD)
+#if (__cplusplus > 199711L) && (TINYEXR_USE_THREAD > 0)
     std::vector<std::thread> workers;
     std::atomic<int> y_count(0);
 
@@ -11107,7 +11112,7 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
             }
           }
 
-#if (__cplusplus > 199711L) && defined(TINYEXR_USE_THREAD)
+#if (__cplusplus > 199711L) && (TINYEXR_USE_THREAD > 0)
         }
       }));
     }

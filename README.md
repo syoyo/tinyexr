@@ -25,7 +25,7 @@ Current status of `tinyexr` is:
     - [ ] Tile format with LoD(save).
   - [x] Custom attributes
 - OpenEXR v2 image
-  - [ ] Multipart format 
+  - [ ] Multipart format
     - [x] Load multi-part image
     - [ ] Save multi-part image
     - [ ] Load multi-part deep image
@@ -59,6 +59,8 @@ Current status of `tinyexr` is:
   - [ ] Loading deep image
   - [ ] Saving deep image
 - Optimization
+  - [x] C++11 thread loading
+  - [ ] C++11 thread saving
   - [ ] ISPC?
   - [x] OpenMP multi-threading in EXR loading.
   - [x] OpenMP multi-threading in EXR saving.
@@ -67,7 +69,7 @@ Current status of `tinyexr` is:
 * C interface.
   * You can easily write language bindings(e.g. golang)
 
-# Use case 
+# Use case
 
 ## New TinyEXR(v0.9.5+)
 
@@ -117,6 +119,7 @@ Include `tinyexr.h` with `TINYEXR_IMPLEMENTATION` flag(do this only for **one** 
 * `TINYEXR_USE_MINIZ` Use embedded miniz(default = 1). Please include `zlib.h` header(before `tinyexr.h`) if you disable miniz support.
 * `TINYEXR_USE_PIZ` Enable PIZ compression support(default = 1)
 * `TINYEXR_USE_ZFP` Enable ZFP compression supoort(TinyEXR extension, default = 0)
+* `TINYEXR_USE_THREAD` Enable threaded loading using C++11 thread(Requires C++11 compiler. default = 0)
 
 ### Quickly reading RGB(A) EXR file.
 
@@ -168,7 +171,7 @@ Scanline and tiled format are supported.
   ret = ParseEXRHeaderFromFile(&exr_header, &exr_version, argv[1], &err);
   if (ret != 0) {
     fprintf(stderr, "Parse EXR err: %s\n", err);
-    FreeEXRErrorMessage(err); // free's buffer for an error message 
+    FreeEXRErrorMessage(err); // free's buffer for an error message
     return ret;
   }
 
@@ -186,7 +189,7 @@ Scanline and tiled format are supported.
   if (ret != 0) {
     fprintf(stderr, "Load EXR err: %s\n", err);
     FreeEXRHeader(&exr_header);
-    FreeEXRErrorMessage(err); // free's buffer for an error message 
+    FreeEXRErrorMessage(err); // free's buffer for an error message
     return ret;
   }
 
@@ -227,7 +230,7 @@ Scanline and tiled format are supported.
   ret = ParseEXRMultipartHeaderFromFile(&exr_headers, &num_exr_headers, &exr_version, argv[1], &err);
   if (ret != 0) {
     fprintf(stderr, "Parse EXR err: %s\n", err);
-    FreeEXRErrorMessage(err); // free's buffer for an error message 
+    FreeEXRErrorMessage(err); // free's buffer for an error message
     return ret;
   }
 
@@ -245,7 +248,7 @@ Scanline and tiled format are supported.
   ret = LoadEXRMultipartImageFromFile(&images.at(0), const_cast<const EXRHeader**>(exr_headers), num_exr_headers, argv[1], &err);
   if (ret != 0) {
     fprintf(stderr, "Parse EXR err: %s\n", err);
-    FreeEXRErrorMessage(err); // free's buffer for an error message 
+    FreeEXRErrorMessage(err); // free's buffer for an error message
     return ret;
   }
 
@@ -305,13 +308,13 @@ Saving Scanline EXR file.
     image.height = height;
 
     header.num_channels = 3;
-    header.channels = (EXRChannelInfo *)malloc(sizeof(EXRChannelInfo) * header.num_channels); 
+    header.channels = (EXRChannelInfo *)malloc(sizeof(EXRChannelInfo) * header.num_channels);
     // Must be (A)BGR order, since most of EXR viewers expect this channel order.
     strncpy(header.channels[0].name, "B", 255); header.channels[0].name[strlen("B")] = '\0';
     strncpy(header.channels[1].name, "G", 255); header.channels[1].name[strlen("G")] = '\0';
     strncpy(header.channels[2].name, "R", 255); header.channels[2].name[strlen("R")] = '\0';
 
-    header.pixel_types = (int *)malloc(sizeof(int) * header.num_channels); 
+    header.pixel_types = (int *)malloc(sizeof(int) * header.num_channels);
     header.requested_pixel_types = (int *)malloc(sizeof(int) * header.num_channels);
     for (int i = 0; i < header.num_channels; i++) {
       header.pixel_types[i] = TINYEXR_PIXELTYPE_FLOAT; // pixel type of input image
@@ -322,7 +325,7 @@ Saving Scanline EXR file.
     int ret = SaveEXRImageToFile(&image, &header, argv[2], &err);
     if (ret != TINYEXR_SUCCESS) {
       fprintf(stderr, "Save EXR err: %s\n", err);
-      FreeEXRErrorMessage(err); // free's buffer for an error message 
+      FreeEXRErrorMessage(err); // free's buffer for an error message
       return ret;
     }
     printf("Saved exr file. [ %s ] \n", argv[2]);
@@ -375,7 +378,7 @@ See `example/deepview` for actual usage.
 ## Defines
 
 * TINYEXR_USE_MINIZ  Set `1`(default) to use embedded miniz compression. If you want zlib or custom zlib compatible library, set `0` and link zlib library.
-* TINYEXR_USE_ZFP    Set `1` to use ZFP compression.  
+* TINYEXR_USE_ZFP    Set `1` to use ZFP compression.
 
 ## TinyEXR extension
 
@@ -502,6 +505,6 @@ Syoyo Fujita(syoyo@lighttransport.com)
 ## Contributor(s)
 
 * Matt Ebb (http://mattebb.com) : deep image example. Thanks!
-* Matt Pharr (http://pharr.org/matt/) : Testing tinyexr with OpenEXR(IlmImf). Thanks! 
+* Matt Pharr (http://pharr.org/matt/) : Testing tinyexr with OpenEXR(IlmImf). Thanks!
 * Andrew Bell (https://github.com/andrewfb) & Richard Eakin (https://github.com/richardeakin) : Improving TinyEXR API. Thanks!
 * Mike Wong (https://github.com/mwkm) : ZIPS compression support in loading. Thanks!
