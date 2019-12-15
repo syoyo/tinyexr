@@ -268,7 +268,7 @@ typedef struct _DeepImage {
   int pad0;
 } DeepImage;
 
-// @deprecated { to be removed. }
+// @deprecated { For backward compatibility. Not recommended to use. }
 // Loads single-frame OpenEXR image. Assume EXR image contains A(single channel
 // alpha) or RGB(A) channels.
 // Application must free image data as returned by `out_rgba`
@@ -277,6 +277,26 @@ typedef struct _DeepImage {
 // error
 extern int LoadEXR(float **out_rgba, int *width, int *height,
                    const char *filename, const char **err);
+
+// Loads single-frame OpenEXR image by specifing layer name. Assume EXR image contains A(single channel
+// alpha) or RGB(A) channels.
+// Application must free image data as returned by `out_rgba`
+// Result image format is: float x RGBA x width x hight
+// Returns negative value and may set error string in `err` when there's an
+// error
+extern int LoadEXRWithLayer(float **out_rgba, int *width, int *height,
+                   const char *filename, const char *layer_name, const char **err);
+
+//
+// Get layer infos from EXR file.
+//
+// @param[out] layer_names List of layer names
+// @param[out] num_layers The number of layers
+// @param[out] err Error string(wll be filled when the function returns error code)
+//
+// @return TINYEXR_SUCCEES upon success.
+//
+extern int EXRLayers(const char *filename, const char **layer_names[], int *num_layers, const char **err);
 
 // @deprecated { to be removed. }
 // Simple wrapper API for ParseEXRHeaderFromFile.
@@ -11336,9 +11356,7 @@ static int DecodeEXRImage(EXRImage *exr_image, const EXRHeader *exr_header,
   }
 }
 
-}  // namespace tinyexr
-
-void layers(const EXRHeader& exr_header, std::vector<std::string>& layer_names) {
+static void GetLayers(const EXRHeader& exr_header, std::vector<std::string>& layer_names) {
   // Naive implementation
   // Group channels by layers
   // go over all channel names, split by periods
@@ -11364,7 +11382,7 @@ struct LayerChannel {
   std::string name;
 };
 
-void channelsInLayer(const EXRHeader& exr_header, const std::string layer_name, std::vector<LayerChannel>& channels) {
+static void ChannelsInLayer(const EXRHeader& exr_header, const std::string layer_name, std::vector<LayerChannel>& channels) {
   channels.clear();
   for (int c = 0; c < exr_header.num_channels; c++) {
     std::string full_name(exr_header.channels[c].name);
@@ -11380,10 +11398,12 @@ void channelsInLayer(const EXRHeader& exr_header, const std::string layer_name, 
         chName = full_name.substr(layer_name.size() + 1);
       }
     }
-    LayerChannel ch(c, chName);
+    LayerChannel ch(size_t(c), chName);
     channels.push_back(ch);
   }
 }
+
+}  // namespace tinyexr
 
 int EXRLayers(const char *filename, const char **layer_names[], int *num_layers, const char **err) {
   EXRVersion exr_version;
@@ -11414,9 +11434,9 @@ int EXRLayers(const char *filename, const char **layer_names[], int *num_layers,
   }
 
   std::vector<std::string> layer_vec;
-  layers(exr_header, layer_vec);
+  tinyexr::GetLayers(exr_header, layer_vec);
 
-  (*num_layers) = layer_vec.size();
+  (*num_layers) = int(layer_vec.size());
   (*layer_names) = static_cast<const char **>(
     malloc(sizeof(const char *) * static_cast<size_t>(layer_vec.size())));
   for (size_t c = 0; c < static_cast<size_t>(layer_vec.size()); c++) {
@@ -11429,7 +11449,12 @@ int EXRLayers(const char *filename, const char **layer_names[], int *num_layers,
   return TINYEXR_SUCCESS;
 }
 
-int LoadEXR(float **out_rgba, int *width, int *height, const char *filename, const char *layername,
+int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
+            const char **err) {
+  return LoadEXRWithLayer(out_rgba, width, height, filename, /* layername */NULL, err);
+}
+
+int LoadEXRWithLayer(float **out_rgba, int *width, int *height, const char *filename, const char *layername,
             const char **err) {
   if (out_rgba == NULL) {
     tinyexr::SetErrorMessage("Invalid argument for LoadEXR()", err);
@@ -11488,28 +11513,28 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename, con
   int idxA = -1;
 
   std::vector<std::string> layer_names;
-  layers(exr_header, layer_names);
+  tinyexr::GetLayers(exr_header, layer_names);
 
-  std::vector<LayerChannel> channels;
-  channelsInLayer(exr_header, layername == nullptr ? "" : std::string(layername), channels);
+  std::vector<tinyexr::LayerChannel> channels;
+  tinyexr::ChannelsInLayer(exr_header, layername == NULL ? "" : std::string(layername), channels);
 
   for (const auto& ch : channels) {
     if (ch.name == "R") {
-      idxR = ch.index;
+      idxR = int(ch.index);
     }
     else if (ch.name == "G") {
-      idxG = ch.index;
+      idxG = int(ch.index);
     }
     else if (ch.name == "B") {
-      idxB = ch.index;
+      idxB = int(ch.index);
     }
     else if (ch.name == "A") {
-      idxA = ch.index;
+      idxA = int(ch.index);
     }
   }
 
   if (channels.size() == 1) {
-    int chIdx = channels.front().index;
+    int chIdx = int(channels.front().index);
     // Grayscale channel only.
 
     (*out_rgba) = reinterpret_cast<float *>(

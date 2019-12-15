@@ -4,6 +4,7 @@
 #include "exr-io.h"
 
 #include <cstdio>
+#include <iostream>
 
 namespace exrio {
 
@@ -33,7 +34,7 @@ bool LoadEXRRGBA(float** rgba, int *w, int *h, const char* filename, const char*
   int width, height;
   float* image;
   const char *err;
-  int ret = LoadEXR(&image, &width, &height, filename, layername, &err);
+  int ret = LoadEXRWithLayer(&image, &width, &height, filename, layername, &err);
   if (ret != 0) {
     fprintf(stderr, "Load EXR err: %s\n", err);
     return false;
