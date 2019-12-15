@@ -11518,7 +11518,9 @@ int LoadEXRWithLayer(float **out_rgba, int *width, int *height, const char *file
   std::vector<tinyexr::LayerChannel> channels;
   tinyexr::ChannelsInLayer(exr_header, layername == NULL ? "" : std::string(layername), channels);
 
-  for (const auto& ch : channels) {
+  for (size_t c = 0; c < channels.size(); c++) {
+    const tinyexr::LayerChannel &ch = channels[c];
+
     if (ch.name == "R") {
       idxR = int(ch.index);
     }
