@@ -11392,8 +11392,10 @@ static void ChannelsInLayer(const EXRHeader& exr_header, const std::string layer
         ch_name = ch_name.substr(pos + 1);
       }
     } else {
-      const size_t pos = ch_name.find(layer_name);
-      if (pos != std::string::npos && pos == 0) {
+      const size_t pos = ch_name.find(layer_name + '.');
+      if (pos == std::string::npos)
+        continue;
+      if (pos == 0) {
         ch_name = ch_name.substr(layer_name.size() + 1);
       }
     }
@@ -11517,7 +11519,13 @@ int LoadEXRWithLayer(float **out_rgba, int *width, int *height, const char *file
   std::vector<tinyexr::LayerChannel> channels;
   tinyexr::ChannelsInLayer(exr_header, layername == NULL ? "" : std::string(layername), channels);
 
-  for (size_t c = 0; c < channels.size(); c++) {
+  if (channels.size() < 1) {
+    tinyexr::SetErrorMessage("Layer Not Found", err);
+    return TINYEXR_ERROR_INVALID_ARGUMENT;
+  }
+
+  size_t ch_count = channels.size() < 4 ? channels.size() : 4;
+  for (size_t c = 0; c < ch_count; c++) {
     const tinyexr::LayerChannel &ch = channels[c];
 
     if (ch.name == "R") {
