@@ -11338,7 +11338,98 @@ static int DecodeEXRImage(EXRImage *exr_image, const EXRHeader *exr_header,
 
 }  // namespace tinyexr
 
-int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
+void layers(const EXRHeader& exr_header, std::vector<std::string>& layer_names) {
+  // Naive implementation
+  // Group channels by layers
+  // go over all channel names, split by periods
+  // collect unique names
+  layer_names.clear();
+  for (int c = 0; c < exr_header.num_channels; c++) {
+    std::string full_name(exr_header.channels[c].name);
+    const size_t pos = full_name.find_last_of('.');
+    if (pos != std::string::npos && pos != 0 && pos + 1 < full_name.size()) {
+      full_name.erase(pos);
+      if (std::find(layer_names.begin(), layer_names.end(), full_name) == layer_names.end())
+        layer_names.push_back(full_name);
+    }
+  }
+}
+
+struct LayerChannel {
+  explicit LayerChannel (size_t i, std::string n)
+    : index(i)
+    , name(n)
+  {}
+  size_t index;
+  std::string name;
+};
+
+void channelsInLayer(const EXRHeader& exr_header, const std::string layer_name, std::vector<LayerChannel>& channels) {
+  channels.clear();
+  for (int c = 0; c < exr_header.num_channels; c++) {
+    std::string full_name(exr_header.channels[c].name);
+    std::string chName;
+    if (layer_name.empty()) {
+      const size_t pos = full_name.find_last_of('.');
+      if (pos != std::string::npos && pos < full_name.size()) {
+        chName = full_name.substr(pos + 1);
+      }
+    } else {
+      const size_t pos = full_name.find(layer_name);
+      if (pos != std::string::npos && pos == 0) {
+        chName = full_name.substr(layer_name.size() + 1);
+      }
+    }
+    LayerChannel ch(c, chName);
+    channels.push_back(ch);
+  }
+}
+
+int EXRLayers(const char *filename, const char **layer_names[], int *num_layers, const char **err) {
+  EXRVersion exr_version;
+  EXRImage exr_image;
+  EXRHeader exr_header;
+  InitEXRHeader(&exr_header);
+  InitEXRImage(&exr_image);
+
+  {
+    int ret = ParseEXRVersionFromFile(&exr_version, filename);
+    if (ret != TINYEXR_SUCCESS) {
+      tinyexr::SetErrorMessage("Invalid EXR header.", err);
+      return ret;
+    }
+
+    if (exr_version.multipart || exr_version.non_image) {
+      tinyexr::SetErrorMessage(
+        "Loading multipart or DeepImage is not supported  in LoadEXR() API",
+        err);
+      return TINYEXR_ERROR_INVALID_DATA;  // @fixme.
+    }
+  }
+
+  int ret = ParseEXRHeaderFromFile(&exr_header, &exr_version, filename, err);
+  if (ret != TINYEXR_SUCCESS) {
+    FreeEXRHeader(&exr_header);
+    return ret;
+  }
+
+  std::vector<std::string> layer_vec;
+  layers(exr_header, layer_vec);
+
+  (*num_layers) = layer_vec.size();
+  (*layer_names) = static_cast<const char **>(
+    malloc(sizeof(const char *) * static_cast<size_t>(layer_vec.size())));
+  for (size_t c = 0; c < static_cast<size_t>(layer_vec.size()); c++) {
+#ifdef _MSC_VER
+    (*layer_names)[c] = _strdup(layer_vec[c].c_str());
+#else
+    (*layer_names)[c] = strdup(layer_vec[c].c_str());
+#endif
+  }
+  return TINYEXR_SUCCESS;
+}
+
+int LoadEXR(float **out_rgba, int *width, int *height, const char *filename, const char *layername,
             const char **err) {
   if (out_rgba == NULL) {
     tinyexr::SetErrorMessage("Invalid argument for LoadEXR()", err);
@@ -11381,6 +11472,7 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
     }
   }
 
+  // TODO: Probably limit loading to layers (channels) selected by layer index
   {
     int ret = LoadEXRImageFromFile(&exr_image, &exr_header, filename, err);
     if (ret != TINYEXR_SUCCESS) {
@@ -11394,19 +11486,30 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
   int idxG = -1;
   int idxB = -1;
   int idxA = -1;
-  for (int c = 0; c < exr_header.num_channels; c++) {
-    if (strcmp(exr_header.channels[c].name, "R") == 0) {
-      idxR = c;
-    } else if (strcmp(exr_header.channels[c].name, "G") == 0) {
-      idxG = c;
-    } else if (strcmp(exr_header.channels[c].name, "B") == 0) {
-      idxB = c;
-    } else if (strcmp(exr_header.channels[c].name, "A") == 0) {
-      idxA = c;
+
+  std::vector<std::string> layer_names;
+  layers(exr_header, layer_names);
+
+  std::vector<LayerChannel> channels;
+  channelsInLayer(exr_header, layername == nullptr ? "" : std::string(layername), channels);
+
+  for (const auto& ch : channels) {
+    if (ch.name == "R") {
+      idxR = ch.index;
+    }
+    else if (ch.name == "G") {
+      idxG = ch.index;
+    }
+    else if (ch.name == "B") {
+      idxB = ch.index;
+    }
+    else if (ch.name == "A") {
+      idxA = ch.index;
     }
   }
 
-  if (exr_header.num_channels == 1) {
+  if (channels.size() == 1) {
+    int chIdx = channels.front().index;
     // Grayscale channel only.
 
     (*out_rgba) = reinterpret_cast<float *>(
@@ -11433,13 +11536,13 @@ int LoadEXR(float **out_rgba, int *width, int *height, const char *filename,
             const int srcIdx = i + j * exr_header.tile_size_x;
             unsigned char **src = exr_image.tiles[it].images;
             (*out_rgba)[4 * idx + 0] =
-                reinterpret_cast<float **>(src)[0][srcIdx];
+                reinterpret_cast<float **>(src)[chIdx][srcIdx];
             (*out_rgba)[4 * idx + 1] =
-                reinterpret_cast<float **>(src)[0][srcIdx];
+                reinterpret_cast<float **>(src)[chIdx][srcIdx];
             (*out_rgba)[4 * idx + 2] =
-                reinterpret_cast<float **>(src)[0][srcIdx];
+                reinterpret_cast<float **>(src)[chIdx][srcIdx];
             (*out_rgba)[4 * idx + 3] =
-                reinterpret_cast<float **>(src)[0][srcIdx];
+                reinterpret_cast<float **>(src)[chIdx][srcIdx];
           }
         }
       }

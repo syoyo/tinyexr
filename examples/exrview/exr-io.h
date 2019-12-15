@@ -6,7 +6,9 @@
 namespace exrio
 {
 
-bool LoadEXRRGBA(float** rgba, int* w, int *h, const char* filename);
+bool GetEXRLayers(const char *filename);
+
+bool LoadEXRRGBA(float** rgba, int* w, int *h, const char* filename, const char* layername = nullptr);
 
 }
 

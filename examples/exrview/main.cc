@@ -252,6 +252,7 @@ void InspectPixel(float rgba[4], int x, int y) {
 int main(int argc, char** argv) {
 
   const char *filename = NULL;
+  const char *layername = NULL;
 
 #ifdef USE_NATIVEFILEDIALOG
   if (argc < 2) {
@@ -274,17 +275,30 @@ int main(int argc, char** argv) {
     }
   } else {
     filename = argv[1];
+    if (argc > 2) {
+      layername = argv[2];
+    }
   }
 #else
   if (argc < 2) {
-    printf("Usage: exrview input.exr\n");
+    printf("Usage: exrview input.exr [layer name]\n");
     exit(-1);
   }
   filename = argv[1];
+  if (argc > 2) {
+    layername = argv[2];
+  }
 #endif
 
   {
-    bool ret = exrio::LoadEXRRGBA(&gExrRGBA, &gExrWidth, &gExrHeight, filename);
+    bool ret = exrio::GetEXRLayers(filename);
+    if (!ret) {
+      exit(-1);
+    }
+  }
+
+  {
+    bool ret = exrio::LoadEXRRGBA(&gExrRGBA, &gExrWidth, &gExrHeight, filename, layername);
     if (!ret) {
       exit(-1);
     }
