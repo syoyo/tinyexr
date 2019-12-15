@@ -11385,20 +11385,19 @@ struct LayerChannel {
 static void ChannelsInLayer(const EXRHeader& exr_header, const std::string layer_name, std::vector<LayerChannel>& channels) {
   channels.clear();
   for (int c = 0; c < exr_header.num_channels; c++) {
-    std::string full_name(exr_header.channels[c].name);
-    std::string chName;
+    std::string ch_name(exr_header.channels[c].name);
     if (layer_name.empty()) {
-      const size_t pos = full_name.find_last_of('.');
-      if (pos != std::string::npos && pos < full_name.size()) {
-        chName = full_name.substr(pos + 1);
+      const size_t pos = ch_name.find_last_of('.');
+      if (pos != std::string::npos && pos < ch_name.size()) {
+        ch_name = ch_name.substr(pos + 1);
       }
     } else {
-      const size_t pos = full_name.find(layer_name);
+      const size_t pos = ch_name.find(layer_name);
       if (pos != std::string::npos && pos == 0) {
-        chName = full_name.substr(layer_name.size() + 1);
+        ch_name = ch_name.substr(layer_name.size() + 1);
       }
     }
-    LayerChannel ch(size_t(c), chName);
+    LayerChannel ch(size_t(c), ch_name);
     channels.push_back(ch);
   }
 }
