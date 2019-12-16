@@ -144,6 +144,35 @@ Include `tinyexr.h` with `TINYEXR_IMPLEMENTATION` flag(do this only for **one** 
 
 ```
 
+### Reading layered RGB(A) EXR file.
+
+If you want to read EXR image with layer info(Channel has a name with delimiter `.`), please use LoadEXRWithLayer` API.
+
+You need to know layer name in advance(e.g. through `EXRLayers` API).
+
+```cpp
+  const char* input = ...;
+  const char* layer_name = "diffuse";
+  float* out; // width * height * RGBA
+  int width;
+  int height;
+  const char* err = NULL; // or nullptr in C++11
+
+  // will read `diffuse.R`, `diffuse.G`, `diffuse.B`, (`diffuse.A`) channels
+  int ret = LoadEXRWithLayer(&out, &width, &height, input, layer_name, &err);
+
+  if (ret != TINYEXR_SUCCESS) {
+    if (err) {
+       fprintf(stderr, "ERR : %s\n", err);
+       FreeEXRErrorMessage(err); // release memory of error message.
+    }
+  } else {
+    ...
+    free(out); // relase memory of image data
+  }
+
+```
+
 ### Loading Singlepart EXR from a file.
 
 Scanline and tiled format are supported.
