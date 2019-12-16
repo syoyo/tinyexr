@@ -887,3 +887,73 @@ TEST_CASE("Regression: Issue100", "[issue100]") {
   free(image);
 }
 
+TEST_CASE("Regression: Issue53|Channels", "[issue53]") {
+  EXRVersion exr_version;
+  std::string filepath = "./regression/flaga.exr";
+  int ret = ParseEXRVersionFromFile(&exr_version, filepath.c_str());
+  REQUIRE(TINYEXR_SUCCESS == ret);
+
+  EXRHeader header;
+  EXRImage image;
+  InitEXRHeader(&header);
+
+  const char* err;
+  ret = ParseEXRHeaderFromFile(&header, &exr_version, filepath.c_str(), &err);
+  REQUIRE(TINYEXR_SUCCESS == ret);
+
+  std::vector<std::string> layer_names;
+  tinyexr::GetLayers(header, layer_names);
+
+  REQUIRE(2 == layer_names.size());
+
+  std::vector<tinyexr::LayerChannel> channels;
+  tinyexr::ChannelsInLayer(header, "", channels);
+  REQUIRE(8 == channels.size());
+
+  channels.clear();
+  tinyexr::ChannelsInLayer(header, "Warstwa 3", channels);
+  REQUIRE(0 == channels.size());
+
+  channels.clear();
+  tinyexr::ChannelsInLayer(header, "Warstwa 1", channels);
+  REQUIRE(4 == channels.size());
+
+  FreeEXRHeader(&header);
+}
+
+TEST_CASE("Regression: Issue53|Image", "[issue53]") {
+  std::string filepath = "./regression/flaga.exr";
+
+  const char* err;
+  const char** layer_names = nullptr;
+  int num_layers = 0;
+  int ret = EXRLayers(filepath.c_str(), &layer_names, &num_layers, &err);
+  REQUIRE(TINYEXR_SUCCESS == ret);
+  REQUIRE(2 == num_layers);
+  free(layer_names);
+
+  int width, height;
+  float* image;
+  ret = LoadEXRWithLayer(&image, &width, &height, filepath.c_str(), NULL, &err);
+  REQUIRE(TINYEXR_SUCCESS == ret);
+  free(image);
+  FreeEXRErrorMessage(err);
+
+  ret = LoadEXRWithLayer(&image, &width, &height, filepath.c_str(), "Warstwa 1", &err);
+  REQUIRE(TINYEXR_SUCCESS == ret);
+  free(image);
+  FreeEXRErrorMessage(err);
+}
+
+TEST_CASE("Regression: Issue53|Image|Missing Layer", "[issue53]") {
+  std::string filepath = GetPath("MultiView/Impact.exr");
+
+  const char* err;
+  int width, height;
+  float* image;
+  int ret = LoadEXRWithLayer(&image, &width, &height, filepath.c_str(), "Warstwa", &err);
+  REQUIRE(TINYEXR_ERROR_INVALID_ARGUMENT == ret);
+  free(image);
+  FreeEXRErrorMessage(err);
+}
+

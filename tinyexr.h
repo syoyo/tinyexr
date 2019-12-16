@@ -123,6 +123,7 @@ extern "C" {
 #define TINYEXR_ERROR_UNSUPPORTED_FEATURE (-10)
 #define TINYEXR_ERROR_CANT_WRITE_FILE (-11)
 #define TINYEXR_ERROR_SERIALZATION_FAILED (-12)
+#define TINYEXR_ERROR_LAYER_NOT_FOUND (-13)
 
 // @note { OpenEXR file format: http://www.openexr.com/openexrfilelayout.pdf }
 
@@ -284,6 +285,7 @@ extern int LoadEXR(float **out_rgba, int *width, int *height,
 // Result image format is: float x RGBA x width x hight
 // Returns negative value and may set error string in `err` when there's an
 // error
+// When the specified layer name is not found in the EXR file, the function will return `TINYEXR_ERROR_LAYER_NOT_FOUND`.
 extern int LoadEXRWithLayer(float **out_rgba, int *width, int *height,
                    const char *filename, const char *layer_name, const char **err);
 
@@ -11385,20 +11387,21 @@ struct LayerChannel {
 static void ChannelsInLayer(const EXRHeader& exr_header, const std::string layer_name, std::vector<LayerChannel>& channels) {
   channels.clear();
   for (int c = 0; c < exr_header.num_channels; c++) {
-    std::string full_name(exr_header.channels[c].name);
-    std::string chName;
+    std::string ch_name(exr_header.channels[c].name);
     if (layer_name.empty()) {
-      const size_t pos = full_name.find_last_of('.');
-      if (pos != std::string::npos && pos < full_name.size()) {
-        chName = full_name.substr(pos + 1);
+      const size_t pos = ch_name.find_last_of('.');
+      if (pos != std::string::npos && pos < ch_name.size()) {
+        ch_name = ch_name.substr(pos + 1);
       }
     } else {
-      const size_t pos = full_name.find(layer_name);
-      if (pos != std::string::npos && pos == 0) {
-        chName = full_name.substr(layer_name.size() + 1);
+      const size_t pos = ch_name.find(layer_name + '.');
+      if (pos == std::string::npos)
+        continue;
+      if (pos == 0) {
+        ch_name = ch_name.substr(layer_name.size() + 1);
       }
     }
-    LayerChannel ch(size_t(c), chName);
+    LayerChannel ch(size_t(c), ch_name);
     channels.push_back(ch);
   }
 }
@@ -11518,7 +11521,13 @@ int LoadEXRWithLayer(float **out_rgba, int *width, int *height, const char *file
   std::vector<tinyexr::LayerChannel> channels;
   tinyexr::ChannelsInLayer(exr_header, layername == NULL ? "" : std::string(layername), channels);
 
-  for (size_t c = 0; c < channels.size(); c++) {
+  if (channels.size() < 1) {
+    tinyexr::SetErrorMessage("Layer Not Found", err);
+    return TINYEXR_ERROR_LAYER_NOT_FOUND;
+  }
+
+  size_t ch_count = channels.size() < 4 ? channels.size() : 4;
+  for (size_t c = 0; c < ch_count; c++) {
     const tinyexr::LayerChannel &ch = channels[c];
 
     if (ch.name == "R") {
