@@ -539,25 +539,30 @@ TEST_CASE("ParseEXRHeaderFromMemory invalid input", "[Parse]") {
 
   {
     EXRHeader header;
+    InitEXRHeader(&header);
     EXRVersion version;
     memset(&version, 0, sizeof(EXRVersion));
 
     int ret = ParseEXRHeaderFromMemory(&header, &version, NULL, 0, NULL);
     REQUIRE(ret == TINYEXR_ERROR_INVALID_ARGUMENT);
+    FreeEXRHeader(&header);
   }
 
   {
     EXRHeader header;
+    InitEXRHeader(&header);
     EXRVersion version;
     memset(&version, 0, sizeof(EXRVersion));
     std::vector<unsigned char> buf(128);
 
     int ret = ParseEXRHeaderFromMemory(&header, &version, buf.data(), 0, NULL);
     REQUIRE(ret == TINYEXR_ERROR_INVALID_DATA);
+    FreeEXRHeader(&header);
   }
 
   {
     EXRHeader header;
+    InitEXRHeader(&header);
     EXRVersion version;
     memset(&version, 0, sizeof(EXRVersion));
     std::vector<unsigned char> buf(128, 0);
@@ -565,6 +570,7 @@ TEST_CASE("ParseEXRHeaderFromMemory invalid input", "[Parse]") {
     int ret =
         ParseEXRHeaderFromMemory(&header, &version, buf.data(), 128, NULL);
     REQUIRE(ret == TINYEXR_ERROR_INVALID_HEADER);
+    FreeEXRHeader(&header);
   }
 }
 
@@ -897,7 +903,7 @@ TEST_CASE("Regression: Issue53|Channels", "[issue53]") {
   EXRImage image;
   InitEXRHeader(&header);
 
-  const char* err;
+  const char* err = nullptr;
   ret = ParseEXRHeaderFromFile(&header, &exr_version, filepath.c_str(), &err);
   REQUIRE(TINYEXR_SUCCESS == ret);
 
@@ -919,17 +925,24 @@ TEST_CASE("Regression: Issue53|Channels", "[issue53]") {
   REQUIRE(4 == channels.size());
 
   FreeEXRHeader(&header);
+
+  if (err) {
+    FreeEXRErrorMessage(err);
+  }
 }
 
 TEST_CASE("Regression: Issue53|Image", "[issue53]") {
   std::string filepath = "./regression/flaga.exr";
 
-  const char* err;
+  const char* err = nullptr;
   const char** layer_names = nullptr;
   int num_layers = 0;
   int ret = EXRLayers(filepath.c_str(), &layer_names, &num_layers, &err);
   REQUIRE(TINYEXR_SUCCESS == ret);
   REQUIRE(2 == num_layers);
+  for (int i = 0; i < num_layers; i++) {
+    free(reinterpret_cast<void *>(const_cast<char *>(layer_names[i])));
+  }
   free(layer_names);
 
   int width, height;
@@ -937,23 +950,31 @@ TEST_CASE("Regression: Issue53|Image", "[issue53]") {
   ret = LoadEXRWithLayer(&image, &width, &height, filepath.c_str(), NULL, &err);
   REQUIRE(TINYEXR_SUCCESS == ret);
   free(image);
-  FreeEXRErrorMessage(err);
+  if (err) {
+    FreeEXRErrorMessage(err);
+  }
 
   ret = LoadEXRWithLayer(&image, &width, &height, filepath.c_str(), "Warstwa 1", &err);
   REQUIRE(TINYEXR_SUCCESS == ret);
   free(image);
-  FreeEXRErrorMessage(err);
+  if (err) {
+    FreeEXRErrorMessage(err);
+  }
 }
 
 TEST_CASE("Regression: Issue53|Image|Missing Layer", "[issue53]") {
   std::string filepath = GetPath("MultiView/Impact.exr");
 
-  const char* err;
+  const char* err = nullptr;
   int width, height;
-  float* image;
+  float* image = nullptr;
   int ret = LoadEXRWithLayer(&image, &width, &height, filepath.c_str(), "Warstwa", &err);
-  REQUIRE(TINYEXR_ERROR_INVALID_ARGUMENT == ret);
-  free(image);
-  FreeEXRErrorMessage(err);
+  REQUIRE(TINYEXR_ERROR_LAYER_NOT_FOUND == ret);
+  if (image) {
+    free(image);
+  }
+  if (err) {
+    FreeEXRErrorMessage(err);
+  }
 }
 

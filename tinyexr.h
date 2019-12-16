@@ -11341,6 +11341,9 @@ static int DecodeEXRImage(EXRImage *exr_image, const EXRHeader *exr_header,
         tinyexr::SetErrorMessage(e, err);
       }
 
+#if 1
+      FreeEXRImage(exr_image);
+#else
       // release memory(if exists)
       if ((exr_header->num_channels > 0) && exr_image && exr_image->images) {
         for (size_t c = 0; c < size_t(exr_header->num_channels); c++) {
@@ -11352,6 +11355,7 @@ static int DecodeEXRImage(EXRImage *exr_image, const EXRHeader *exr_header,
         free(exr_image->images);
         exr_image->images = NULL;
       }
+#endif
     }
 
     return ret;
@@ -11410,10 +11414,8 @@ static void ChannelsInLayer(const EXRHeader& exr_header, const std::string layer
 
 int EXRLayers(const char *filename, const char **layer_names[], int *num_layers, const char **err) {
   EXRVersion exr_version;
-  EXRImage exr_image;
   EXRHeader exr_header;
   InitEXRHeader(&exr_header);
-  InitEXRImage(&exr_image);
 
   {
     int ret = ParseEXRVersionFromFile(&exr_version, filename);
@@ -11449,6 +11451,8 @@ int EXRLayers(const char *filename, const char **layer_names[], int *num_layers,
     (*layer_names)[c] = strdup(layer_vec[c].c_str());
 #endif
   }
+
+  FreeEXRHeader(&exr_header);
   return TINYEXR_SUCCESS;
 }
 
@@ -11523,6 +11527,8 @@ int LoadEXRWithLayer(float **out_rgba, int *width, int *height, const char *file
 
   if (channels.size() < 1) {
     tinyexr::SetErrorMessage("Layer Not Found", err);
+    FreeEXRHeader(&exr_header);
+    FreeEXRImage(&exr_image);
     return TINYEXR_ERROR_LAYER_NOT_FOUND;
   }
 
@@ -11597,22 +11603,22 @@ int LoadEXRWithLayer(float **out_rgba, int *width, int *height, const char *file
     if (idxR == -1) {
       tinyexr::SetErrorMessage("R channel not found", err);
 
-      // @todo { free exr_image }
       FreeEXRHeader(&exr_header);
+      FreeEXRImage(&exr_image);
       return TINYEXR_ERROR_INVALID_DATA;
     }
 
     if (idxG == -1) {
       tinyexr::SetErrorMessage("G channel not found", err);
-      // @todo { free exr_image }
       FreeEXRHeader(&exr_header);
+      FreeEXRImage(&exr_image);
       return TINYEXR_ERROR_INVALID_DATA;
     }
 
     if (idxB == -1) {
       tinyexr::SetErrorMessage("B channel not found", err);
-      // @todo { free exr_image }
       FreeEXRHeader(&exr_header);
+      FreeEXRImage(&exr_image);
       return TINYEXR_ERROR_INVALID_DATA;
     }
 
