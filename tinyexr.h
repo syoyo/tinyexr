@@ -11764,7 +11764,9 @@ int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
 
   int ret = ParseEXRVersionFromMemory(&exr_version, memory, size);
   if (ret != TINYEXR_SUCCESS) {
-    tinyexr::SetErrorMessage("Failed to parse EXR version", err);
+    std::stringstream ss;
+    ss << "Failed to parse EXR version. code(" << ret << ")";
+    tinyexr::SetErrorMessage(ss.str(), err);
     return ret;
   }
 

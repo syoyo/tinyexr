@@ -127,7 +127,14 @@ main(int argc, char** argv)
   (void)outfilename;
   int width, height;
   float* image;
-  int ret = LoadEXR(&image, &width, &height, argv[1], &err);
+
+  int ret = IsEXR(argv[1]);
+  if (ret != TINYEXR_SUCCESS) {
+    fprintf(stderr, "Header err. code %d\n", ret);
+    exit(-1);
+  }
+
+  ret = LoadEXR(&image, &width, &height, argv[1], &err);
   if (ret != TINYEXR_SUCCESS) {
     if (err) {
       fprintf(stderr, "Load EXR err: %s(code %d)\n", err, ret);
