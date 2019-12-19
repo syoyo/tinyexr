@@ -11485,7 +11485,9 @@ int LoadEXRWithLayer(float **out_rgba, int *width, int *height, const char *file
   {
     int ret = ParseEXRVersionFromFile(&exr_version, filename);
     if (ret != TINYEXR_SUCCESS) {
-      tinyexr::SetErrorMessage("Invalid EXR header.", err);
+      std::stringstream ss;
+      ss << "Failed to open EXR file or read version info from EXR file. code(" << ret << ")";
+      tinyexr::SetErrorMessage(ss.str(), err);
       return ret;
     }
 
@@ -11699,7 +11701,7 @@ int IsEXR(const char *filename) {
 
   int ret = ParseEXRVersionFromFile(&exr_version, filename);
   if (ret != TINYEXR_SUCCESS) {
-    return TINYEXR_ERROR_INVALID_HEADER;
+    return ret;
   }
 
   return TINYEXR_SUCCESS;
