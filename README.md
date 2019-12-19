@@ -120,6 +120,8 @@ Include `tinyexr.h` with `TINYEXR_IMPLEMENTATION` flag(do this only for **one** 
 * `TINYEXR_USE_PIZ` Enable PIZ compression support(default = 1)
 * `TINYEXR_USE_ZFP` Enable ZFP compression supoort(TinyEXR extension, default = 0)
 * `TINYEXR_USE_THREAD` Enable threaded loading using C++11 thread(Requires C++11 compiler. default = 0)
+* `TINYEXR_USE_OPENMP` Enable OpenMP threading support(default = 1 if `_OPENMP` is defined)
+  * Use `TINYEXR_USE_OPENMP=0` to force disable OpenMP code path even if OpenMP is available/enabled in the compiler.
 
 ### Quickly reading RGB(A) EXR file.
 
@@ -152,7 +154,7 @@ You need to know layer name in advance(e.g. through `EXRLayers` API).
 
 ```cpp
   const char* input = ...;
-  const char* layer_name = "diffuse";
+  const char* layer_name = "diffuse"; // or use EXRLayers to get list of layer names in .exr
   float* out; // width * height * RGBA
   int width;
   int height;

@@ -110,6 +110,14 @@ extern "C" {
 // http://computation.llnl.gov/projects/floating-point-compression
 #endif
 
+#ifndef TINYEXR_USE_OPENMP
+#ifdef _OPENMP
+#define TINYEXR_USE_OPENMP (1)
+#else
+#define TINYEXR_USE_OPENMP (0)
+#endif
+#endif
+
 #define TINYEXR_SUCCESS (0)
 #define TINYEXR_ERROR_INVALID_MAGIC_NUMBER (-1)
 #define TINYEXR_ERROR_INVALID_EXR_VERSION (-2)
@@ -292,9 +300,9 @@ extern int LoadEXRWithLayer(float **out_rgba, int *width, int *height,
 //
 // Get layer infos from EXR file.
 //
-// @param[out] layer_names List of layer names
+// @param[out] layer_names List of layer names. Application must free memory after using this.
 // @param[out] num_layers The number of layers
-// @param[out] err Error string(wll be filled when the function returns error code)
+// @param[out] err Error string(wll be filled when the function returns error code). Free it using FreeEXRErrorMessage after using this value.
 //
 // @return TINYEXR_SUCCEES upon success.
 //
@@ -516,7 +524,7 @@ extern int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
 
 #endif  // __cplusplus > 199711L
 
-#ifdef _OPENMP
+#if TINYEXR_USE_OPENMP
 #include <omp.h>
 #endif
 
@@ -11049,7 +11057,7 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
 
 #else
 
-#ifdef _OPENMP
+#if TINYEXR_USE_OPENMP
 #pragma omp parallel for
 #endif
     for (int y = 0; y < static_cast<int>(num_blocks); y++) {
@@ -12216,7 +12224,7 @@ size_t SaveEXRImageToMemory(const EXRImage *exr_image,
 
 // Use signed int since some OpenMP compiler doesn't allow unsigned type for
 // `parallel for`
-#ifdef _OPENMP
+#if TINYEXR_USE_OPENMP
 #pragma omp parallel for
 #endif
   for (int i = 0; i < num_blocks; i++) {
