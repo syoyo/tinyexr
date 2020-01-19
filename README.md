@@ -353,13 +353,13 @@ Saving Scanline EXR file.
     }
 
     const char* err = NULL; // or nullptr in C++11 or later.
-    int ret = SaveEXRImageToFile(&image, &header, argv[2], &err);
+    int ret = SaveEXRImageToFile(&image, &header, outfilename, &err);
     if (ret != TINYEXR_SUCCESS) {
       fprintf(stderr, "Save EXR err: %s\n", err);
       FreeEXRErrorMessage(err); // free's buffer for an error message
       return ret;
     }
-    printf("Saved exr file. [ %s ] \n", argv[2]);
+    printf("Saved exr file. [ %s ] \n", outfilename);
 
     free(rgb);
 
