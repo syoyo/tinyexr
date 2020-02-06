@@ -11601,7 +11601,7 @@ int LoadEXRWithLayer(float **out_rgba, int *width, int *height, const char *file
       }
     } else {
       for (int i = 0; i < exr_image.width * exr_image.height; i++) {
-        const float val = reinterpret_cast<float **>(exr_image.images)[0][i];
+        const float val = reinterpret_cast<float **>(exr_image.images)[chIdx][i];
         (*out_rgba)[4 * i + 0] = val;
         (*out_rgba)[4 * i + 1] = val;
         (*out_rgba)[4 * i + 2] = val;
