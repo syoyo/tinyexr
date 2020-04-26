@@ -515,6 +515,10 @@ Contribution is welcome!
   - [ ] OpenMP multi-threading in deep image loading.
   - [ ] OpenMP multi-threading in deep image saving.
 
+## Python bindings
+
+`pytinyexr` is available: https://pypi.org/project/pytinyexr/ (loading only as of 0.9.1)
+
 ## Similar or related projects
 
 * miniexr: https://github.com/aras-p/miniexr (Write OpenEXR)
