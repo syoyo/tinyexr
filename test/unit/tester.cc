@@ -1,3 +1,4 @@
+// Assume this file is encoded in UTF-8
 #define CATCH_CONFIG_MAIN  // This tells Catch to provide a main() - only do
                            // this in one cpp file
 #include "catch.hpp"
@@ -8,6 +9,13 @@
 #include <fstream>
 #include <iostream>
 #include <sstream>
+
+#ifdef _WIN32
+#ifndef _CRT_SECURE_NO_WARNINGS
+#define _CRT_SECURE_NO_WARNINGS
+#endif
+#include <windows.h>
+#endif
 
 #define TINYEXR_IMPLEMENTATION
 #include "../../tinyexr.h"
@@ -43,22 +51,46 @@ TEST_CASE("asakusa", "[Load]") {
 
 TEST_CASE("utf8filename", "[Load]") {
   EXRVersion exr_version;
-  EXRImage exr_image;
-  InitEXRImage(&exr_image);
+
   EXRHeader exr_header;
   InitEXRHeader(&exr_header);
   const char* err = NULL;
 
+#ifdef _WIN32
+  // Include UTF-16LE encoded string
+  const wchar_t *wfilename = 
+  #include "win32-filelist-utf16le.inc"
+  ;
+
+  // convert to char*
+  // https://stackoverflow.com/questions/12637779/how-to-convert-const-wchar-to-const-char/12637971
+
+  FILE* fp;
+  errno_t errcode = _wfopen_s(&fp, wfilename, L"rb");
+
+  REQUIRE(0 == errcode);
+
+  char filename[1024];
+  int charlen = 1000;
+  
+  int strlen = WideCharToMultiByte(65001 /* UTF8 */, 0, wfilename, -1, filename,
+                               (int)charlen, NULL, NULL);
+
+  REQUIRE(strlen == 27);
+
+#else
+  const char* filename = "./regression/.exr";
+#endif
+  
   // Assume this source code is compiled with UTF-8(UNICODE) 
-  int ret = ParseEXRVersionFromFile(&exr_version, "./regression/日本語.exr");
+  int ret = ParseEXRVersionFromFile(&exr_version, filename);
   REQUIRE(TINYEXR_SUCCESS == ret);
 
-  ret = ParseEXRHeaderFromFile(&exr_header, &exr_version, "./regression/日本語.exr",
+  ret = ParseEXRHeaderFromFile(&exr_header, &exr_version, filename,
                                &err);
   REQUIRE(NULL == err);
   REQUIRE(TINYEXR_SUCCESS == ret);
 
-  FreeEXRImage(&exr_image);
   FreeEXRHeader(&exr_header);
 }
 
