@@ -41,6 +41,27 @@ TEST_CASE("asakusa", "[Load]") {
   FreeEXRHeader(&exr_header);
 }
 
+TEST_CASE("utf8filename", "[Load]") {
+  EXRVersion exr_version;
+  EXRImage exr_image;
+  InitEXRImage(&exr_image);
+  EXRHeader exr_header;
+  InitEXRHeader(&exr_header);
+  const char* err = NULL;
+
+  // Assume this source code is compiled with UTF-8(UNICODE) 
+  int ret = ParseEXRVersionFromFile(&exr_version, "./regression/日本語.exr");
+  REQUIRE(TINYEXR_SUCCESS == ret);
+
+  ret = ParseEXRHeaderFromFile(&exr_header, &exr_version, "./regression/日本語.exr",
+                               &err);
+  REQUIRE(NULL == err);
+  REQUIRE(TINYEXR_SUCCESS == ret);
+
+  FreeEXRImage(&exr_image);
+  FreeEXRHeader(&exr_header);
+}
+
 TEST_CASE("ScanLines", "[Load]") {
   std::vector<std::string> inputs;
   inputs.push_back("ScanLines/Blobbies.exr");

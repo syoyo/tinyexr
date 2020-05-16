@@ -500,6 +500,15 @@ extern int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
 #ifndef TINYEXR_IMPLEMENTATION_DEFINED
 #define TINYEXR_IMPLEMENTATION_DEFINED
 
+#ifdef _WIN32
+
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>  // for UTF-8
+
+#endif
+
 #include <algorithm>
 #include <cassert>
 #include <cstdio>
@@ -10418,6 +10427,18 @@ static unsigned char **AllocateImage(int num_channels,
   return images;
 }
 
+#ifdef _WIN32
+static inline std::wstring UTF8ToWchar(const std::string &str) {
+  int wstr_size =
+      MultiByteToWideChar(CP_UTF8, 0, str.data(), (int)str.size(), NULL, 0);
+  std::wstring wstr(wstr_size, 0);
+  MultiByteToWideChar(CP_UTF8, 0, str.data(), (int)str.size(), &wstr[0],
+                      (int)wstr.size());
+  return wstr;
+}
+#endif
+
+
 static int ParseEXRHeader(HeaderInfo *info, bool *empty_header,
                           const EXRVersion *version, std::string *err,
                           const unsigned char *buf, size_t size) {
@@ -11947,11 +11968,21 @@ int LoadEXRImageFromFile(EXRImage *exr_image, const EXRHeader *exr_header,
     return TINYEXR_ERROR_INVALID_ARGUMENT;
   }
 
-#ifdef _WIN32
   FILE *fp = NULL;
-  fopen_s(&fp, filename, "rb");
+#ifdef _WIN32
+#if defined(_MSC_VER) || defined(__MINGW32__) // MSVC, MinGW gcc or clang
+  errno_t errcode = _wfopen_s(&fp, tinyexr::UTF8ToWchar(filename).c_str(), L"rb");
+  if (errcode != 0) {
+    tinyexr::SetErrorMessage("Cannot read file " + std::string(filename), err);
+    // TODO(syoyo): return wfopen_s erro code
+    return TINYEXR_ERROR_CANT_OPEN_FILE;
+  } 
 #else
-  FILE *fp = fopen(filename, "rb");
+  // Unknown compiler
+  fp = fopen(filename, "rb");
+#endif
+#else
+  fp = fopen(filename, "rb");
 #endif
   if (!fp) {
     tinyexr::SetErrorMessage("Cannot read file " + std::string(filename), err);
@@ -12538,14 +12569,23 @@ int SaveEXRImageToFile(const EXRImage *exr_image, const EXRHeader *exr_header,
   }
 #endif
 
-#ifdef _WIN32
   FILE *fp = NULL;
-  fopen_s(&fp, filename, "wb");
+#ifdef _WIN32
+#if defined(_MSC_VER) || defined(__MINGW32__) // MSVC, MinGW gcc or clang
+  errno_t errcode = _wfopen_s(&fp, tinyexr::UTF8ToWchar(filename).c_str(), L"wb");
+  if (errcode != 0) {
+    tinyexr::SetErrorMessage("Cannot write a file: " + std::string(filename), err);
+    return TINYEXR_ERROR_CANT_WRITE_FILE;
+  } 
 #else
-  FILE *fp = fopen(filename, "wb");
+  // Unknown compiler
+  fp = fopen(filename, "wb");
+#endif
+#else
+  fp = fopen(filename, "wb");
 #endif
   if (!fp) {
-    tinyexr::SetErrorMessage("Cannot write a file", err);
+    tinyexr::SetErrorMessage("Cannot write a file: " + std::string(filename), err);
     return TINYEXR_ERROR_CANT_WRITE_FILE;
   }
 
@@ -12577,10 +12617,20 @@ int LoadDeepEXR(DeepImage *deep_image, const char *filename, const char **err) {
     return TINYEXR_ERROR_INVALID_ARGUMENT;
   }
 
-#ifdef _MSC_VER
+#ifdef _WIN32
   FILE *fp = NULL;
-  errno_t errcode = fopen_s(&fp, filename, "rb");
-  if ((0 != errcode) || (!fp)) {
+#if defined(_MSC_VER) || defined(__MINGW32__) // MSVC, MinGW gcc or clang
+  errno_t errcode = _wfopen_s(&fp, tinyexr::UTF8ToWchar(filename).c_str(), L"rb");
+  if (errcode != 0) {
+    tinyexr::SetErrorMessage("Cannot read a file " + std::string(filename),
+                             err);
+    return TINYEXR_ERROR_CANT_OPEN_FILE;
+  } 
+#else
+  // Unknown compiler
+  fp = fopen(filename, "rb");
+#endif
+  if (!fp) {
     tinyexr::SetErrorMessage("Cannot read a file " + std::string(filename),
                              err);
     return TINYEXR_ERROR_CANT_OPEN_FILE;
@@ -13054,11 +13104,20 @@ int ParseEXRHeaderFromFile(EXRHeader *exr_header, const EXRVersion *exr_version,
     return TINYEXR_ERROR_INVALID_ARGUMENT;
   }
 
-#ifdef _WIN32
   FILE *fp = NULL;
-  fopen_s(&fp, filename, "rb");
+#ifdef _WIN32
+#if defined(_MSC_VER) || defined(__MINGW32__) // MSVC, MinGW gcc or clang
+  errno_t errcode = _wfopen_s(&fp, tinyexr::UTF8ToWchar(filename).c_str(), L"rb");
+  if (errcode != 0) {
+    tinyexr::SetErrorMessage("Cannot read file " + std::string(filename), err);
+    return TINYEXR_ERROR_INVALID_FILE;
+  } 
 #else
-  FILE *fp = fopen(filename, "rb");
+  // Unknown compiler
+  fp = fopen(filename, "rb");
+#endif
+#else
+  fp = fopen(filename, "rb");
 #endif
   if (!fp) {
     tinyexr::SetErrorMessage("Cannot read file " + std::string(filename), err);
@@ -13174,11 +13233,20 @@ int ParseEXRMultipartHeaderFromFile(EXRHeader ***exr_headers, int *num_headers,
     return TINYEXR_ERROR_INVALID_ARGUMENT;
   }
 
-#ifdef _WIN32
   FILE *fp = NULL;
-  fopen_s(&fp, filename, "rb");
+#ifdef _WIN32
+#if defined(_MSC_VER) || defined(__MINGW32__) // MSVC, MinGW gcc or clang
+  errno_t errcode = _wfopen_s(&fp, tinyexr::UTF8ToWchar(filename).c_str(), L"rb");
+  if (errcode != 0) {
+    tinyexr::SetErrorMessage("Cannot read file " + std::string(filename), err);
+    return TINYEXR_ERROR_INVALID_FILE;
+  } 
 #else
-  FILE *fp = fopen(filename, "rb");
+  // Unknown compiler
+  fp = fopen(filename, "rb");
+#endif
+#else
+  fp = fopen(filename, "rb");
 #endif
   if (!fp) {
     tinyexr::SetErrorMessage("Cannot read file " + std::string(filename), err);
@@ -13270,11 +13338,20 @@ int ParseEXRVersionFromFile(EXRVersion *version, const char *filename) {
     return TINYEXR_ERROR_INVALID_ARGUMENT;
   }
 
-#ifdef _WIN32
   FILE *fp = NULL;
-  fopen_s(&fp, filename, "rb");
+#ifdef _WIN32
+#if defined(_MSC_VER) || defined(__MINGW32__) // MSVC, MinGW gcc or clang
+  errno_t err = _wfopen_s(&fp, tinyexr::UTF8ToWchar(filename).c_str(), L"rb");
+  if (err != 0) {
+    // TODO(syoyo): return wfopen_s erro code
+    return TINYEXR_ERROR_CANT_OPEN_FILE;
+  } 
 #else
-  FILE *fp = fopen(filename, "rb");
+  // Unknown compiler
+  fp = fopen(filename, "rb");
+#endif
+#else
+  fp = fopen(filename, "rb");
 #endif
   if (!fp) {
     return TINYEXR_ERROR_CANT_OPEN_FILE;
@@ -13408,11 +13485,20 @@ int LoadEXRMultipartImageFromFile(EXRImage *exr_images,
     return TINYEXR_ERROR_INVALID_ARGUMENT;
   }
 
-#ifdef _WIN32
   FILE *fp = NULL;
-  fopen_s(&fp, filename, "rb");
+#ifdef _WIN32
+#if defined(_MSC_VER) || defined(__MINGW32__) // MSVC, MinGW gcc or clang
+  errno_t errcode = _wfopen_s(&fp, tinyexr::UTF8ToWchar(filename).c_str(), L"rb");
+  if (errcode != 0) {
+    tinyexr::SetErrorMessage("Cannot read file " + std::string(filename), err);
+    return TINYEXR_ERROR_CANT_OPEN_FILE;
+  } 
 #else
-  FILE *fp = fopen(filename, "rb");
+  // Unknown compiler
+  fp = fopen(filename, "rb");
+#endif
+#else
+  fp = fopen(filename, "rb");
 #endif
   if (!fp) {
     tinyexr::SetErrorMessage("Cannot read file " + std::string(filename), err);
