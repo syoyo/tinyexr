@@ -1,6 +1,16 @@
+#if defined(_WIN32)
+
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <tchar.h>
+#endif
+
 #include <cstdlib>
 #include <cstdio>
 #include <vector>
+#include <iostream>
 
 // Uncomment if you want to use system provided zlib.
 // #define TINYEXR_USE_MINIZ (0)
@@ -108,9 +118,88 @@ TiledImageToScanlineImage(EXRImage* src, const EXRHeader* header)
 }
 #endif
 
-int
-main(int argc, char** argv)
+#if defined(_WIN32)
+
+#if defined(__MINGW32__)
+// __wgetmainargs is not defined in windows.h
+extern "C" int __wgetmainargs(int*, wchar_t***, wchar_t***, int, int*);
+#endif
+
+// https://gist.github.com/trueroad/fb4d0c3f67285bf66804
+namespace {
+std::vector<char> utf16_to_utf8(const wchar_t *wc)
 {
+  int size = WideCharToMultiByte(CP_UTF8, 0, wc, -1, NULL, 0, NULL, NULL);
+  std::vector<char> retval (size);
+  if(size)
+    {
+      WideCharToMultiByte(CP_UTF8, 0, wc, -1,
+        retval.data(), retval.size(), NULL, NULL);
+    }
+  else
+    retval.push_back('\0');
+  return retval;
+}
+} // namespace
+#endif
+
+static int test_main(int argc, char** argv);
+
+#if defined(_WIN32)
+#if defined(__MINGW32__)
+int
+main() {
+
+  wchar_t** wargv;
+  wchar_t** wenpv;
+  int argc=0,si=0;
+  __wgetmainargs(&argc,&wargv,&wenpv,1,&si);
+
+  std::vector<std::vector<char> > argv_vvc(argc);
+  std::vector<char*> argv_vc(argc);
+
+  for(int i=0; i<argc; i++)
+    {
+      argv_vvc.at(i)=utf16_to_utf8(wargv[i]);
+      argv_vc.at(i)=argv_vvc.at(i).data();
+    }
+
+  // TODO(syoyo): envp
+
+  return test_main(argc, argv_vc.data());
+}
+#else // Assume MSVC
+int _tmain(int argc, _TCHAR **wargv) {
+
+  std::vector<std::vector<char> > argv_vvc(argc);
+  std::vector<char*> argv_vc(argc);
+
+  for(int i=0; i<argc; i++)
+    {
+#if defined(UNICODE) || defined(_UNICODE)
+      argv_vvc.at(i)=utf16_to_utf8(wargv[i]);
+      #else
+    size_t slen = _tcslen(wargv[i]);
+    std::vector<char> buf(slen + 1);
+    memcpy(buf.data(), wargv[i], slen);
+    buf[slen] = '\0';
+    argv_vvc.at(i) = buf;
+#endif
+
+      argv_vc.at(i)=argv_vvc.at(i).data();
+    }
+
+  return test_main(argc, argv_vc.data());
+}
+#endif
+#else
+int main(int argc, char** argv) {
+  return test_main(argc, argv);
+}
+#endif
+
+int test_main(int argc, char **argv) {
+
   const char* outfilename = "output_test.exr";
   const char* err = NULL;
 
@@ -123,18 +212,20 @@ main(int argc, char** argv)
     outfilename = argv[2];
   }
 
+  const char *input_filename = argv[1];
+
 #ifdef SIMPLE_API_EXAMPLE
   (void)outfilename;
   int width, height;
   float* image;
 
-  int ret = IsEXR(argv[1]);
+  int ret = IsEXR(input_filename);
   if (ret != TINYEXR_SUCCESS) {
     fprintf(stderr, "Header err. code %d\n", ret);
     exit(-1);
   }
 
-  ret = LoadEXR(&image, &width, &height, argv[1], &err);
+  ret = LoadEXR(&image, &width, &height, input_filename, &err);
   if (ret != TINYEXR_SUCCESS) {
     if (err) {
       fprintf(stderr, "Load EXR err: %s(code %d)\n", err, ret);
@@ -154,13 +245,15 @@ main(int argc, char** argv)
     }
   }
   free(image);
+
+  std::cout << "Wrote output.exr." << std::endl;
 #else
 
   EXRVersion exr_version;
 
-  int ret = ParseEXRVersionFromFile(&exr_version, argv[1]);
+  int ret = ParseEXRVersionFromFile(&exr_version, input_filename);
   if (ret != 0) {
-    fprintf(stderr, "Invalid EXR file: %s\n", argv[1]);
+    fprintf(stderr, "Invalid EXR file: %s\n", input_filename);
     return -1;
   }
 
@@ -228,7 +321,7 @@ main(int argc, char** argv)
       InitEXRImage(&images[i]);
     }
 
-    ret = LoadEXRMultipartImageFromFile(&images.at(0), const_cast<const EXRHeader**>(exr_headers), static_cast<unsigned int>(num_exr_headers), argv[1], &err);
+    ret = LoadEXRMultipartImageFromFile(&images.at(0), const_cast<const EXRHeader**>(exr_headers), static_cast<unsigned int>(num_exr_headers), input_filename, &err);
     if (ret != 0) {
       fprintf(stderr, "Load EXR err: %s\n", err);
       FreeEXRErrorMessage(err);
@@ -253,7 +346,7 @@ main(int argc, char** argv)
     EXRHeader exr_header;
     InitEXRHeader(&exr_header);
 
-    ret = ParseEXRHeaderFromFile(&exr_header, &exr_version, argv[1], &err);
+    ret = ParseEXRHeaderFromFile(&exr_header, &exr_version, input_filename, &err);
     if (ret != 0) {
       fprintf(stderr, "Parse single-part EXR err: %s\n", err);
       FreeEXRErrorMessage(err);
@@ -303,7 +396,7 @@ main(int argc, char** argv)
     EXRImage exr_image;
     InitEXRImage(&exr_image);
 
-    ret = LoadEXRImageFromFile(&exr_image, &exr_header, argv[1], &err);
+    ret = LoadEXRImageFromFile(&exr_image, &exr_header, input_filename, &err);
     if (ret != 0) {
       fprintf(stderr, "Load EXR err: %s\n", err);
       FreeEXRHeader(&exr_header);
