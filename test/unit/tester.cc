@@ -1,14 +1,14 @@
 // Assume this file is encoded in UTF-8
 #define CATCH_CONFIG_MAIN  // This tells Catch to provide a main() - only do
                            // this in one cpp file
-#include "catch.hpp"
-
 #include <cassert>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <sstream>
+
+#include "catch.hpp"
 
 #ifdef _WIN32
 #ifndef _CRT_SECURE_NO_WARNINGS
@@ -31,38 +31,33 @@ std::string GetPath(const char* basename) {
 }
 
 // https://stackoverflow.com/questions/148403/utf8-to-from-wide-char-conversion-in-stl/148665#148665
-std::wstring UTF8_to_wchar(const char * in)
-{
-    std::wstring out;
-    unsigned int codepoint;
-    while (*in != 0)
-    {
-        unsigned char ch = static_cast<unsigned char>(*in);
-        if (ch <= 0x7f)
-            codepoint = ch;
-        else if (ch <= 0xbf)
-            codepoint = (codepoint << 6) | (ch & 0x3f);
-        else if (ch <= 0xdf)
-            codepoint = ch & 0x1f;
-        else if (ch <= 0xef)
-            codepoint = ch & 0x0f;
-        else
-            codepoint = ch & 0x07;
-        ++in;
-        if (((*in & 0xc0) != 0x80) && (codepoint <= 0x10ffff))
-        {
-            if (sizeof(wchar_t) > 2)
-                out.append(1, static_cast<wchar_t>(codepoint));
-            else if (codepoint > 0xffff)
-            {
-                out.append(1, static_cast<wchar_t>(0xd800 + (codepoint >> 10)));
-                out.append(1, static_cast<wchar_t>(0xdc00 + (codepoint & 0x03ff)));
-            }
-            else if (codepoint < 0xd800 || codepoint >= 0xe000)
-                out.append(1, static_cast<wchar_t>(codepoint));
-        }
+std::wstring UTF8_to_wchar(const char* in) {
+  std::wstring out;
+  unsigned int codepoint;
+  while (*in != 0) {
+    unsigned char ch = static_cast<unsigned char>(*in);
+    if (ch <= 0x7f)
+      codepoint = ch;
+    else if (ch <= 0xbf)
+      codepoint = (codepoint << 6) | (ch & 0x3f);
+    else if (ch <= 0xdf)
+      codepoint = ch & 0x1f;
+    else if (ch <= 0xef)
+      codepoint = ch & 0x0f;
+    else
+      codepoint = ch & 0x07;
+    ++in;
+    if (((*in & 0xc0) != 0x80) && (codepoint <= 0x10ffff)) {
+      if (sizeof(wchar_t) > 2)
+        out.append(1, static_cast<wchar_t>(codepoint));
+      else if (codepoint > 0xffff) {
+        out.append(1, static_cast<wchar_t>(0xd800 + (codepoint >> 10)));
+        out.append(1, static_cast<wchar_t>(0xdc00 + (codepoint & 0x03ff)));
+      } else if (codepoint < 0xd800 || codepoint >= 0xe000)
+        out.append(1, static_cast<wchar_t>(codepoint));
     }
-    return out;
+  }
+  return out;
 }
 
 TEST_CASE("asakusa", "[Load]") {
@@ -95,9 +90,9 @@ TEST_CASE("utf8filename", "[Load]") {
 
 #if defined(_MSC_VER)
   // Include UTF-16LE encoded string
-  const wchar_t *wfilename =
-  #include "win32-filelist-utf16le.inc"
-  ;
+  const wchar_t* wfilename =
+#include "win32-filelist-utf16le.inc"
+      ;
 
   // convert to char*
   // https://stackoverflow.com/questions/12637779/how-to-convert-const-wchar-to-const-char/12637971
@@ -111,15 +106,16 @@ TEST_CASE("utf8filename", "[Load]") {
   int charlen = 1000;
 
   int strlen = WideCharToMultiByte(65001 /* UTF8 */, 0, wfilename, -1, filename,
-                               (int)charlen, NULL, NULL);
+                                   (int)charlen, NULL, NULL);
 
   REQUIRE(strlen == 27);
 #else
   // MinGW or clang.
-  // At least clang cannot feed UTF-16LE source code, so provide UTF-8 encoded file path
-  const char *utf8filename =
-  #include "win32-filelist-utf8.inc"
-  ;
+  // At least clang cannot feed UTF-16LE source code, so provide UTF-8 encoded
+  // file path
+  const char* utf8filename =
+#include "win32-filelist-utf8.inc"
+      ;
 
   // to wchar_t
   const std::wstring wfilename = UTF8_to_wchar(utf8filename);
@@ -133,23 +129,22 @@ TEST_CASE("utf8filename", "[Load]") {
   int charlen = 1000;
 
   // wchar_t to multibyte char
-  int strlen = WideCharToMultiByte(65001 /* UTF8 */, 0, wfilename.c_str(), -1, filename,
-                               (int)charlen, NULL, NULL);
+  int strlen = WideCharToMultiByte(65001 /* UTF8 */, 0, wfilename.c_str(), -1,
+                                   filename, (int)charlen, NULL, NULL);
 
   REQUIRE(strlen == 27);
 
 #endif
 
 #else
-  const char* filename = "./regression/.exr";
+  // Assume this source code is compiled with UTF-8(UNICODE)
+  const char* filename = "./regression/日本語.exr";
 #endif
 
-  // Assume this source code is compiled with UTF-8(UNICODE)
   int ret = ParseEXRVersionFromFile(&exr_version, filename);
   REQUIRE(TINYEXR_SUCCESS == ret);
 
-  ret = ParseEXRHeaderFromFile(&exr_header, &exr_version, filename,
-                               &err);
+  ret = ParseEXRHeaderFromFile(&exr_header, &exr_version, filename, &err);
   REQUIRE(NULL == err);
   REQUIRE(TINYEXR_SUCCESS == ret);
 
@@ -513,8 +508,8 @@ TEST_CASE("Beachball/multipart.0001.exr|Load", "[Load]") {
   }
 
   for (int i = 0; i < num_exr_headers; i++) {
-    FreeEXRHeader(exr_headers[i]); // free content
-    free(exr_headers[i]); // free pointer
+    FreeEXRHeader(exr_headers[i]);  // free content
+    free(exr_headers[i]);           // free pointer
   }
   free(exr_headers);
 }
@@ -701,11 +696,15 @@ TEST_CASE("Compressed is smaller than uncompressed", "[Issue40]") {
   image.num_channels = 3;
 
   float const images[3][1] = {
-      {1.0f}, {0.0f}, {0.0f},
+      {1.0f},
+      {0.0f},
+      {0.0f},
   };
 
   float const* const image_ptr[3] = {
-      images[2], images[1], images[0],
+      images[2],
+      images[1],
+      images[0],
   };
 
   image.images = (unsigned char**)image_ptr;
@@ -743,9 +742,10 @@ TEST_CASE("Compressed is smaller than uncompressed", "[Issue40]") {
   free(header.pixel_types);
 }
 
-//TEST_CASE("Regression: Issue54", "[fuzzing]") {
+// TEST_CASE("Regression: Issue54", "[fuzzing]") {
 //  EXRVersion exr_version;
-//  std::string filepath = "./regression/poc-360c3b0555cb979ca108f2d178cf8a80959cfeabaa4ec1d310d062fa653a8c6b_min";
+//  std::string filepath =
+//  "./regression/poc-360c3b0555cb979ca108f2d178cf8a80959cfeabaa4ec1d310d062fa653a8c6b_min";
 //  int ret = ParseEXRVersionFromFile(&exr_version, filepath.c_str());
 //  REQUIRE(TINYEXR_SUCCESS == ret);
 //  REQUIRE(false == exr_version.tiled);
@@ -771,7 +771,10 @@ TEST_CASE("Compressed is smaller than uncompressed", "[Issue40]") {
 
 TEST_CASE("Regression: Issue50", "[fuzzing]") {
   EXRVersion exr_version;
-  std::string filepath = "./regression/poc-eedff3a9e99eb1c0fd3a3b0989e7c44c0a69f04f10b23e5264f362a4773f4397_min";
+  std::string filepath =
+      "./regression/"
+      "poc-eedff3a9e99eb1c0fd3a3b0989e7c44c0a69f04f10b23e5264f362a4773f4397_"
+      "min";
   int ret = ParseEXRVersionFromFile(&exr_version, filepath.c_str());
   REQUIRE(TINYEXR_SUCCESS == ret);
   REQUIRE(false == exr_version.tiled);
@@ -792,12 +795,15 @@ TEST_CASE("Regression: Issue50", "[fuzzing]") {
   }
 
   FreeEXRHeader(&header);
-  //FreeEXRImage(&image);
+  // FreeEXRImage(&image);
 }
 
 TEST_CASE("Regression: Issue57", "[fuzzing]") {
   EXRVersion exr_version;
-  std::string filepath = "./regression/poc-df76d1f27adb8927a1446a603028272140905c168a336128465a1162ec7af270.mini";
+  std::string filepath =
+      "./regression/"
+      "poc-df76d1f27adb8927a1446a603028272140905c168a336128465a1162ec7af270."
+      "mini";
   int ret = ParseEXRVersionFromFile(&exr_version, filepath.c_str());
   REQUIRE(TINYEXR_SUCCESS == ret);
   REQUIRE(false == exr_version.tiled);
@@ -818,12 +824,14 @@ TEST_CASE("Regression: Issue57", "[fuzzing]") {
   }
 
   FreeEXRHeader(&header);
-  //FreeEXRImage(&image);
+  // FreeEXRImage(&image);
 }
 
 TEST_CASE("Regression: Issue56", "[fuzzing]") {
   EXRVersion exr_version;
-  std::string filepath = "./regression/poc-1383755b301e5f505b2198dc0508918b537fdf48bbfc6deeffe268822e6f6cd6";
+  std::string filepath =
+      "./regression/"
+      "poc-1383755b301e5f505b2198dc0508918b537fdf48bbfc6deeffe268822e6f6cd6";
   int ret = ParseEXRVersionFromFile(&exr_version, filepath.c_str());
   REQUIRE(TINYEXR_SUCCESS == ret);
   REQUIRE(false == exr_version.tiled);
@@ -844,12 +852,15 @@ TEST_CASE("Regression: Issue56", "[fuzzing]") {
   }
 
   FreeEXRHeader(&header);
-  //FreeEXRImage(&image);
+  // FreeEXRImage(&image);
 }
 
 TEST_CASE("Regression: Issue61", "[fuzzing]") {
   EXRVersion exr_version;
-  std::string filepath = "./regression/poc-3f1f642c3356fd8e8d2a0787613ec09a56572b3a1e38c9629b6db9e8dead1117_min";
+  std::string filepath =
+      "./regression/"
+      "poc-3f1f642c3356fd8e8d2a0787613ec09a56572b3a1e38c9629b6db9e8dead1117_"
+      "min";
   int ret = ParseEXRVersionFromFile(&exr_version, filepath.c_str());
   REQUIRE(TINYEXR_SUCCESS == ret);
   REQUIRE(false == exr_version.tiled);
@@ -870,12 +881,15 @@ TEST_CASE("Regression: Issue61", "[fuzzing]") {
   }
 
   FreeEXRHeader(&header);
-  //FreeEXRImage(&image);
+  // FreeEXRImage(&image);
 }
 
 TEST_CASE("Regression: Issue60", "[fuzzing]") {
   EXRVersion exr_version;
-  std::string filepath = "./regression/poc-5b66774a7498c635334ad386be0c3b359951738ac47f14878a3346d1c6ea0fe5_min";
+  std::string filepath =
+      "./regression/"
+      "poc-5b66774a7498c635334ad386be0c3b359951738ac47f14878a3346d1c6ea0fe5_"
+      "min";
   int ret = ParseEXRVersionFromFile(&exr_version, filepath.c_str());
   REQUIRE(TINYEXR_SUCCESS == ret);
   REQUIRE(false == exr_version.tiled);
@@ -896,7 +910,7 @@ TEST_CASE("Regression: Issue60", "[fuzzing]") {
   }
 
   FreeEXRHeader(&header);
-  //FreeEXRImage(&image);
+  // FreeEXRImage(&image);
 }
 
 TEST_CASE("Regression: Issue71", "[issue71]") {
@@ -919,7 +933,6 @@ TEST_CASE("Regression: Issue71", "[issue71]") {
   REQUIRE(0.0f == Approx(image[14]));
   REQUIRE(1.0f == Approx(image[15]));
 
-
   free(image);
 }
 
@@ -939,17 +952,19 @@ TEST_CASE("Regression: Issue93", "[issue93]") {
   std::vector<unsigned char> data;
 
   data.resize(sz);
-  f.read(reinterpret_cast<char *>(&data.at(0)),
+  f.read(reinterpret_cast<char*>(&data.at(0)),
          static_cast<std::streamsize>(sz));
   f.close();
 
   const char* err;
   int width, height;
   float* image;
-  int ret = LoadEXRFromMemory(&image, &width, &height, data.data(), data.size(), &err);
+  int ret = LoadEXRFromMemory(&image, &width, &height, data.data(), data.size(),
+                              &err);
   REQUIRE(TINYEXR_SUCCESS == ret);
 
-  std::cout << "val = " << image[0] << ", " << image[1] << ", " << image[2] << ", " << image[3] << std::endl;
+  std::cout << "val = " << image[0] << ", " << image[1] << ", " << image[2]
+            << ", " << image[3] << std::endl;
 
   REQUIRE(0.0612183 == Approx(image[0]));
   REQUIRE(0.0892334 == Approx(image[1]));
@@ -974,14 +989,15 @@ TEST_CASE("Regression: Issue100", "[issue100]") {
   std::vector<unsigned char> data;
 
   data.resize(sz);
-  f.read(reinterpret_cast<char *>(&data.at(0)),
+  f.read(reinterpret_cast<char*>(&data.at(0)),
          static_cast<std::streamsize>(sz));
   f.close();
 
   const char* err = nullptr;
   int width, height;
   float* image;
-  int ret = LoadEXRFromMemory(&image, &width, &height, data.data(), data.size(), &err);
+  int ret = LoadEXRFromMemory(&image, &width, &height, data.data(), data.size(),
+                              &err);
   if (err) {
     std::cerr << "issue100 err " << err << std::endl;
     FreeEXRErrorMessage(err);
@@ -992,18 +1008,21 @@ TEST_CASE("Regression: Issue100", "[issue100]") {
 
   // pixel should be white.
 
-  std::cout << "pixel[0] = " << image[0] << ", " << image[1] << ", " << image[2] << ", " << image[3] << std::endl;
-  std::cout << "pixel[34] = " << image[4*34+0] << ", " << image[4*34+1] << ", " << image[4*34+2] << ", " << image[4*34+3] << std::endl;
+  std::cout << "pixel[0] = " << image[0] << ", " << image[1] << ", " << image[2]
+            << ", " << image[3] << std::endl;
+  std::cout << "pixel[34] = " << image[4 * 34 + 0] << ", " << image[4 * 34 + 1]
+            << ", " << image[4 * 34 + 2] << ", " << image[4 * 34 + 3]
+            << std::endl;
 
   REQUIRE(0.0 == Approx(image[0]));
   REQUIRE(0.0 == Approx(image[1]));
   REQUIRE(0.0 == Approx(image[2]));
   REQUIRE(0.0 == Approx(image[3]));
 
-  REQUIRE(1.0 == Approx(image[4*34+0]));
-  REQUIRE(1.0 == Approx(image[4*34+1]));
-  REQUIRE(1.0 == Approx(image[4*34+2]));
-  REQUIRE(1.0 == Approx(image[4*34+3]));
+  REQUIRE(1.0 == Approx(image[4 * 34 + 0]));
+  REQUIRE(1.0 == Approx(image[4 * 34 + 1]));
+  REQUIRE(1.0 == Approx(image[4 * 34 + 2]));
+  REQUIRE(1.0 == Approx(image[4 * 34 + 3]));
 
   free(image);
 }
@@ -1056,7 +1075,7 @@ TEST_CASE("Regression: Issue53|Image", "[issue53]") {
   REQUIRE(TINYEXR_SUCCESS == ret);
   REQUIRE(2 == num_layers);
   for (int i = 0; i < num_layers; i++) {
-    free(reinterpret_cast<void *>(const_cast<char *>(layer_names[i])));
+    free(reinterpret_cast<void*>(const_cast<char*>(layer_names[i])));
   }
   free(layer_names);
 
@@ -1069,7 +1088,8 @@ TEST_CASE("Regression: Issue53|Image", "[issue53]") {
     FreeEXRErrorMessage(err);
   }
 
-  ret = LoadEXRWithLayer(&image, &width, &height, filepath.c_str(), "Warstwa 1", &err);
+  ret = LoadEXRWithLayer(&image, &width, &height, filepath.c_str(), "Warstwa 1",
+                         &err);
   REQUIRE(TINYEXR_SUCCESS == ret);
   free(image);
   if (err) {
@@ -1083,7 +1103,8 @@ TEST_CASE("Regression: Issue53|Image|Missing Layer", "[issue53]") {
   const char* err = nullptr;
   int width, height;
   float* image = nullptr;
-  int ret = LoadEXRWithLayer(&image, &width, &height, filepath.c_str(), "Warstwa", &err);
+  int ret = LoadEXRWithLayer(&image, &width, &height, filepath.c_str(),
+                             "Warstwa", &err);
   REQUIRE(TINYEXR_ERROR_LAYER_NOT_FOUND == ret);
   if (image) {
     free(image);
@@ -1092,4 +1113,3 @@ TEST_CASE("Regression: Issue53|Image|Missing Layer", "[issue53]") {
     FreeEXRErrorMessage(err);
   }
 }
-
