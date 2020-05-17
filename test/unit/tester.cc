@@ -30,6 +30,41 @@ std::string GetPath(const char* basename) {
   return s;
 }
 
+// https://stackoverflow.com/questions/148403/utf8-to-from-wide-char-conversion-in-stl/148665#148665
+std::wstring UTF8_to_wchar(const char * in)
+{
+    std::wstring out;
+    unsigned int codepoint;
+    while (*in != 0)
+    {
+        unsigned char ch = static_cast<unsigned char>(*in);
+        if (ch <= 0x7f)
+            codepoint = ch;
+        else if (ch <= 0xbf)
+            codepoint = (codepoint << 6) | (ch & 0x3f);
+        else if (ch <= 0xdf)
+            codepoint = ch & 0x1f;
+        else if (ch <= 0xef)
+            codepoint = ch & 0x0f;
+        else
+            codepoint = ch & 0x07;
+        ++in;
+        if (((*in & 0xc0) != 0x80) && (codepoint <= 0x10ffff))
+        {
+            if (sizeof(wchar_t) > 2)
+                out.append(1, static_cast<wchar_t>(codepoint));
+            else if (codepoint > 0xffff)
+            {
+                out.append(1, static_cast<wchar_t>(0xd800 + (codepoint >> 10)));
+                out.append(1, static_cast<wchar_t>(0xdc00 + (codepoint & 0x03ff)));
+            }
+            else if (codepoint < 0xd800 || codepoint >= 0xe000)
+                out.append(1, static_cast<wchar_t>(codepoint));
+        }
+    }
+    return out;
+}
+
 TEST_CASE("asakusa", "[Load]") {
   EXRVersion exr_version;
   EXRImage exr_image;
@@ -57,8 +92,10 @@ TEST_CASE("utf8filename", "[Load]") {
   const char* err = NULL;
 
 #ifdef _WIN32
+
+#if defined(_MSC_VER)
   // Include UTF-16LE encoded string
-  const wchar_t *wfilename = 
+  const wchar_t *wfilename =
   #include "win32-filelist-utf16le.inc"
   ;
 
@@ -72,17 +109,42 @@ TEST_CASE("utf8filename", "[Load]") {
 
   char filename[1024];
   int charlen = 1000;
-  
+
   int strlen = WideCharToMultiByte(65001 /* UTF8 */, 0, wfilename, -1, filename,
                                (int)charlen, NULL, NULL);
 
   REQUIRE(strlen == 27);
+#else
+  // MinGW or clang.
+  // At least clang cannot feed UTF-16LE source code, so provide UTF-8 encoded file path
+  const char *utf8filename =
+  #include "win32-filelist-utf8.inc"
+  ;
+
+  // to wchar_t
+  const std::wstring wfilename = UTF8_to_wchar(utf8filename);
+
+  FILE* fp;
+  errno_t errcode = _wfopen_s(&fp, wfilename.c_str(), L"rb");
+
+  REQUIRE(0 == errcode);
+
+  char filename[1024];
+  int charlen = 1000;
+
+  // wchar_t to multibyte char
+  int strlen = WideCharToMultiByte(65001 /* UTF8 */, 0, wfilename.c_str(), -1, filename,
+                               (int)charlen, NULL, NULL);
+
+  REQUIRE(strlen == 27);
+
+#endif
 
 #else
   const char* filename = "./regression/.exr";
 #endif
-  
-  // Assume this source code is compiled with UTF-8(UNICODE) 
+
+  // Assume this source code is compiled with UTF-8(UNICODE)
   int ret = ParseEXRVersionFromFile(&exr_version, filename);
   REQUIRE(TINYEXR_SUCCESS == ret);
 
