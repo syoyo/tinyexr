@@ -409,8 +409,10 @@ int test_main(int argc, char** argv) {
     int version_minor = 3;
     exr_header.num_custom_attributes = 1;
     exr_header.custom_attributes = reinterpret_cast<EXRAttribute *>(malloc(sizeof(EXRAttribute) * exr_header.custom_attributes));
-    exr_header.custom_attributes[0].name = strdup("tinyexr_version_minor");
-    exr_header.custom_attributes[0].type = strdup("int");
+    strcpy(exr_header.custom_attributes[0].name, "tinyexr_version_minor");
+    exr_header.custom_attributes[0].name[strlen("tinyexr_version_minor")] = '\0';
+    strcpy(exr_header.custom_attributes[0].type, "int");
+    exr_header.custom_attributes[0].type[strlen("int")] = '\0';
     exr_header.custom_attributes[0].size = sizeof(int);
     exr_header.custom_attributes[0].value = (unsigned char*)malloc(sizeof(int));
     memcpy(exr_header.custom_attributes[0].value, &version_minor, sizeof(int));

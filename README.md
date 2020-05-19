@@ -443,7 +443,7 @@ For ZFP EXR image, the following attribute must exist in its EXR image.
   * 1 = precision based variable rate compression
   * 2 = accuracy based variable rate compression
 
-And the one of following attributes must exist, depending on the `zfpCompressionType` value.
+And the one of following attributes must exist in EXR, depending on the `zfpCompressionType` value.
 
 * `zfpCompressionRate` (double)
   * Specifies compression rate for fixed rate compression.

@@ -12,8 +12,13 @@ bool GetEXRLayers(const char *filename)
 {
   const char** layer_names = nullptr;
   int num_layers = 0;
-  const char *err;
+  const char *err = nullptr;
   int ret = EXRLayers(filename, &layer_names, &num_layers, &err);
+
+  if (err) {
+    fprintf(stderr, "EXR error = %s\n", err);
+  }
+
   if (ret != 0) {
     fprintf(stderr, "Load EXR err: %s\n", err);
     return false;
@@ -33,8 +38,13 @@ bool LoadEXRRGBA(float** rgba, int *w, int *h, const char* filename, const char*
 {
   int width, height;
   float* image;
-  const char *err;
+  const char *err = nullptr;
   int ret = LoadEXRWithLayer(&image, &width, &height, filename, layername, &err);
+
+  if (err) {
+    fprintf(stderr, "EXR error = %s\n", err);
+  }
+
   if (ret != 0) {
     fprintf(stderr, "Load EXR err: %s\n", err);
     return false;

@@ -336,13 +336,13 @@ extern void InitEXRHeader(EXRHeader *exr_header);
 // Initialize EXRImage struct
 extern void InitEXRImage(EXRImage *exr_image);
 
-// Free's internal data of EXRHeader struct
+// Frees internal data of EXRHeader struct
 extern int FreeEXRHeader(EXRHeader *exr_header);
 
-// Free's internal data of EXRImage struct
+// Frees internal data of EXRImage struct
 extern int FreeEXRImage(EXRImage *exr_image);
 
-// Free's error message
+// Frees error message
 extern void FreeEXRErrorMessage(const char *msg);
 
 // Parse EXR version header of a file.
@@ -9511,6 +9511,7 @@ static bool DecompressPiz(unsigned char *outPtr, const unsigned char *inPtr,
 #endif  // TINYEXR_USE_PIZ
 
 #if TINYEXR_USE_ZFP
+
 struct ZFPCompressionParam {
   double rate;
   unsigned int precision;
@@ -9529,19 +9530,29 @@ struct ZFPCompressionParam {
 
 static bool FindZFPCompressionParam(ZFPCompressionParam *param,
                              const EXRAttribute *attributes,
-                             int num_attributes) {
+                             int num_attributes,
+                             std::string *err) {
   bool foundType = false;
 
   for (int i = 0; i < num_attributes; i++) {
-    if ((strcmp(attributes[i].name, "zfpCompressionType") == 0) &&
-        (attributes[i].size == 1)) {
-      param->type = static_cast<int>(attributes[i].value[0]);
-
-      foundType = true;
+    if ((strcmp(attributes[i].name, "zfpCompressionType") == 0)) {
+      if (attributes[i].size == 1) {
+        param->type = static_cast<int>(attributes[i].value[0]);
+        foundType = true;
+        break;
+      } else {
+        if (err) {
+          (*err) += "zfpCompressionType attribute must be uchar(1 byte) type.\n";
+        }
+        return false;
+      }
     }
   }
 
   if (!foundType) {
+    if (err) {
+      (*err) += "`zfpCompressionType` attribute not found.\n";
+    }
     return false;
   }
 
@@ -9553,6 +9564,11 @@ static bool FindZFPCompressionParam(ZFPCompressionParam *param,
         return true;
       }
     }
+
+    if (err) {
+      (*err) += "`zfpCompressionRate` attribute not found.\n";
+    }
+
   } else if (param->type == TINYEXR_ZFP_COMPRESSIONTYPE_PRECISION) {
     for (int i = 0; i < num_attributes; i++) {
       if ((strcmp(attributes[i].name, "zfpCompressionPrecision") == 0) &&
@@ -9561,6 +9577,11 @@ static bool FindZFPCompressionParam(ZFPCompressionParam *param,
         return true;
       }
     }
+
+    if (err) {
+      (*err) += "`zfpCompressionPrecision` attribute not found.\n";
+    }
+
   } else if (param->type == TINYEXR_ZFP_COMPRESSIONTYPE_ACCURACY) {
     for (int i = 0; i < num_attributes; i++) {
       if ((strcmp(attributes[i].name, "zfpCompressionTolerance") == 0) &&
@@ -9569,8 +9590,14 @@ static bool FindZFPCompressionParam(ZFPCompressionParam *param,
         return true;
       }
     }
+
+    if (err) {
+      (*err) += "`zfpCompressionTolerance` attribute not found.\n";
+    }
   } else {
-    assert(0);
+    if (err) {
+      (*err) += "Unknown value specified for `zfpCompressionType`.\n";
+    }
   }
 
   return false;
@@ -10144,8 +10171,10 @@ static bool DecodePixelData(/* out */ unsigned char **out_images,
   } else if (compression_type == TINYEXR_COMPRESSIONTYPE_ZFP) {
 #if TINYEXR_USE_ZFP
     tinyexr::ZFPCompressionParam zfp_compression_param;
-    if (!FindZFPCompressionParam(&zfp_compression_param, attributes,
-                                 int(num_attributes))) {
+    std::string e;
+    if (!tinyexr::FindZFPCompressionParam(&zfp_compression_param, attributes,
+                                 int(num_attributes), &e)) {
+      // This code path should not be reachable.
       assert(0);
       return false;
     }
@@ -10856,7 +10885,16 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
     num_scanline_blocks = 32;
   } else if (exr_header->compression_type == TINYEXR_COMPRESSIONTYPE_ZFP) {
     num_scanline_blocks = 16;
+
+#if TINYEXR_USE_ZFP
+    tinyexr::ZFPCompressionParam zfp_compression_param;
+    if (!FindZFPCompressionParam(&zfp_compression_param, exr_header->custom_attributes,
+                                   int(exr_header->num_custom_attributes), err)) {
+      return TINYEXR_ERROR_INVALID_HEADER;
+    }
+#endif
   }
+
 
   int data_width = exr_header->data_window[2] - exr_header->data_window[0] + 1;
   int data_height = exr_header->data_window[3] - exr_header->data_window[1] + 1;
@@ -12257,9 +12295,10 @@ size_t SaveEXRImageToMemory(const EXRImage *exr_image,
   // Use ZFP compression parameter from custom attributes(if such a parameter
   // exists)
   {
+    std::string e;
     bool ret = tinyexr::FindZFPCompressionParam(
         &zfp_compression_param, exr_header->custom_attributes,
-        exr_header->num_custom_attributes);
+        exr_header->num_custom_attributes, &e);
 
     if (!ret) {
       // Use predefined compression parameter.
