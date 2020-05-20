@@ -93,6 +93,8 @@ Current status of `tinyexr` is:
 * [examples/exr2rgbe/](examples/exr2rgbe) EXR to .hdr converter
 * [examples/ldr2exr/](examples/exr2rgbe) LDR to EXR converter
 * [examples/exr2ldr/](examples/exr2ldr) EXR to LDR converter
+* [examples/exr2fptiff/](examples/exr2fptiff) EXR to 32bit floating point TIFF converter
+  * for 32bit floating point TIFF to EXR convert, see https://github.com/syoyo/tinydngloader/tree/master/examples/fptiff2exr
 * [examples/cube2longlat/](examples/cube2longlat) Cubemap to longlat (equirectangler) converter
 
 ## Experimental
