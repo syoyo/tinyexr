@@ -1,0 +1,7 @@
+path_classifiers:
+  external:
+    - exclude: "deps/*"
+  maintainability:
+    - exclude: "deps/*"
+    - exclude: kuroga.py
+  
