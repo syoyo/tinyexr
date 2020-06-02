@@ -1,3 +1,5 @@
+#ifndef TINYEXR_H_
+#define TINYEXR_H_
 /*
 Copyright (c) 2014 - 2019, Syoyo Fujita and many contributors.
 All rights reserved.
@@ -63,8 +65,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 // End of OpenEXR license -------------------------------------------------
 
-#ifndef TINYEXR_H_
-#define TINYEXR_H_
 
 //
 //
