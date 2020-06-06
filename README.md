@@ -14,6 +14,8 @@
 `tinyexr` is written in portable C++ (no library dependency except for STL), thus `tinyexr` is good to embed into your application.
 To use `tinyexr`, simply copy `tinyexr.h` into your project.
 
+# Features
+
 Current status of `tinyexr` is:
 
 - OpenEXR v1 image
@@ -68,6 +70,10 @@ Current status of `tinyexr` is:
   - [ ] OpenMP multi-threading in deep image saving.
 * C interface.
   * You can easily write language bindings (e.g. golang)
+
+# Requirements
+
+* C++ compiler(C++11 recommended. C++03 may work)
 
 # Use case
 
