@@ -6,3 +6,7 @@ path_classifiers:
   useless-code:
     - exclude: kuroga.py
 
+extraction:
+  python:
+    index:
+      exclude: /kuroga.py
