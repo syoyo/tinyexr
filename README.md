@@ -85,6 +85,10 @@ Current status of `tinyexr` is:
 * [ ] RISC-V(Should work)
 * [x] Big endian machine(not maintained, but should work)
   * SPARC, PowerPC, ...
+* [x] WebAssembly(JavaScript)
+  * Loader only(See ![js](experimental/js/))
+* [x] Python binding
+  * Loader only https://pypi.org/project/pytinyexr/
 
 # Requirements
 
@@ -95,7 +99,7 @@ Current status of `tinyexr` is:
 ## New TinyEXR (v0.9.5+)
 
 * Godot. Multi-platform 2D and 3D game engine https://godotengine.org/
-* Filament. PBR engine. https://github.com/google/filament
+* Filament. PBR engine(used in a converter tool). https://github.com/google/filament
 * PyEXR. Loading OpenEXR (.exr) images using Python. https://github.com/ialhashim/PyEXR
 * The-Forge. The Forge Cross-Platform Rendering Framework PC, Linux, Ray Tracing, macOS / iOS, Android, XBOX, PS4 https://github.com/ConfettiFX/The-Forge
 * Your project here!
