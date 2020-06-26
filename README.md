@@ -71,6 +71,21 @@ Current status of `tinyexr` is:
 * C interface.
   * You can easily write language bindings (e.g. golang)
 
+# Supported platform
+
+* [x] x86-64
+  * [x] Windows 7 or later
+  * [x] Linux(posix) system
+  * [x] macOS
+* [x] AARCH64
+  * [x] aarch64 linux(e.g. Raspberry Pi)
+  * [x] Android
+  * [x] iOS
+  * [ ] macOS(Should work)
+* [ ] RISC-V(Should work)
+* [x] Big endian machine(not maintained, but should work)
+  * SPARC, PowerPC, ...
+
 # Requirements
 
 * C++ compiler(C++11 recommended. C++03 may work)
