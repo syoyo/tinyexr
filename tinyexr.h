@@ -11431,6 +11431,8 @@ static int DecodeEXRImage(EXRImage *exr_image, const EXRHeader *exr_header,
     }
   }
 
+  // validate shit here son!  DO NOT SUBMIT:
+
   std::vector<tinyexr::tinyexr_uint64> offsets(num_blocks);
 
   for (size_t y = 0; y < num_blocks; y++) {
