@@ -493,23 +493,23 @@ TEST_CASE("Beachball/multipart.0001.exr|Load", "[Load]") {
 
   REQUIRE(10 == num_exr_headers);
 
-  std::vector<EXRImage> images(num_exr_headers);
+  std::vector<EXRImage> images(static_cast<size_t>(num_exr_headers));
   for (int i = 0; i < num_exr_headers; i++) {
-    InitEXRImage(&images[i]);
+    InitEXRImage(&images[static_cast<size_t>(i)]);
   }
 
   ret = LoadEXRMultipartImageFromFile(
       &images.at(0), const_cast<const EXRHeader**>(exr_headers),
-      num_exr_headers, filepath.c_str(), &err);
+      static_cast<unsigned int>(num_exr_headers), filepath.c_str(), &err);
   REQUIRE(TINYEXR_SUCCESS == ret);
 
   for (int i = 0; i < num_exr_headers; i++) {
-    FreeEXRImage(&images.at(i));
+    FreeEXRImage(&images.at(static_cast<size_t>(i)));
   }
 
   for (int i = 0; i < num_exr_headers; i++) {
-    FreeEXRHeader(exr_headers[i]);  // free content
-    free(exr_headers[i]);           // free pointer
+    FreeEXRHeader(exr_headers[static_cast<size_t>(i)]);  // free content
+    free(exr_headers[static_cast<size_t>(i)]);           // free pointer
   }
   free(exr_headers);
 }
@@ -541,23 +541,23 @@ TEST_CASE("Beachbal multiparts", "[Load]") {
 
     REQUIRE(10 == num_exr_headers);
 
-    std::vector<EXRImage> images(num_exr_headers);
-    for (int i = 0; i < num_exr_headers; i++) {
-      InitEXRImage(&images[i]);
+    std::vector<EXRImage> images(static_cast<size_t>(num_exr_headers));
+    for (int j = 0; j < num_exr_headers; j++) {
+      InitEXRImage(&images[static_cast<size_t>(j)]);
     }
 
     ret = LoadEXRMultipartImageFromFile(
         &images.at(0), const_cast<const EXRHeader**>(exr_headers),
-        num_exr_headers, filepath.c_str(), &err);
+        static_cast<unsigned int>(num_exr_headers), filepath.c_str(), &err);
     REQUIRE(TINYEXR_SUCCESS == ret);
 
-    for (int i = 0; i < num_exr_headers; i++) {
-      FreeEXRImage(&images.at(i));
+    for (int j = 0; j < num_exr_headers; j++) {
+      FreeEXRImage(&images.at(static_cast<size_t>(j)));
     }
 
-    for (int i = 0; i < num_exr_headers; i++) {
-      FreeEXRHeader(exr_headers[i]);
-      free(exr_headers[i]);
+    for (int j = 0; j < num_exr_headers; j++) {
+      FreeEXRHeader(exr_headers[static_cast<size_t>(j)]);
+      free(exr_headers[static_cast<size_t>(j)]);
     }
     free(exr_headers);
   }
@@ -707,13 +707,13 @@ TEST_CASE("Compressed is smaller than uncompressed", "[Issue40]") {
       images[0],
   };
 
-  image.images = (unsigned char**)image_ptr;
+  image.images = const_cast<unsigned char**>(reinterpret_cast<const unsigned char*const *>(image_ptr));
   image.width = 1;
   image.height = 1;
 
   header.num_channels = 3;
   header.channels =
-      (EXRChannelInfo*)malloc(sizeof(EXRChannelInfo) * header.num_channels);
+      static_cast<EXRChannelInfo*>(malloc(sizeof(EXRChannelInfo) * static_cast<size_t>(header.num_channels)));
   // Must be BGR(A) order, since most of EXR viewers expect this channel order.
   strncpy(header.channels[0].name, "B", 255);
   header.channels[0].name[strlen("B")] = '\0';
@@ -722,9 +722,9 @@ TEST_CASE("Compressed is smaller than uncompressed", "[Issue40]") {
   strncpy(header.channels[2].name, "R", 255);
   header.channels[2].name[strlen("R")] = '\0';
 
-  header.pixel_types = (int*)malloc(sizeof(int) * header.num_channels);
+  header.pixel_types = static_cast<int*>(malloc(sizeof(int) * static_cast<size_t>(header.num_channels)));
   header.requested_pixel_types =
-      (int*)malloc(sizeof(int) * header.num_channels);
+      static_cast<int*>(malloc(sizeof(int) * static_cast<size_t>(header.num_channels)));
   for (int i = 0; i < header.num_channels; i++) {
     header.pixel_types[i] =
         TINYEXR_PIXELTYPE_FLOAT;  // pixel type of input image
