@@ -11648,7 +11648,7 @@ static int InitTileOffsets(OffsetData& offset_data,
 
   case TINYEXR_TILE_RIPMAP_LEVELS:
 
-    offset_data.offsets.resize(offset_data.num_x_levels * offset_data.num_y_levels);
+    offset_data.offsets.resize(static_cast<size_t>(offset_data.num_x_levels) * static_cast<size_t>(offset_data.num_y_levels));
 
     for (int ly = 0; ly < offset_data.num_y_levels; ++ly) {
       for (int lx = 0; lx < offset_data.num_x_levels; ++lx) {
