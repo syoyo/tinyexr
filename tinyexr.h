@@ -10951,7 +10951,7 @@ struct OffsetData {
   int	num_y_levels;
 };
 
-int LevelIndex(int lx, int ly, int tile_level_mode, int num_x_levels) {
+static int LevelIndex(int lx, int ly, int tile_level_mode, int num_x_levels) {
   switch (tile_level_mode) {
   case TINYEXR_TILE_ONE_LEVEL:
     return 0;
@@ -10971,7 +10971,7 @@ int LevelIndex(int lx, int ly, int tile_level_mode, int num_x_levels) {
 static int LevelSize(int toplevel_size, int level, int tile_rounding_mode) {
   assert(level >= 0);
 
-  int b = (int)(1u << (unsigned)level);
+  int b = int(1u << static_cast<unsigned int>(level));
   int level_size = toplevel_size / b;
 
   if (tile_rounding_mode == TINYEXR_TILE_ROUND_UP && level_size * b < toplevel_size)
@@ -10989,9 +10989,9 @@ static int DecodeTiledLevel(EXRImage* exr_image, const EXRHeader* exr_header,
   int num_channels = exr_header->num_channels;
 
   int level_index = LevelIndex(exr_image->level_x, exr_image->level_y, exr_header->tile_level_mode, offset_data.num_x_levels);
-  int num_y_tiles = (int)offset_data.offsets[level_index].size();
+  int num_y_tiles = int(offset_data.offsets[size_t(level_index)].size());
   assert(num_y_tiles);
-  int num_x_tiles = (int)offset_data.offsets[level_index][0].size();
+  int num_x_tiles = int(offset_data.offsets[size_t(level_index)][0].size());
   assert(num_x_tiles);
   int num_tiles = num_x_tiles * num_y_tiles;
 
@@ -11023,7 +11023,7 @@ static int DecodeTiledLevel(EXRImage* exr_image, const EXRHeader* exr_header,
         while ((tile_idx = tile_count++) < num_tiles) {
 
 #else
-  for (size_t tile_idx = 0; tile_idx < num_tiles; tile_idx++) {
+  for (size_t tile_idx = 0; tile_idx < size_t(num_tiles); tile_idx++) {
 #endif
     // Allocate memory for each tile.
     exr_image->tiles[tile_idx].images = tinyexr::AllocateImage(
@@ -11031,12 +11031,12 @@ static int DecodeTiledLevel(EXRImage* exr_image, const EXRHeader* exr_header,
       exr_header->requested_pixel_types, exr_header->tile_size_x,
       exr_header->tile_size_y);
 
-    size_t x_tile = tile_idx % num_x_tiles;
-    size_t y_tile = tile_idx / num_x_tiles;
+    size_t x_tile = tile_idx % size_t(num_x_tiles);
+    size_t y_tile = tile_idx / size_t(num_x_tiles);
     // 16 byte: tile coordinates
     // 4 byte : data size
     // ~      : data(uncompressed or compressed)
-    tinyexr::tinyexr_uint64 offset = offset_data.offsets[level_index][y_tile][x_tile];
+    tinyexr::tinyexr_uint64 offset = offset_data.offsets[size_t(level_index)][y_tile][x_tile];
     if (offset + sizeof(int) * 5 > size) {
       // TODO(LTE): atomic
       if (err) {
@@ -11581,8 +11581,8 @@ static void CalculateNumTiles(std::vector<int>& numTiles,
   int toplevel_size,
   int size,
   int tile_rounding_mode) {
-  for (unsigned i = 0; i < numTiles.size(); i++) {
-    int l = LevelSize(toplevel_size, i, tile_rounding_mode);
+  for (unsigned int i = 0; i < numTiles.size(); i++) {
+    int l = LevelSize(toplevel_size, int(i), tile_rounding_mode);
     assert(l <= std::numeric_limits<int>::max() - size + 1);
 
     numTiles[i] = (l + size - 1) / size;
@@ -11600,8 +11600,8 @@ static void PrecalculateTileInfo(std::vector<int>& num_x_tiles,
   int num_x_levels = CalculateNumXLevels(exr_header);
   int num_y_levels = CalculateNumYLevels(exr_header);
 
-  num_x_tiles.resize(num_x_levels);
-  num_y_tiles.resize(num_y_levels);
+  num_x_tiles.resize(size_t(num_x_levels));
+  num_y_tiles.resize(size_t(num_y_levels));
 
   CalculateNumTiles(num_x_tiles,
     max_x - min_x + 1,
@@ -11614,7 +11614,7 @@ static void PrecalculateTileInfo(std::vector<int>& num_x_tiles,
     exr_header->tile_rounding_mode);
 }
 
-static void InitSingleResolutionOffsets(OffsetData& offset_data, const EXRHeader* exr_header, size_t num_blocks) {
+static void InitSingleResolutionOffsets(OffsetData& offset_data, size_t num_blocks) {
   offset_data.offsets.resize(1);
   offset_data.offsets[0].resize(1);
   offset_data.offsets[0][0].resize(num_blocks);
@@ -11634,13 +11634,13 @@ static int InitTileOffsets(OffsetData& offset_data,
   case TINYEXR_TILE_ONE_LEVEL:
   case TINYEXR_TILE_MIPMAP_LEVELS:
 
-    offset_data.offsets.resize(offset_data.num_x_levels);
+    offset_data.offsets.resize(size_t(offset_data.num_x_levels));
 
     for (unsigned int l = 0; l < offset_data.offsets.size(); ++l) {
-      offset_data.offsets[l].resize(num_y_tiles[l]);
+      offset_data.offsets[l].resize(size_t(num_y_tiles[l]));
 
       for (unsigned int dy = 0; dy < offset_data.offsets[l].size(); ++dy) {
-        offset_data.offsets[l][dy].resize(num_x_tiles[l]);
+        offset_data.offsets[l][dy].resize(size_t(num_x_tiles[l]));
         num_tile_blocks += num_x_tiles[l];
       }
     }
@@ -11653,11 +11653,11 @@ static int InitTileOffsets(OffsetData& offset_data,
     for (int ly = 0; ly < offset_data.num_y_levels; ++ly) {
       for (int lx = 0; lx < offset_data.num_x_levels; ++lx) {
         int l = ly * offset_data.num_x_levels + lx;
-        offset_data.offsets[l].resize(num_y_tiles[ly]);
+        offset_data.offsets[size_t(l)].resize(size_t(num_y_tiles[size_t(ly)]));
 
-        for (size_t dy = 0; dy < offset_data.offsets[l].size(); ++dy) {
-          offset_data.offsets[l][dy].resize(num_x_tiles[lx]);
-          num_tile_blocks += num_x_tiles[lx];
+        for (size_t dy = 0; dy < offset_data.offsets[size_t(l)].size(); ++dy) {
+          offset_data.offsets[size_t(l)][dy].resize(size_t(num_x_tiles[size_t(lx)]));
+          num_tile_blocks += num_x_tiles[size_t(lx)];
         }
       }
     }
@@ -11692,7 +11692,7 @@ static bool isValidTile(const EXRHeader* exr_header,
         ly == 0 &&
         offset_data.offsets.size() > 0 &&
         offset_data.offsets[0].size() > static_cast<size_t>(dy) &&
-        offset_data.offsets[0][dy].size() > static_cast<size_t>(dx)) {
+        offset_data.offsets[0][size_t(dy)].size() > static_cast<size_t>(dx)) {
       return true;
     }
 
@@ -11703,8 +11703,8 @@ static bool isValidTile(const EXRHeader* exr_header,
     if (lx < num_x_levels &&
         ly < num_y_levels &&
         offset_data.offsets.size() > static_cast<size_t>(lx) &&
-        offset_data.offsets[lx].size() > static_cast<size_t>(dy) &&
-        offset_data.offsets[lx][dy].size() > static_cast<size_t>(dx)) {
+        offset_data.offsets[size_t(lx)].size() > static_cast<size_t>(dy) &&
+        offset_data.offsets[size_t(lx)][size_t(dy)].size() > static_cast<size_t>(dx)) {
       return true;
     }
 
@@ -11717,7 +11717,7 @@ static bool isValidTile(const EXRHeader* exr_header,
        ly < num_y_levels &&
        (offset_data.offsets.size() > idx) &&
        offset_data.offsets[idx].size() > static_cast<size_t>(dy) &&
-       offset_data.offsets[idx][dy].size() > static_cast<size_t>(dx)) {
+       offset_data.offsets[idx][size_t(dy)].size() > static_cast<size_t>(dx)) {
       return true;
     }
   }
@@ -11732,17 +11732,23 @@ static bool isValidTile(const EXRHeader* exr_header,
   return false;
 }
 
-static void ReconstructTileOffsets(OffsetData& offset_data,
+static bool ReconstructTileOffsets(OffsetData& offset_data,
                                    const EXRHeader* exr_header,
                                    const unsigned char* head, const unsigned char* marker, const size_t size,
                                    bool isMultiPartFile,
                                    bool isDeep) {
   int numXLevels = offset_data.num_x_levels;
-  int numYLevels = offset_data.num_y_levels;
+  //int numYLevels = offset_data.num_y_levels;
   for (unsigned int l = 0; l < offset_data.offsets.size(); ++l) {
     for (unsigned int dy = 0; dy < offset_data.offsets[l].size(); ++dy) {
       for (unsigned int dx = 0; dx < offset_data.offsets[l][dy].size(); ++dx) {
-        tinyexr::tinyexr_uint64 tileOffset = marker - head;
+        tinyexr::tinyexr_uint64 tileOffset = static_cast<tinyexr::tinyexr_uint64>(marker - head);
+
+        // TODO: Add more out-of-bounds check
+
+        if (tileOffset >= size) {
+          return false;
+        }
 
         if (isMultiPartFile) {
           //int partNumber;
@@ -11793,14 +11799,17 @@ static void ReconstructTileOffsets(OffsetData& offset_data,
         }
 
         if (!isValidTile(exr_header, offset_data,
-          tileX, tileY, levelX, levelY))
-          return;
+          tileX, tileY, levelX, levelY)) {
+          return false;
+        }
 
-        int l = LevelIndex(levelX, levelY, exr_header->tile_level_mode, numXLevels);
-        offset_data.offsets[l][tileY][tileX] = tileOffset;
+        int lv = LevelIndex(levelX, levelY, exr_header->tile_level_mode, numXLevels);
+        offset_data.offsets[size_t(lv)][size_t(tileY)][size_t(tileX)] = tileOffset;
       }
     }
   }
+
+  return true;
 }
 
 // marker output is also
@@ -11808,9 +11817,9 @@ static int ReadOffsets(OffsetData& offset_data,
                        const unsigned char* head,
                        const unsigned char*& marker,
                        const size_t size,
-                       const EXRHeader* exr_header,
-                       bool isMultiPartFile,
-                       bool isDeep,
+                       //const EXRHeader* exr_header,
+                       //bool isMultiPartFile,
+                       //bool isDeep,
                        const char** err) {
   for (unsigned int l = 0; l < offset_data.offsets.size(); ++l) {
     for (unsigned int dy = 0; dy < offset_data.offsets[l].size(); ++dy) {
@@ -11894,14 +11903,14 @@ static int DecodeEXRImage(EXRImage *exr_image, const EXRHeader *exr_header,
   if (exr_header->chunk_count > 0 && (!exr_header->tiled || exr_header->tile_level_mode == TINYEXR_TILE_ONE_LEVEL)) {
     // Use `chunkCount` attribute.
     num_blocks = static_cast<size_t>(exr_header->chunk_count);
-    InitSingleResolutionOffsets(offset_data, exr_header, num_blocks);
+    InitSingleResolutionOffsets(offset_data, num_blocks);
   } else if (exr_header->tiled) {
     {
       std::vector<int> num_x_tiles, num_y_tiles;
       PrecalculateTileInfo(num_x_tiles, num_y_tiles, exr_header);
-      num_blocks = InitTileOffsets(offset_data, exr_header, num_x_tiles, num_y_tiles);
+      num_blocks = size_t(InitTileOffsets(offset_data, exr_header, num_x_tiles, num_y_tiles));
       if (exr_header->chunk_count > 0) {
-        if (exr_header->chunk_count != num_blocks) {
+        if (exr_header->chunk_count != int(num_blocks)) {
           tinyexr::SetErrorMessage("Invalid offset table size.", err);
           return TINYEXR_ERROR_INVALID_DATA;
         }
@@ -11909,14 +11918,19 @@ static int DecodeEXRImage(EXRImage *exr_image, const EXRHeader *exr_header,
     }
 
     int ret = ReadOffsets(offset_data, head, marker, size,
-                          exr_header,
-                          exr_header->multipart, exr_header->non_image,
+                          //exr_header,
+                          //exr_header->multipart, exr_header->non_image,
                           err);
     if (ret != TINYEXR_SUCCESS) return ret;
     if (IsAnyOffsetsAreInvalid(offset_data)) {
-      ReconstructTileOffsets(offset_data, exr_header,
+      bool reconstructed = ReconstructTileOffsets(offset_data, exr_header,
         head, marker, size,
         exr_header->multipart, exr_header->non_image);
+
+      if (!reconstructed) {
+        tinyexr::SetErrorMessage("Failed to reconstruct tile offsets.", err);
+        return TINYEXR_ERROR_INVALID_DATA;
+      }
     }
   } else {
     num_blocks = static_cast<size_t>(data_height) /
@@ -11926,7 +11940,7 @@ static int DecodeEXRImage(EXRImage *exr_image, const EXRHeader *exr_header,
       num_blocks++;
     }
 
-    InitSingleResolutionOffsets(offset_data, exr_header, num_blocks);
+    InitSingleResolutionOffsets(offset_data, num_blocks);
   }
 
   // validate shit here son!  DO NOT SUBMIT:
@@ -14052,7 +14066,7 @@ int LoadEXRMultipartImageFromMemory(EXRImage *exr_images,
     chunk_offset_table_list.resize(chunk_offset_table_list.size() + 1);
     tinyexr::OffsetData& offset_data = chunk_offset_table_list.back();
     if (!exr_headers[i]->tiled || exr_headers[i]->tile_level_mode == TINYEXR_TILE_ONE_LEVEL) {
-      tinyexr::InitSingleResolutionOffsets(offset_data, exr_headers[i], exr_headers[i]->chunk_count);
+      tinyexr::InitSingleResolutionOffsets(offset_data, size_t(exr_headers[i]->chunk_count));
       std::vector<tinyexr::tinyexr_uint64>& offset_table = offset_data.offsets[0][0];
 
       for (size_t c = 0; c < offset_table.size(); c++) {
@@ -14091,7 +14105,7 @@ int LoadEXRMultipartImageFromMemory(EXRImage *exr_images,
               return TINYEXR_ERROR_INVALID_DATA;
             }
             offset_data.offsets[l][dy][dx] = offset + 4; // +4 to skip 'part number'
-            marker += sizeof(tinyexr::tinyexr_uint64);  // = 8 
+            marker += sizeof(tinyexr::tinyexr_uint64);  // = 8
           }
         }
       }
