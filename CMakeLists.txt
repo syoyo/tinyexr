@@ -46,20 +46,17 @@ if (TINYEXR_BUILD_SAMPLE)
   if (WIN32)
     target_compile_definitions(${SAMPLE_TARGET} PUBLIC UNICODE)
     target_compile_definitions(${SAMPLE_TARGET} PUBLIC _UNICODE)
+
+    # Set ${SAMPLE_TARGET} as a startup project for VS IDE
+    set_property(DIRECTORY PROPERTY VS_STARTUP_PROJECT ${SAMPLE_TARGET})
+
+    # For easier debugging in VS IDE(cmake 3.8.0 or later required) Set working
+    # directory to ${BUILD_TARGET} git repo root.
+    if(CMAKE_VERSION VERSION_GREATER 3.8.0)
+      set_target_properties(${SAMPLE_TARGET}
+              PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY
+              "${CMAKE_CURRENT_SOURCE_DIR}")
+    endif()
   endif(WIN32)
 
 endif (TINYEXR_BUILD_SAMPLE)
-
-# [VisualStudio]
-if(WIN32)
-  # Set ${SAMPLE_TARGET} as a startup project for VS IDE
-  set_property(DIRECTORY PROPERTY VS_STARTUP_PROJECT ${SAMPLE_TARGET})
-
-  # For easier debugging in VS IDE(cmake 3.8.0 or later required) Set working
-  # directory to ${BUILD_TARGET} git repo root.
-  if(CMAKE_VERSION VERSION_GREATER 3.8.0)
-    set_target_properties(${SAMPLE_TARGET}
-                          PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY
-                                     "${CMAKE_CURRENT_SOURCE_DIR}")
-  endif()
-endif()
