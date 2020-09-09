@@ -1,7 +1,7 @@
 #ifndef TINYEXR_H_
 #define TINYEXR_H_
 /*
-Copyright (c) 2014 - 2019, Syoyo Fujita and many contributors.
+Copyright (c) 2014 - 2020, Syoyo Fujita and many contributors.
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
