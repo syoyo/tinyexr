@@ -11090,7 +11090,7 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
                  sizeof(int));  // 16 = sizeof(tile_coordinates)
           tinyexr::swap4(&data_len);
 
-          if (data_len < 4 || size_t(data_len) > data_size) {
+          if (data_len < 2 || size_t(data_len) > data_size) {
             // TODO(LTE): atomic
             if (err) {
               (*err) += "Insufficient data length.\n";
