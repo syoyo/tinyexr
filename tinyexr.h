@@ -12807,7 +12807,7 @@ int LoadDeepEXR(DeepImage *deep_image, const char *filename, const char **err) {
   {
     // ver 2.0, scanline, deep bit on(0x800)
     // must be [2, 0, 0, 0]
-    if (marker[0] != 2 || marker[1] != 8 || marker[2] != 0 || marker[3] != 0) {
+    if (marker[0] != 2 || marker[1] != 0 || marker[2] != 0 || marker[3] != 0) {
       tinyexr::SetErrorMessage("Unsupported version or scanline", err);
       return TINYEXR_ERROR_UNSUPPORTED_FORMAT;
     }
