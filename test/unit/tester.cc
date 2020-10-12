@@ -22,7 +22,7 @@
 #include "../../tinyexr.h"
 
 // uncomment it to write out memory-saved images to files
-#define DUMP_IMAGES
+//#define DUMP_IMAGES
 
 // path to https://github.com/openexr/openexr-images
 // TODO(syoyo): Read openexr-images path from command argument.
