@@ -437,6 +437,33 @@ TEST_CASE("Tiles/Ocean.exr", "[Load]") {
   FreeEXRImage(&image);
 }
 
+TEST_CASE("MultiResolution/Bonita.exr", "[Load]") {
+  EXRVersion exr_version;
+  std::string filepath = GetPath("MultiResolution/Bonita.exr");
+  std::cout << "Loading" << filepath << std::endl;
+  int ret = ParseEXRVersionFromFile(&exr_version, filepath.c_str());
+  REQUIRE(TINYEXR_SUCCESS == ret);
+  REQUIRE(true == exr_version.tiled);
+  REQUIRE(false == exr_version.non_image);
+  REQUIRE(false == exr_version.multipart);
+
+  EXRVersion version;
+  EXRHeader header;
+  EXRImage image;
+  InitEXRHeader(&header);
+  InitEXRImage(&image);
+
+  const char* err;
+  ret = ParseEXRHeaderFromFile(&header, &exr_version, filepath.c_str(), &err);
+  REQUIRE(TINYEXR_SUCCESS == ret);
+
+  ret = LoadEXRImageFromFile(&image, &header, filepath.c_str(), &err);
+  REQUIRE(TINYEXR_SUCCESS == ret);
+
+  FreeEXRHeader(&header);
+  FreeEXRImage(&image);
+}
+
 #if 0  // Spirals.exr uses pxr24 compression
 TEST_CASE("Tiles/Spirals.exr", "[Load]") {
   EXRVersion exr_version;
@@ -1112,4 +1139,32 @@ TEST_CASE("Regression: Issue53|Image|Missing Layer", "[issue53]") {
   if (err) {
     FreeEXRErrorMessage(err);
   }
+}
+
+TEST_CASE("Regression: PR150|Read|1x1 1xhalf", "[pr150]") {
+  std::string filepath = "./regression/tiled_half_1x1_alpha.exr";
+
+  EXRVersion exr_version;
+  std::cout << "Loading" << filepath << std::endl;
+  int ret = ParseEXRVersionFromFile(&exr_version, filepath.c_str());
+  REQUIRE(TINYEXR_SUCCESS == ret);
+  REQUIRE(true == exr_version.tiled);
+  REQUIRE(false == exr_version.non_image);
+  REQUIRE(false == exr_version.multipart);
+
+  EXRVersion version;
+  EXRHeader header;
+  EXRImage image;
+  InitEXRHeader(&header);
+  InitEXRImage(&image);
+
+  const char* err;
+  ret = ParseEXRHeaderFromFile(&header, &exr_version, filepath.c_str(), &err);
+  REQUIRE(TINYEXR_SUCCESS == ret);
+
+  ret = LoadEXRImageFromFile(&image, &header, filepath.c_str(), &err);
+  REQUIRE(TINYEXR_SUCCESS == ret);
+
+  FreeEXRHeader(&header);
+  FreeEXRImage(&image);
 }
