@@ -163,9 +163,13 @@ extern "C" {
 
 typedef struct _EXRVersion {
   int version;    // this must be 2
-  int tiled;      // tile format image
+  // tile format image;
+  // not zero for only a single-part "normal" tiled file (according to spec.)
+  int tiled;      
   int long_name;  // long name attribute
-  int non_image;  // deep image(EXR 2.0)
+  // deep image(EXR 2.0);
+  // for a multi-part file, indicates that at least one part is of type deep* (according to spec.)
+  int non_image;  
   int multipart;  // multi-part(EXR 2.0)
 } EXRVersion;
 
@@ -223,6 +227,8 @@ typedef struct _EXRHeader {
   int tile_rounding_mode;
 
   int long_name;
+  // for a single-part file, agree with the version field bit 11
+  // for a multi-part file, it is consistent with the type of part
   int non_image;
   int multipart;
   unsigned int header_len;
@@ -245,7 +251,11 @@ typedef struct _EXRHeader {
                                // ParseEXRHeaderFrom(Meomory|File), then users
                                // can edit it(only valid for HALF pixel type
                                // channel)
-
+  // name attribute required for multipart files;
+  // must be unique and non empty (according to spec.);
+  // use EXRSetNameAttr for setting value;
+  // max 255 character allowed - excluding terminating zero
+  char name[256];
 } EXRHeader;
 
 typedef struct _EXRMultiPartHeader {
@@ -344,8 +354,14 @@ extern int SaveEXR(const float *data, const int width, const int height,
                    const int components, const int save_as_fp16,
                    const char *filename, const char **err);
 
+// Returns the number of resolution levels of the image (including the base)
+extern int EXRNumLevels(const EXRImage* exr_image);
+
 // Initialize EXRHeader struct
 extern void InitEXRHeader(EXRHeader *exr_header);
+
+// Set name attribute of EXRHeader struct (it makes a copy)
+extern void EXRSetNameAttr(EXRHeader *exr_header, const char* name);
 
 // Initialize EXRImage struct
 extern void InitEXRImage(EXRImage *exr_image);
@@ -470,6 +486,18 @@ extern size_t SaveEXRImageToMemory(const EXRImage *image,
                                    const EXRHeader *exr_header,
                                    unsigned char **memory, const char **err);
 
+// Saves multi-channel, multi-frame OpenEXR image to a memory.
+// Image is compressed using EXRImage.compression value.
+// File global attributes (eg. display_window) must be set in the first header.
+// Return the number of bytes if success.
+// Return zero and will set error string in `err` when there's an
+// error.
+// When there was an error message, Application must free `err` with
+// FreeEXRErrorMessage()
+extern size_t SaveEXRMultipartImageToMemory(const EXRImage *images,
+                                            const EXRHeader **exr_headers,
+                                            unsigned int num_parts,
+                                            unsigned char **memory, const char **err);
 // Loads single-frame OpenEXR deep image.
 // Application must free memory of variables in DeepImage(image, offset_table)
 // Returns negative value and may set error string in `err` when there's an
@@ -535,6 +563,7 @@ extern int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
 #include <limits>
 #include <string>
 #include <vector>
+#include <set>
 
 #if __cplusplus > 199711L
 // C++11
@@ -7480,6 +7509,11 @@ struct HeaderInfo {
 
   int compression_type;
 
+  // required for multi-part or non-image files
+  std::string name;
+  // required for multi-part or non-image files
+  std::string type;
+
   void clear() {
     channels.clear();
     attributes.clear();
@@ -7509,6 +7543,9 @@ struct HeaderInfo {
 
     header_len = 0;
     compression_type = 0;
+
+    name.clear();
+    type.clear();
   }
 };
 
@@ -9809,6 +9846,9 @@ static bool CompressZfp(std::vector<unsigned char> *outBuf,
 // -----------------------------------------------------------------
 //
 
+// heuristics
+#define TINYEXR_DIMENSION_THRESHOLD (1024 * 8192)
+
 // TODO(syoyo): Refactor function arguments.
 static bool DecodePixelData(/* out */ unsigned char **out_images,
                             const int *requested_pixel_types,
@@ -10587,6 +10627,11 @@ static int ParseEXRHeader(HeaderInfo *info, bool *empty_header,
   bool has_pixel_aspect_ratio = false;
   bool has_screen_window_center = false;
   bool has_screen_window_width = false;
+  bool has_name = false;
+  bool has_type = false;
+
+  info->name.clear();
+  info->type.clear();
 
   info->data_window.min_x = 0;
   info->data_window.min_y = 0;
@@ -10638,7 +10683,7 @@ static int ParseEXRHeader(HeaderInfo *info, bool *empty_header,
     size -= marker_size;
 
     // For a multipart file, the version field 9th bit is 0.
-    if ((version->tiled || version->multipart) && attr_name.compare("tiles") == 0) {
+    if ((version->tiled || version->multipart || version->non_image) && attr_name.compare("tiles") == 0) {
       unsigned int x_size, y_size;
       unsigned char tile_mode;
       assert(data.size() == 9);
@@ -10781,6 +10826,22 @@ static int ParseEXRHeader(HeaderInfo *info, bool *empty_header,
         memcpy(&info->chunk_count, &data.at(0), sizeof(int));
         tinyexr::swap4(&info->chunk_count);
       }
+    } else if (attr_name.compare("name") == 0) {
+      if (!data.empty() && data[0]) {
+        data.push_back(0);
+        size_t len = strlen(reinterpret_cast<const char*>(&data[0]));
+        info->name.resize(len);
+        info->name.assign(reinterpret_cast<const char*>(&data[0]), len);
+        has_name = true;
+      }
+    } else if (attr_name.compare("type") == 0) {
+      if (!data.empty() && data[0]) {
+        data.push_back(0);
+        size_t len = strlen(reinterpret_cast<const char*>(&data[0]));
+        info->type.resize(len);
+        info->type.assign(reinterpret_cast<const char*>(&data[0]), len);
+        has_type = true;
+      }
     } else {
       // Custom attribute(up to TINYEXR_MAX_CUSTOM_ATTRIBUTES)
       if (info->attributes.size() < TINYEXR_MAX_CUSTOM_ATTRIBUTES) {
@@ -10845,6 +10906,17 @@ static int ParseEXRHeader(HeaderInfo *info, bool *empty_header,
              << std::endl;
     }
 
+    if (version->multipart || version->non_image) {
+      if (!has_name) {
+        ss_err << "\"name\" attribute not found in the header."
+          << std::endl;
+      }
+      if (!has_type) {
+        ss_err << "\"type\" attribute not found in the header."
+          << std::endl;
+      }
+    }
+
     if (!(ss_err.str().empty())) {
       if (err) {
         (*err) += ss_err.str();
@@ -10875,12 +10947,29 @@ static void ConvertHeader(EXRHeader *exr_header, const HeaderInfo &info) {
   exr_header->data_window.max_y = info.data_window.max_y;
   exr_header->line_order = info.line_order;
   exr_header->compression_type = info.compression_type;
-
   exr_header->tiled = info.tiled;
   exr_header->tile_size_x = info.tile_size_x;
   exr_header->tile_size_y = info.tile_size_y;
   exr_header->tile_level_mode = info.tile_level_mode;
   exr_header->tile_rounding_mode = info.tile_rounding_mode;
+
+  EXRSetNameAttr(exr_header, info.name.c_str());
+
+  if (!info.type.empty()) {
+    if (info.type == "scanlineimage") {
+      assert(!exr_header->tiled);
+    } else if (info.type == "tiledimage") {
+      assert(exr_header->tiled);
+    } else if (info.type == "deeptile") {
+      exr_header->non_image = 1;
+      assert(exr_header->tiled);
+    } else if (info.type == "deepscanline") {
+      exr_header->non_image = 1;
+      assert(!exr_header->tiled);
+    } else {
+      assert(false);
+    }
+  }
 
   exr_header->num_channels = static_cast<int>(info.channels.size());
 
@@ -10943,7 +11032,6 @@ static void ConvertHeader(EXRHeader *exr_header, const HeaderInfo &info) {
   exr_header->header_len = info.header_len;
 }
 
-
 struct OffsetData {
   OffsetData() : num_x_levels(0), num_y_levels(0) {}
   std::vector<std::vector<std::vector <tinyexr::tinyexr_uint64> > > offsets;
@@ -10996,6 +11084,9 @@ static int DecodeTiledLevel(EXRImage* exr_image, const EXRHeader* exr_header,
   int num_tiles = num_x_tiles * num_y_tiles;
 
   int err_code = TINYEXR_SUCCESS;
+  // Although the spec says : "...the data window is subdivided into an array of smaller rectangles...",
+  // the IlmImf library allows the dimensions of the tile to be larger (or equal) than the dimensions of the data window.
+#if 0
   if ((exr_header->tile_size_x > exr_image->width || exr_header->tile_size_y > exr_image->height) &&
     exr_image->level_x == 0 && exr_image->level_y == 0) {
     if (err) {
@@ -11003,6 +11094,7 @@ static int DecodeTiledLevel(EXRImage* exr_image, const EXRHeader* exr_header,
     }
     err_code = TINYEXR_ERROR_INVALID_DATA;
   }
+#endif
   exr_image->tiles = static_cast<EXRTile*>(
     calloc(sizeof(EXRTile), static_cast<size_t>(num_tiles)));
 
@@ -11072,7 +11164,7 @@ static int DecodeTiledLevel(EXRImage* exr_image, const EXRHeader* exr_header,
       sizeof(int));  // 16 = sizeof(tile_coordinates)
     tinyexr::swap4(&data_len);
 
-          if (data_len < 2 || size_t(data_len) > data_size) {
+    if (data_len < 2 || size_t(data_len) > data_size) {
       // TODO(LTE): atomic
       if (err) {
         (*err) += "Insufficient data length.\n";
@@ -11170,8 +11262,7 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
 
   // Do not allow too large data_width and data_height. header invalid?
   {
-    const int threshold = 1024 * 8192;  // heuristics
-    if ((data_width > threshold) || (data_height > threshold)) {
+    if ((data_width > TINYEXR_DIMENSION_THRESHOLD) || (data_height > TINYEXR_DIMENSION_THRESHOLD)) {
       if (err) {
         std::stringstream ss;
         ss << "data_with or data_height too large. data_width: " << data_width
@@ -11180,6 +11271,18 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
         (*err) += ss.str();
       }
       return TINYEXR_ERROR_INVALID_DATA;
+    }
+    if (exr_header->tiled) {
+      if ((exr_header->tile_size_x > TINYEXR_DIMENSION_THRESHOLD) || (exr_header->tile_size_y > TINYEXR_DIMENSION_THRESHOLD)) {
+        if (err) {
+          std::stringstream ss;
+          ss << "tile with or tile height too large. tile width: " << exr_header->tile_size_x
+            << ", "
+            << "tile height = " << exr_header->tile_size_y << std::endl;
+          (*err) += ss.str();
+        }
+        return TINYEXR_ERROR_INVALID_DATA;
+      }
     }
   }
 
@@ -11614,7 +11717,7 @@ static void PrecalculateTileInfo(std::vector<int>& num_x_tiles,
     exr_header->tile_rounding_mode);
 }
 
-static void InitSingleResolutionOffsets(OffsetData& offset_data, const EXRHeader* exr_header, size_t num_blocks) {
+static void InitSingleResolutionOffsets(OffsetData& offset_data, size_t num_blocks) {
   offset_data.offsets.resize(1);
   offset_data.offsets[0].resize(1);
   offset_data.offsets[0][0].resize(num_blocks);
@@ -11628,12 +11731,12 @@ static int InitTileOffsets(OffsetData& offset_data,
   const std::vector<int>& num_x_tiles,
   const std::vector<int>& num_y_tiles) {
   int num_tile_blocks = 0;
-  offset_data.num_x_levels = static_cast<int>(num_x_tiles.size());// numXLevels;
+  offset_data.num_x_levels = static_cast<int>(num_x_tiles.size());
   offset_data.num_y_levels = static_cast<int>(num_y_tiles.size());
   switch (exr_header->tile_level_mode) {
   case TINYEXR_TILE_ONE_LEVEL:
   case TINYEXR_TILE_MIPMAP_LEVELS:
-
+    assert(offset_data.num_x_levels == offset_data.num_y_levels);
     offset_data.offsets.resize(offset_data.num_x_levels);
 
     for (unsigned int l = 0; l < offset_data.offsets.size(); ++l) {
@@ -11809,8 +11912,8 @@ static int ReadOffsets(OffsetData& offset_data,
                        const unsigned char*& marker,
                        const size_t size,
                        const EXRHeader* exr_header,
-                       bool isMultiPartFile,
-                       bool isDeep,
+                       //bool isMultiPartFile,
+                       //bool isDeep,
                        const char** err) {
   for (unsigned int l = 0; l < offset_data.offsets.size(); ++l) {
     for (unsigned int dy = 0; dy < offset_data.offsets[l].size(); ++dy) {
@@ -11875,13 +11978,23 @@ static int DecodeEXRImage(EXRImage *exr_image, const EXRHeader *exr_header,
 
   // Do not allow too large data_width and data_height. header invalid?
   {
-    const int threshold = 1024 * 8192;  // heuristics
-    if (data_width > threshold) {
+    if (data_width > TINYEXR_DIMENSION_THRESHOLD) {
       tinyexr::SetErrorMessage("data width too large.", err);
       return TINYEXR_ERROR_INVALID_DATA;
     }
-    if (data_height > threshold) {
+    if (data_height > TINYEXR_DIMENSION_THRESHOLD) {
       tinyexr::SetErrorMessage("data height too large.", err);
+      return TINYEXR_ERROR_INVALID_DATA;
+    }
+  }
+
+  if (exr_header->tiled) {
+    if (exr_header->tile_size_x > TINYEXR_DIMENSION_THRESHOLD) {
+      tinyexr::SetErrorMessage("tile width too large.", err);
+      return TINYEXR_ERROR_INVALID_DATA;
+    }
+    if (exr_header->tile_size_y > TINYEXR_DIMENSION_THRESHOLD) {
+      tinyexr::SetErrorMessage("tile height too large.", err);
       return TINYEXR_ERROR_INVALID_DATA;
     }
   }
@@ -11891,11 +12004,7 @@ static int DecodeEXRImage(EXRImage *exr_image, const EXRHeader *exr_header,
   size_t num_blocks = 0;
   // For a multi-resolution image, the size of the offset table will be calculated from the other attributes of the header.
   // If chunk_count > 0 then chunk_count must be equal to the calculated tile count.
-  if (exr_header->chunk_count > 0 && (!exr_header->tiled || exr_header->tile_level_mode == TINYEXR_TILE_ONE_LEVEL)) {
-    // Use `chunkCount` attribute.
-    num_blocks = static_cast<size_t>(exr_header->chunk_count);
-    InitSingleResolutionOffsets(offset_data, exr_header, num_blocks);
-  } else if (exr_header->tiled) {
+  if (exr_header->tiled) {
     {
       std::vector<int> num_x_tiles, num_y_tiles;
       PrecalculateTileInfo(num_x_tiles, num_y_tiles, exr_header);
@@ -11910,7 +12019,7 @@ static int DecodeEXRImage(EXRImage *exr_image, const EXRHeader *exr_header,
 
     int ret = ReadOffsets(offset_data, head, marker, size,
                           exr_header,
-                          exr_header->multipart, exr_header->non_image,
+                          //exr_header->multipart, exr_header->non_image,
                           err);
     if (ret != TINYEXR_SUCCESS) return ret;
     if (IsAnyOffsetsAreInvalid(offset_data)) {
@@ -11918,6 +12027,10 @@ static int DecodeEXRImage(EXRImage *exr_image, const EXRHeader *exr_header,
         head, marker, size,
         exr_header->multipart, exr_header->non_image);
     }
+  } else if (exr_header->chunk_count > 0) {
+    // Use `chunkCount` attribute.
+    num_blocks = static_cast<size_t>(exr_header->chunk_count);
+    InitSingleResolutionOffsets(offset_data, num_blocks);
   } else {
     num_blocks = static_cast<size_t>(data_height) /
       static_cast<size_t>(num_scanline_blocks);
@@ -11926,12 +12039,12 @@ static int DecodeEXRImage(EXRImage *exr_image, const EXRHeader *exr_header,
       num_blocks++;
     }
 
-    InitSingleResolutionOffsets(offset_data, exr_header, num_blocks);
+    InitSingleResolutionOffsets(offset_data, num_blocks);
   }
 
   // validate shit here son!  DO NOT SUBMIT:
 
-  if (!exr_header->tiled || (exr_header->chunk_count > 0 && exr_header->tile_level_mode == TINYEXR_TILE_ONE_LEVEL)) {
+  if (!exr_header->tiled) {
     std::vector<tinyexr::tinyexr_uint64>& offsets = offset_data.offsets[0][0];
     for (size_t y = 0; y < num_blocks; y++) {
       tinyexr::tinyexr_uint64 offset;
@@ -12382,6 +12495,9 @@ int ParseEXRHeaderFromMemory(EXRHeader *exr_header, const EXRVersion *version,
 
   ConvertHeader(exr_header, info);
 
+  exr_header->multipart = version->multipart ? 1 : 0;
+  exr_header->non_image = version->non_image ? 1 : 0;
+
   return ret;
 }
 
@@ -12653,207 +12769,364 @@ int LoadEXRImageFromMemory(EXRImage *exr_image, const EXRHeader *exr_header,
                                  err);
 }
 
-size_t SaveEXRImageToMemory(const EXRImage *exr_image,
-                            const EXRHeader *exr_header,
-                            unsigned char **memory_out, const char **err) {
-  if (exr_image == NULL || memory_out == NULL ||
-      exr_header->compression_type < 0) {
-    tinyexr::SetErrorMessage("Invalid argument for SaveEXRImageToMemory", err);
-    return 0;
+namespace tinyexr
+{
+
+// out_data must be allocated initially with the block-header size
+// of the current image(-part) type
+static bool EncodePixelData(/* out */ std::vector<unsigned char>& out_data,                         
+                            const unsigned char* const* images,
+                            const int* requested_pixel_types,
+                            int compression_type,
+                            int line_order,
+                            int width, // for tiled : tile.width
+                            int height, // for tiled : header.tile_size_y
+                            int x_stride, // for tiled : header.tile_size_x
+                            int line_no, // for tiled : 0
+                            int num_lines, // for tiled : tile.height
+                            size_t pixel_data_size,
+                            const std::vector<ChannelInfo>& channels,
+                            const std::vector<size_t>& channel_offset_list,
+                            const void* compression_param = 0) // zfp compression param
+{
+  size_t buf_size = static_cast<size_t>(width) *
+                  static_cast<size_t>(num_lines) *
+                  static_cast<size_t>(pixel_data_size);
+  //int last2bit = (buf_size & 3);
+  // buf_size must be multiple of four
+  //if(last2bit) buf_size += 4 - last2bit;
+  std::vector<unsigned char> buf(buf_size);
+
+  size_t start_y = static_cast<size_t>(line_no);
+  for (size_t c = 0; c < channels.size(); c++) {
+    if (channels[c].pixel_type == TINYEXR_PIXELTYPE_HALF) {
+      if (requested_pixel_types[c] == TINYEXR_PIXELTYPE_FLOAT) {
+        for (int y = 0; y < num_lines; y++) {
+          // Assume increasing Y
+          float *line_ptr = reinterpret_cast<float *>(&buf.at(
+            static_cast<size_t>(pixel_data_size * y * width) +
+            channel_offset_list[c] *
+            static_cast<size_t>(width)));
+          for (int x = 0; x < width; x++) {
+            tinyexr::FP16 h16;
+            h16.u = reinterpret_cast<const unsigned short * const *>(
+              images)[c][(y + start_y) * x_stride + x];
+
+            tinyexr::FP32 f32 = half_to_float(h16);
+
+            tinyexr::swap4(&f32.f);
+
+            // line_ptr[x] = f32.f;
+            tinyexr::cpy4(line_ptr + x, &(f32.f));
+          }
+        }
+      } else if (requested_pixel_types[c] == TINYEXR_PIXELTYPE_HALF) {
+        for (int y = 0; y < num_lines; y++) {
+          // Assume increasing Y
+          unsigned short *line_ptr = reinterpret_cast<unsigned short *>(
+            &buf.at(static_cast<size_t>(pixel_data_size * y *
+                                        width) +
+                    channel_offset_list[c] *
+                    static_cast<size_t>(width)));
+          for (int x = 0; x < width; x++) {
+            unsigned short val = reinterpret_cast<const unsigned short * const *>(
+              images)[c][(y + start_y) * x_stride + x];
+
+            tinyexr::swap2(&val);
+
+            // line_ptr[x] = val;
+            tinyexr::cpy2(line_ptr + x, &val);
+          }
+        }
+      } else {
+        assert(0);
+      }
+
+    } else if (channels[c].pixel_type == TINYEXR_PIXELTYPE_FLOAT) {
+      if (requested_pixel_types[c] == TINYEXR_PIXELTYPE_HALF) {
+        for (int y = 0; y < num_lines; y++) {
+          // Assume increasing Y
+          unsigned short *line_ptr = reinterpret_cast<unsigned short *>(
+            &buf.at(static_cast<size_t>(pixel_data_size * y *
+                                        width) +
+                    channel_offset_list[c] *
+                    static_cast<size_t>(width)));
+          for (int x = 0; x < width; x++) {
+            tinyexr::FP32 f32;
+            f32.f = reinterpret_cast<const float * const *>(
+              images)[c][(y + start_y) * x_stride + x];
+
+            tinyexr::FP16 h16;
+            h16 = float_to_half_full(f32);
+
+            tinyexr::swap2(reinterpret_cast<unsigned short *>(&h16.u));
+
+            // line_ptr[x] = h16.u;
+            tinyexr::cpy2(line_ptr + x, &(h16.u));
+          }
+        }
+      } else if (requested_pixel_types[c] == TINYEXR_PIXELTYPE_FLOAT) {
+        for (int y = 0; y < num_lines; y++) {
+          // Assume increasing Y
+          float *line_ptr = reinterpret_cast<float *>(&buf.at(
+            static_cast<size_t>(pixel_data_size * y * width) +
+            channel_offset_list[c] *
+            static_cast<size_t>(width)));
+          for (int x = 0; x < width; x++) {
+            float val = reinterpret_cast<const float * const *>(
+              images)[c][(y + start_y) * x_stride + x];
+
+            tinyexr::swap4(&val);
+
+            // line_ptr[x] = val;
+            tinyexr::cpy4(line_ptr + x, &val);
+          }
+        }
+      } else {
+        assert(0);
+      }
+    } else if (channels[c].pixel_type == TINYEXR_PIXELTYPE_UINT) {
+      for (int y = 0; y < num_lines; y++) {
+        // Assume increasing Y
+        unsigned int *line_ptr = reinterpret_cast<unsigned int *>(&buf.at(
+          static_cast<size_t>(pixel_data_size * y * width) +
+          channel_offset_list[c] * static_cast<size_t>(width)));
+        for (int x = 0; x < width; x++) {
+          unsigned int val = reinterpret_cast<const unsigned int * const *>(
+            images)[c][(y + start_y) * x_stride + x];
+
+          tinyexr::swap4(&val);
+
+          // line_ptr[x] = val;
+          tinyexr::cpy4(line_ptr + x, &val);
+        }
+      }
+    }
   }
 
-#if !TINYEXR_USE_PIZ
-  if (exr_header->compression_type == TINYEXR_COMPRESSIONTYPE_PIZ) {
-    tinyexr::SetErrorMessage("PIZ compression is not supported in this build",
-                             err);
-    return 0;
-  }
+  if (compression_type == TINYEXR_COMPRESSIONTYPE_NONE) {
+    // 4 byte: scan line
+    // 4 byte: data size
+    // ~     : pixel data(uncompressed)
+    out_data.insert(out_data.end(), buf.begin(), buf.end());
+
+  } else if ((compression_type == TINYEXR_COMPRESSIONTYPE_ZIPS) ||
+    (compression_type == TINYEXR_COMPRESSIONTYPE_ZIP)) {
+#if TINYEXR_USE_MINIZ
+    std::vector<unsigned char> block(tinyexr::miniz::mz_compressBound(
+      static_cast<unsigned long>(buf.size())));
+#else
+    std::vector<unsigned char> block(
+      compressBound(static_cast<uLong>(buf.size())));
 #endif
+    tinyexr::tinyexr_uint64 outSize = block.size();
 
-#if !TINYEXR_USE_ZFP
-  if (exr_header->compression_type == TINYEXR_COMPRESSIONTYPE_ZFP) {
-    tinyexr::SetErrorMessage("ZFP compression is not supported in this build",
-                             err);
-    return 0;
-  }
+    tinyexr::CompressZip(&block.at(0), outSize,
+                         reinterpret_cast<const unsigned char *>(&buf.at(0)),
+                         static_cast<unsigned long>(buf.size()));
+
+    // 4 byte: scan line
+    // 4 byte: data size
+    // ~     : pixel data(compressed)
+    unsigned int data_len = static_cast<unsigned int>(outSize);  // truncate
+
+    out_data.insert(out_data.end(), block.begin(), block.begin() + data_len);
+
+  } else if (compression_type == TINYEXR_COMPRESSIONTYPE_RLE) {
+    // (buf.size() * 3) / 2 would be enough.
+    std::vector<unsigned char> block((buf.size() * 3) / 2);
+
+    tinyexr::tinyexr_uint64 outSize = block.size();
+
+    tinyexr::CompressRle(&block.at(0), outSize,
+                         reinterpret_cast<const unsigned char *>(&buf.at(0)),
+                         static_cast<unsigned long>(buf.size()));
+
+    // 4 byte: scan line
+    // 4 byte: data size
+    // ~     : pixel data(compressed)
+    unsigned int data_len = static_cast<unsigned int>(outSize);  // truncate
+    out_data.insert(out_data.end(), block.begin(), block.begin() + data_len);
+
+  } else if (compression_type == TINYEXR_COMPRESSIONTYPE_PIZ) {
+#if TINYEXR_USE_PIZ
+    unsigned int bufLen =
+      8192 + static_cast<unsigned int>(
+        2 * static_cast<unsigned int>(
+          buf.size()));  // @fixme { compute good bound. }
+    std::vector<unsigned char> block(bufLen);
+    unsigned int outSize = static_cast<unsigned int>(block.size());
+
+    CompressPiz(&block.at(0), &outSize,
+                reinterpret_cast<const unsigned char *>(&buf.at(0)),
+                buf.size(), channels, width, num_lines);
+
+    // 4 byte: scan line
+    // 4 byte: data size
+    // ~     : pixel data(compressed)
+    unsigned int data_len = outSize;
+    out_data.insert(out_data.end(), block.begin(), block.begin() + data_len);
+
+#else
+    assert(0);
 #endif
-
+  } else if (compression_type == TINYEXR_COMPRESSIONTYPE_ZFP) {
 #if TINYEXR_USE_ZFP
-  for (size_t i = 0; i < static_cast<size_t>(exr_header->num_channels); i++) {
-    if (exr_header->requested_pixel_types[i] != TINYEXR_PIXELTYPE_FLOAT) {
-      tinyexr::SetErrorMessage("Pixel type must be FLOAT for ZFP compression",
-                               err);
-      return 0;
-    }
-  }
+    const ZFPCompressionParam* zfp_compression_param = reinterpret_cast<const ZFPCompressionParam*>(compression_param);
+    std::vector<unsigned char> block;
+    unsigned int outSize;
+
+    tinyexr::CompressZfp(
+      &block, &outSize, reinterpret_cast<const float *>(&buf.at(0)),
+      width, num_lines, static_cast<int>(channels.size()), *zfp_compression_param);
+
+    // 4 byte: scan line
+    // 4 byte: data size
+    // ~     : pixel data(compressed)
+    unsigned int data_len = outSize;
+    out_data.insert(out_data.end(), block.begin(), block.begin() + data_len);
+
+#else
+    assert(0);
 #endif
-
-  std::vector<unsigned char> memory;
-
-  // Header
-  {
-    const char header[] = {0x76, 0x2f, 0x31, 0x01};
-    memory.insert(memory.end(), header, header + 4);
+  } else {
+    assert(0);
+    return false;
   }
 
-  // Version, scanline.
-  {
-    char marker[] = {2, 0, 0, 0};
-    /* @todo
-    if (exr_header->tiled) {
-      marker[1] |= 0x2;
-    }
-    if (exr_header->long_name) {
-      marker[1] |= 0x4;
-    }
-    if (exr_header->non_image) {
-      marker[1] |= 0x8;
-    }
-    if (exr_header->multipart) {
-      marker[1] |= 0x10;
-    }
-    */
-    memory.insert(memory.end(), marker, marker + 4);
-  }
+  return true;
+}
 
+static int EncodeTiledLevel(const EXRImage* level_image, const EXRHeader* exr_header,
+                            const std::vector<tinyexr::ChannelInfo>& channels,
+                            std::vector<std::vector<unsigned char> >& data_list,
+                            size_t start_index, // for data_list
+                            int num_x_tiles, int num_y_tiles,
+                            const std::vector<size_t>& channel_offset_list,
+                            int pixel_data_size,
+                            const void* compression_param, // must be set if zfp compression is enabled
+                            std::string* err) {
+  int num_tiles = num_x_tiles * num_y_tiles;
+  assert(num_tiles == level_image->num_tiles);
+
+  int err_code = TINYEXR_SUCCESS;
+  if ((exr_header->tile_size_x > level_image->width || exr_header->tile_size_y > level_image->height) &&
+      level_image->level_x == 0 && level_image->level_y == 0) {
+      if (err) {
+        (*err) += "Failed to encode tile data.\n";
+    }
+    return TINYEXR_ERROR_INVALID_DATA;
+  }
+  // TODO(LTE): C++11 thread
+
+  // Use signed int since some OpenMP compiler doesn't allow unsigned type for
+  // `parallel for`
+#if TINYEXR_USE_OPENMP
+#pragma omp parallel for
+#endif
+  for (int i = 0; i < num_tiles; i++) {
+    size_t tile_idx = static_cast<size_t>(i);
+    size_t data_idx = tile_idx + start_index;
+
+    int x_tile = i % num_x_tiles;
+    int y_tile = i / num_x_tiles;
+
+    EXRTile& tile = level_image->tiles[tile_idx];
+ 
+    const unsigned char* const* images =
+      static_cast<const unsigned char* const*>(tile.images);
+
+    data_list[data_idx].resize(5*sizeof(int));
+    size_t data_header_size = data_list[data_idx].size();
+    bool ret = EncodePixelData(data_list[data_idx],                         
+                               images,
+                               exr_header->requested_pixel_types,
+                               exr_header->compression_type,
+                               0, // increasing y
+                               tile.width,
+                               exr_header->tile_size_y,
+                               exr_header->tile_size_x,
+                               0,
+                               tile.height,
+                               pixel_data_size,
+                               channels,
+                               channel_offset_list,
+                               compression_param);
+    if (!ret) {
+      if (err) {
+        (*err) += "Failed to encode tile data.\n";
+      }
+      return TINYEXR_ERROR_INVALID_DATA;
+    }
+    assert(data_list[data_idx].size() > data_header_size);
+    int data_len = static_cast<int>(data_list[data_idx].size() - data_header_size);
+    //tileX, tileY, levelX, levelY // pixel_data_size(int)
+    memcpy(&data_list[data_idx][0], &x_tile, sizeof(int));
+    memcpy(&data_list[data_idx][4], &y_tile, sizeof(int));
+    memcpy(&data_list[data_idx][8], &level_image->level_x, sizeof(int));
+    memcpy(&data_list[data_idx][12], &level_image->level_y, sizeof(int));
+    memcpy(&data_list[data_idx][16], &data_len, sizeof(int));
+
+    swap4(reinterpret_cast<int*>(&data_list[data_idx][0]));
+    swap4(reinterpret_cast<int*>(&data_list[data_idx][4]));
+    swap4(reinterpret_cast<int*>(&data_list[data_idx][8]));
+    swap4(reinterpret_cast<int*>(&data_list[data_idx][12]));
+    swap4(reinterpret_cast<int*>(&data_list[data_idx][16]));
+  }  // omp parallel
+
+  return TINYEXR_SUCCESS;
+}
+
+static int NumScanlines(int compression_type) {
   int num_scanlines = 1;
-  if (exr_header->compression_type == TINYEXR_COMPRESSIONTYPE_ZIP) {
+  if (compression_type == TINYEXR_COMPRESSIONTYPE_ZIP) {
     num_scanlines = 16;
-  } else if (exr_header->compression_type == TINYEXR_COMPRESSIONTYPE_PIZ) {
+  } else if (compression_type == TINYEXR_COMPRESSIONTYPE_PIZ) {
     num_scanlines = 32;
-  } else if (exr_header->compression_type == TINYEXR_COMPRESSIONTYPE_ZFP) {
+  } else if (compression_type == TINYEXR_COMPRESSIONTYPE_ZFP) {
     num_scanlines = 16;
   }
+  return num_scanlines;
+}
 
-  // Write attributes.
-  std::vector<tinyexr::ChannelInfo> channels;
-  {
-    std::vector<unsigned char> data;
+static int EncodeChunk(const EXRImage* exr_image, const EXRHeader* exr_header,
+                       const std::vector<ChannelInfo>& channels,
+                       int num_blocks,
+                       tinyexr_uint64 chunk_offset, // starting offset of current chunk
+                       bool is_multipart,
+                       OffsetData& offset_data, // output block offsets, must be initialized
+                       std::vector<std::vector<unsigned char> >& data_list, // output
+                       tinyexr_uint64& total_size, // output: ending offset of current chunk
+                       std::string* err) {
+  int num_scanlines = NumScanlines(exr_header->compression_type);
 
-    for (int c = 0; c < exr_header->num_channels; c++) {
-      tinyexr::ChannelInfo info;
-      info.p_linear = 0;
-      info.pixel_type = exr_header->requested_pixel_types[c];
-      info.x_sampling = 1;
-      info.y_sampling = 1;
-      info.name = std::string(exr_header->channels[c].name);
-      channels.push_back(info);
-    }
+  data_list.resize(num_blocks);
 
-    tinyexr::WriteChannelInfo(data, channels);
-
-    tinyexr::WriteAttributeToMemory(&memory, "channels", "chlist", &data.at(0),
-                                    static_cast<int>(data.size()));
-  }
-
-  {
-    int comp = exr_header->compression_type;
-    tinyexr::swap4(&comp);
-    tinyexr::WriteAttributeToMemory(
-        &memory, "compression", "compression",
-        reinterpret_cast<const unsigned char *>(&comp), 1);
-  }
-
-  {
-    int data[4] = {0, 0, exr_image->width - 1, exr_image->height - 1};
-    tinyexr::swap4(&data[0]);
-    tinyexr::swap4(&data[1]);
-    tinyexr::swap4(&data[2]);
-    tinyexr::swap4(&data[3]);
-    tinyexr::WriteAttributeToMemory(
-        &memory, "dataWindow", "box2i",
-        reinterpret_cast<const unsigned char *>(data), sizeof(int) * 4);
-    tinyexr::WriteAttributeToMemory(
-        &memory, "displayWindow", "box2i",
-        reinterpret_cast<const unsigned char *>(data), sizeof(int) * 4);
-  }
-
-  {
-    unsigned char line_order = 0;  // @fixme { read line_order from EXRHeader }
-    tinyexr::WriteAttributeToMemory(&memory, "lineOrder", "lineOrder",
-                                    &line_order, 1);
-  }
-
-  {
-    float aspectRatio = 1.0f;
-    tinyexr::swap4(&aspectRatio);
-    tinyexr::WriteAttributeToMemory(
-        &memory, "pixelAspectRatio", "float",
-        reinterpret_cast<const unsigned char *>(&aspectRatio), sizeof(float));
-  }
-
-  {
-    float center[2] = {0.0f, 0.0f};
-    tinyexr::swap4(&center[0]);
-    tinyexr::swap4(&center[1]);
-    tinyexr::WriteAttributeToMemory(
-        &memory, "screenWindowCenter", "v2f",
-        reinterpret_cast<const unsigned char *>(center), 2 * sizeof(float));
-  }
-
-  {
-    float w = static_cast<float>(exr_image->width);
-    tinyexr::swap4(&w);
-    tinyexr::WriteAttributeToMemory(&memory, "screenWindowWidth", "float",
-                                    reinterpret_cast<const unsigned char *>(&w),
-                                    sizeof(float));
-  }
-
-  // Custom attributes
-  if (exr_header->num_custom_attributes > 0) {
-    for (int i = 0; i < exr_header->num_custom_attributes; i++) {
-      tinyexr::WriteAttributeToMemory(
-          &memory, exr_header->custom_attributes[i].name,
-          exr_header->custom_attributes[i].type,
-          reinterpret_cast<const unsigned char *>(
-              exr_header->custom_attributes[i].value),
-          exr_header->custom_attributes[i].size);
-    }
-  }
-
-  {  // end of header
-    unsigned char e = 0;
-    memory.push_back(e);
-  }
-
-  int num_blocks = exr_image->height / num_scanlines;
-  if (num_blocks * num_scanlines < exr_image->height) {
-    num_blocks++;
-  }
-
-  std::vector<tinyexr::tinyexr_uint64> offsets(static_cast<size_t>(num_blocks));
-
-  size_t headerSize = memory.size();
-  tinyexr::tinyexr_uint64 offset =
-      headerSize +
-      static_cast<size_t>(num_blocks) *
-          sizeof(
-              tinyexr::tinyexr_int64);  // sizeof(header) + sizeof(offsetTable)
-
-  std::vector<std::vector<unsigned char> > data_list(
-      static_cast<size_t>(num_blocks));
   std::vector<size_t> channel_offset_list(
-      static_cast<size_t>(exr_header->num_channels));
+    static_cast<size_t>(exr_header->num_channels));
 
   int pixel_data_size = 0;
-  size_t channel_offset = 0;
-  for (size_t c = 0; c < static_cast<size_t>(exr_header->num_channels); c++) {
-    channel_offset_list[c] = channel_offset;
-    if (exr_header->requested_pixel_types[c] == TINYEXR_PIXELTYPE_HALF) {
-      pixel_data_size += sizeof(unsigned short);
-      channel_offset += sizeof(unsigned short);
-    } else if (exr_header->requested_pixel_types[c] ==
-               TINYEXR_PIXELTYPE_FLOAT) {
-      pixel_data_size += sizeof(float);
-      channel_offset += sizeof(float);
-    } else if (exr_header->requested_pixel_types[c] == TINYEXR_PIXELTYPE_UINT) {
-      pixel_data_size += sizeof(unsigned int);
-      channel_offset += sizeof(unsigned int);
-    } else {
-      assert(0);
+  {
+    size_t channel_offset = 0;
+    for (size_t c = 0; c < static_cast<size_t>(exr_header->num_channels); c++) {
+      channel_offset_list[c] = channel_offset;
+      if (exr_header->requested_pixel_types[c] == TINYEXR_PIXELTYPE_HALF) {
+        pixel_data_size += sizeof(unsigned short);
+        channel_offset += sizeof(unsigned short);
+      } else if (exr_header->requested_pixel_types[c] ==
+                 TINYEXR_PIXELTYPE_FLOAT) {
+        pixel_data_size += sizeof(float);
+        channel_offset += sizeof(float);
+      } else if (exr_header->requested_pixel_types[c] == TINYEXR_PIXELTYPE_UINT) {
+        pixel_data_size += sizeof(unsigned int);
+        channel_offset += sizeof(unsigned int);
+      } else {
+        assert(0);
+      }
     }
   }
 
+  const void* compression_param = 0;
 #if TINYEXR_USE_ZFP
   tinyexr::ZFPCompressionParam zfp_compression_param;
 
@@ -12862,304 +13135,495 @@ size_t SaveEXRImageToMemory(const EXRImage *exr_image,
   {
     std::string e;
     bool ret = tinyexr::FindZFPCompressionParam(
-        &zfp_compression_param, exr_header->custom_attributes,
-        exr_header->num_custom_attributes, &e);
+      &zfp_compression_param, exr_header->custom_attributes,
+      exr_header->num_custom_attributes, &e);
 
     if (!ret) {
       // Use predefined compression parameter.
       zfp_compression_param.type = 0;
       zfp_compression_param.rate = 2;
     }
+    compression_param = &zfp_compression_param;
   }
 #endif
 
-  // TODO(LTE): C++11 thread
+  tinyexr_uint64 offset = chunk_offset;
+  tinyexr_uint64 doffset = is_multipart ? 4u : 0u;
 
-// Use signed int since some OpenMP compiler doesn't allow unsigned type for
-// `parallel for`
+  if (exr_image->tiles) {
+    const EXRImage* level_image = exr_image;
+    size_t block_idx = 0;
+    tinyexr::tinyexr_uint64 block_data_size = 0;
+    int num_levels = (exr_header->tile_level_mode != TINYEXR_TILE_RIPMAP_LEVELS) ?
+      offset_data.num_x_levels : (offset_data.num_x_levels * offset_data.num_y_levels);
+    for (int level_index = 0; level_index < num_levels; ++level_index) {
+      if (!level_image) {
+        if (err) {
+          (*err) += "Invalid number of tiled levels for EncodeChunk\n";
+        }
+        return TINYEXR_ERROR_INVALID_DATA;
+      }
+
+      int level_index_from_image = LevelIndex(level_image->level_x, level_image->level_y,
+                                    exr_header->tile_level_mode, offset_data.num_x_levels);
+      if (level_index_from_image != level_index) {
+        if (err) {
+          (*err) += "Incorrect level ordering in tiled image\n";
+        }
+        return TINYEXR_ERROR_INVALID_DATA;
+      }
+      int num_y_tiles = (int)offset_data.offsets[level_index].size();
+      assert(num_y_tiles);
+      int num_x_tiles = (int)offset_data.offsets[level_index][0].size();
+      assert(num_x_tiles);
+
+      std::string e;
+      int ret = EncodeTiledLevel(level_image,
+                                  exr_header,
+                                  channels,
+                                  data_list,
+                                  block_idx,
+                                  num_x_tiles,
+                                  num_y_tiles,
+                                  channel_offset_list,
+                                  pixel_data_size,
+                                  compression_param,
+                                  &e);
+      if (ret != TINYEXR_SUCCESS) {
+        if (!e.empty() && err) {
+          (*err) += e;
+        }
+        return ret;
+      }
+
+      for (size_t j = 0; j < static_cast<size_t>(num_y_tiles); ++j)
+        for (size_t i = 0; i < static_cast<size_t>(num_x_tiles); ++i) {
+          offset_data.offsets[level_index][j][i] = offset;
+          swap8(reinterpret_cast<tinyexr_uint64*>(&offset_data.offsets[level_index][j][i]));
+          offset += data_list[block_idx].size() + doffset;
+          block_data_size += data_list[block_idx].size();
+          ++block_idx;
+        }
+      level_image = level_image->next_level;
+    }
+    assert(block_idx == num_blocks);
+    total_size = offset;
+  } else { // scanlines
+    std::vector<tinyexr::tinyexr_uint64>& offsets = offset_data.offsets[0][0];
 #if TINYEXR_USE_OPENMP
 #pragma omp parallel for
 #endif
-  for (int i = 0; i < num_blocks; i++) {
-    size_t ii = static_cast<size_t>(i);
-    int start_y = num_scanlines * i;
-    int endY = (std::min)(num_scanlines * (i + 1), exr_image->height);
-    int h = endY - start_y;
+    for (int i = 0; i < num_blocks; i++) {
+      size_t ii = static_cast<size_t>(i);
+      int start_y = num_scanlines * i;
+      int end_Y = (std::min)(num_scanlines * (i + 1), exr_image->height);
+      int num_lines = end_Y - start_y;
 
-    std::vector<unsigned char> buf(
-        static_cast<size_t>(exr_image->width * h * pixel_data_size));
 
-    for (size_t c = 0; c < static_cast<size_t>(exr_header->num_channels); c++) {
-      if (exr_header->pixel_types[c] == TINYEXR_PIXELTYPE_HALF) {
-        if (exr_header->requested_pixel_types[c] == TINYEXR_PIXELTYPE_FLOAT) {
-          for (int y = 0; y < h; y++) {
-            // Assume increasing Y
-            float *line_ptr = reinterpret_cast<float *>(&buf.at(
-                static_cast<size_t>(pixel_data_size * y * exr_image->width) +
-                channel_offset_list[c] *
-                    static_cast<size_t>(exr_image->width)));
-            for (int x = 0; x < exr_image->width; x++) {
-              tinyexr::FP16 h16;
-              h16.u = reinterpret_cast<unsigned short **>(
-                  exr_image->images)[c][(y + start_y) * exr_image->width + x];
+      const unsigned char* const* images =
+        static_cast<const unsigned char* const*>(exr_image->images);
 
-              tinyexr::FP32 f32 = half_to_float(h16);
+      data_list[i].resize(2*sizeof(int));
+      size_t data_header_size = data_list[i].size();
 
-              tinyexr::swap4(&f32.f);
-
-              // line_ptr[x] = f32.f;
-              tinyexr::cpy4(line_ptr + x, &(f32.f));
-            }
-          }
-        } else if (exr_header->requested_pixel_types[c] ==
-                   TINYEXR_PIXELTYPE_HALF) {
-          for (int y = 0; y < h; y++) {
-            // Assume increasing Y
-            unsigned short *line_ptr = reinterpret_cast<unsigned short *>(
-                &buf.at(static_cast<size_t>(pixel_data_size * y *
-                                            exr_image->width) +
-                        channel_offset_list[c] *
-                            static_cast<size_t>(exr_image->width)));
-            for (int x = 0; x < exr_image->width; x++) {
-              unsigned short val = reinterpret_cast<unsigned short **>(
-                  exr_image->images)[c][(y + start_y) * exr_image->width + x];
-
-              tinyexr::swap2(&val);
-
-              // line_ptr[x] = val;
-              tinyexr::cpy2(line_ptr + x, &val);
-            }
-          }
-        } else {
-          assert(0);
+      bool ret = EncodePixelData(data_list[i],                         
+                                 images,
+                                 exr_header->requested_pixel_types,
+                                 exr_header->compression_type,
+                                 0, // increasing y
+                                 exr_image->width,
+                                 exr_image->height,
+                                 exr_image->width,
+                                 start_y,
+                                 num_lines,
+                                 pixel_data_size,
+                                 channels,
+                                 channel_offset_list,
+                                 compression_param);
+      if (!ret) {
+        if (err) {
+          (*err) += "Failed to encode scanline data.\n";
         }
+        return TINYEXR_ERROR_INVALID_DATA;
+      }
+      assert(data_list[i].size() > data_header_size);
+      int data_len = static_cast<int>(data_list[i].size() - data_header_size);
+      memcpy(&data_list[i][0], &start_y, sizeof(int));
+      memcpy(&data_list[i][4], &data_len, sizeof(int));
 
-      } else if (exr_header->pixel_types[c] == TINYEXR_PIXELTYPE_FLOAT) {
-        if (exr_header->requested_pixel_types[c] == TINYEXR_PIXELTYPE_HALF) {
-          for (int y = 0; y < h; y++) {
-            // Assume increasing Y
-            unsigned short *line_ptr = reinterpret_cast<unsigned short *>(
-                &buf.at(static_cast<size_t>(pixel_data_size * y *
-                                            exr_image->width) +
-                        channel_offset_list[c] *
-                            static_cast<size_t>(exr_image->width)));
-            for (int x = 0; x < exr_image->width; x++) {
-              tinyexr::FP32 f32;
-              f32.f = reinterpret_cast<float **>(
-                  exr_image->images)[c][(y + start_y) * exr_image->width + x];
+      swap4(reinterpret_cast<int*>(&data_list[i][0]));
+      swap4(reinterpret_cast<int*>(&data_list[i][4]));
 
-              tinyexr::FP16 h16;
-              h16 = float_to_half_full(f32);
+    }  // omp parallel
 
-              tinyexr::swap2(reinterpret_cast<unsigned short *>(&h16.u));
+    for (size_t i = 0; i < static_cast<size_t>(num_blocks); i++) {
+      offsets[i] = offset;
+      tinyexr::swap8(reinterpret_cast<tinyexr::tinyexr_uint64 *>(&offsets[i]));
+      offset += data_list[i].size() + doffset;
+    }
 
-              // line_ptr[x] = h16.u;
-              tinyexr::cpy2(line_ptr + x, &(h16.u));
-            }
-          }
-        } else if (exr_header->requested_pixel_types[c] ==
-                   TINYEXR_PIXELTYPE_FLOAT) {
-          for (int y = 0; y < h; y++) {
-            // Assume increasing Y
-            float *line_ptr = reinterpret_cast<float *>(&buf.at(
-                static_cast<size_t>(pixel_data_size * y * exr_image->width) +
-                channel_offset_list[c] *
-                    static_cast<size_t>(exr_image->width)));
-            for (int x = 0; x < exr_image->width; x++) {
-              float val = reinterpret_cast<float **>(
-                  exr_image->images)[c][(y + start_y) * exr_image->width + x];
+    total_size = static_cast<size_t>(offset);
+  }
+  return TINYEXR_SUCCESS;
+}
 
-              tinyexr::swap4(&val);
-
-              // line_ptr[x] = val;
-              tinyexr::cpy4(line_ptr + x, &val);
-            }
-          }
-        } else {
-          assert(0);
-        }
-      } else if (exr_header->pixel_types[c] == TINYEXR_PIXELTYPE_UINT) {
-        for (int y = 0; y < h; y++) {
-          // Assume increasing Y
-          unsigned int *line_ptr = reinterpret_cast<unsigned int *>(&buf.at(
-              static_cast<size_t>(pixel_data_size * y * exr_image->width) +
-              channel_offset_list[c] * static_cast<size_t>(exr_image->width)));
-          for (int x = 0; x < exr_image->width; x++) {
-            unsigned int val = reinterpret_cast<unsigned int **>(
-                exr_image->images)[c][(y + start_y) * exr_image->width + x];
-
-            tinyexr::swap4(&val);
-
-            // line_ptr[x] = val;
-            tinyexr::cpy4(line_ptr + x, &val);
-          }
+// can save a single or multi-part image (no deep* formats)
+static size_t SaveEXRNPartImageToMemory(const EXRImage* exr_images,
+                                        const EXRHeader** exr_headers,
+                                        unsigned int num_parts,
+                                        unsigned char** memory_out, const char** err) {
+  if (exr_images == NULL || exr_headers == NULL || num_parts == 0 ||
+      memory_out == NULL) {
+    SetErrorMessage("Invalid argument for SaveEXRNPartImageToMemory",
+                    err);
+    return 0;
+  }
+  {
+    for (unsigned int i = 0; i < num_parts; ++i) {
+      if (exr_headers[i]->compression_type < 0) {
+        SetErrorMessage("Invalid argument for SaveEXRNPartImageToMemory",
+                        err);
+        return 0;
+      }
+#if !TINYEXR_USE_PIZ
+      if (exr_headers[i]->compression_type == TINYEXR_COMPRESSIONTYPE_PIZ) {
+        SetErrorMessage("PIZ compression is not supported in this build",
+                        err);
+        return 0;
+      }
+#endif
+#if !TINYEXR_USE_ZFP
+      if (exr_headers[i]->compression_type == TINYEXR_COMPRESSIONTYPE_ZFP) {
+        SetErrorMessage("ZFP compression is not supported in this build",
+                        err);
+        return 0;
+      }
+#else
+      for (int c = 0; c < exr_header->num_channels; ++c) {
+        if (exr_headers[i]->requested_pixel_types[c] != TINYEXR_PIXELTYPE_FLOAT) {
+          SetErrorMessage("Pixel type must be FLOAT for ZFP compression",
+                          err);
+          return 0;
         }
       }
+#endif
     }
-
-    if (exr_header->compression_type == TINYEXR_COMPRESSIONTYPE_NONE) {
-      // 4 byte: scan line
-      // 4 byte: data size
-      // ~     : pixel data(uncompressed)
-      std::vector<unsigned char> header(8);
-      unsigned int data_len = static_cast<unsigned int>(buf.size());
-      memcpy(&header.at(0), &start_y, sizeof(int));
-      memcpy(&header.at(4), &data_len, sizeof(unsigned int));
-
-      tinyexr::swap4(reinterpret_cast<unsigned int *>(&header.at(0)));
-      tinyexr::swap4(reinterpret_cast<unsigned int *>(&header.at(4)));
-
-      data_list[ii].insert(data_list[ii].end(), header.begin(), header.end());
-      data_list[ii].insert(data_list[ii].end(), buf.begin(),
-                           buf.begin() + data_len);
-
-    } else if ((exr_header->compression_type == TINYEXR_COMPRESSIONTYPE_ZIPS) ||
-               (exr_header->compression_type == TINYEXR_COMPRESSIONTYPE_ZIP)) {
-#if TINYEXR_USE_MINIZ
-      std::vector<unsigned char> block(tinyexr::miniz::mz_compressBound(
-          static_cast<unsigned long>(buf.size())));
-#else
-      std::vector<unsigned char> block(
-          compressBound(static_cast<uLong>(buf.size())));
-#endif
-      tinyexr::tinyexr_uint64 outSize = block.size();
-
-      tinyexr::CompressZip(&block.at(0), outSize,
-                           reinterpret_cast<const unsigned char *>(&buf.at(0)),
-                           static_cast<unsigned long>(buf.size()));
-
-      // 4 byte: scan line
-      // 4 byte: data size
-      // ~     : pixel data(compressed)
-      std::vector<unsigned char> header(8);
-      unsigned int data_len = static_cast<unsigned int>(outSize);  // truncate
-      memcpy(&header.at(0), &start_y, sizeof(int));
-      memcpy(&header.at(4), &data_len, sizeof(unsigned int));
-
-      tinyexr::swap4(reinterpret_cast<unsigned int *>(&header.at(0)));
-      tinyexr::swap4(reinterpret_cast<unsigned int *>(&header.at(4)));
-
-      data_list[ii].insert(data_list[ii].end(), header.begin(), header.end());
-      data_list[ii].insert(data_list[ii].end(), block.begin(),
-                           block.begin() + data_len);
-
-    } else if (exr_header->compression_type == TINYEXR_COMPRESSIONTYPE_RLE) {
-      // (buf.size() * 3) / 2 would be enough.
-      std::vector<unsigned char> block((buf.size() * 3) / 2);
-
-      tinyexr::tinyexr_uint64 outSize = block.size();
-
-      tinyexr::CompressRle(&block.at(0), outSize,
-                           reinterpret_cast<const unsigned char *>(&buf.at(0)),
-                           static_cast<unsigned long>(buf.size()));
-
-      // 4 byte: scan line
-      // 4 byte: data size
-      // ~     : pixel data(compressed)
-      std::vector<unsigned char> header(8);
-      unsigned int data_len = static_cast<unsigned int>(outSize);  // truncate
-      memcpy(&header.at(0), &start_y, sizeof(int));
-      memcpy(&header.at(4), &data_len, sizeof(unsigned int));
-
-      tinyexr::swap4(reinterpret_cast<unsigned int *>(&header.at(0)));
-      tinyexr::swap4(reinterpret_cast<unsigned int *>(&header.at(4)));
-
-      data_list[ii].insert(data_list[ii].end(), header.begin(), header.end());
-      data_list[ii].insert(data_list[ii].end(), block.begin(),
-                           block.begin() + data_len);
-
-    } else if (exr_header->compression_type == TINYEXR_COMPRESSIONTYPE_PIZ) {
-#if TINYEXR_USE_PIZ
-      unsigned int bufLen =
-          8192 + static_cast<unsigned int>(
-                     2 * static_cast<unsigned int>(
-                             buf.size()));  // @fixme { compute good bound. }
-      std::vector<unsigned char> block(bufLen);
-      unsigned int outSize = static_cast<unsigned int>(block.size());
-
-      CompressPiz(&block.at(0), &outSize,
-                  reinterpret_cast<const unsigned char *>(&buf.at(0)),
-                  buf.size(), channels, exr_image->width, h);
-
-      // 4 byte: scan line
-      // 4 byte: data size
-      // ~     : pixel data(compressed)
-      std::vector<unsigned char> header(8);
-      unsigned int data_len = outSize;
-      memcpy(&header.at(0), &start_y, sizeof(int));
-      memcpy(&header.at(4), &data_len, sizeof(unsigned int));
-
-      tinyexr::swap4(reinterpret_cast<unsigned int *>(&header.at(0)));
-      tinyexr::swap4(reinterpret_cast<unsigned int *>(&header.at(4)));
-
-      data_list[ii].insert(data_list[ii].end(), header.begin(), header.end());
-      data_list[ii].insert(data_list[ii].end(), block.begin(),
-                           block.begin() + data_len);
-
-#else
-      assert(0);
-#endif
-    } else if (exr_header->compression_type == TINYEXR_COMPRESSIONTYPE_ZFP) {
-#if TINYEXR_USE_ZFP
-      std::vector<unsigned char> block;
-      unsigned int outSize;
-
-      tinyexr::CompressZfp(
-          &block, &outSize, reinterpret_cast<const float *>(&buf.at(0)),
-          exr_image->width, h, exr_header->num_channels, zfp_compression_param);
-
-      // 4 byte: scan line
-      // 4 byte: data size
-      // ~     : pixel data(compressed)
-      std::vector<unsigned char> header(8);
-      unsigned int data_len = outSize;
-      memcpy(&header.at(0), &start_y, sizeof(int));
-      memcpy(&header.at(4), &data_len, sizeof(unsigned int));
-
-      tinyexr::swap4(reinterpret_cast<unsigned int *>(&header.at(0)));
-      tinyexr::swap4(reinterpret_cast<unsigned int *>(&header.at(4)));
-
-      data_list[ii].insert(data_list[ii].end(), header.begin(), header.end());
-      data_list[ii].insert(data_list[ii].end(), block.begin(),
-                           block.begin() + data_len);
-
-#else
-      assert(0);
-#endif
-    } else {
-      assert(0);
-    }
-  }  // omp parallel
-
-  for (size_t i = 0; i < static_cast<size_t>(num_blocks); i++) {
-    offsets[i] = offset;
-    tinyexr::swap8(reinterpret_cast<tinyexr::tinyexr_uint64 *>(&offsets[i]));
-    offset += data_list[i].size();
   }
 
-  size_t totalSize = static_cast<size_t>(offset);
+  std::vector<unsigned char> memory;
+
+  // Header
   {
-    memory.insert(
-        memory.end(), reinterpret_cast<unsigned char *>(&offsets.at(0)),
-        reinterpret_cast<unsigned char *>(&offsets.at(0)) +
-            sizeof(tinyexr::tinyexr_uint64) * static_cast<size_t>(num_blocks));
+    const char header[] = { 0x76, 0x2f, 0x31, 0x01 };
+    memory.insert(memory.end(), header, header + 4);
   }
 
-  if (memory.size() == 0) {
+  // Version
+  // using value from the first header
+  int long_name = exr_headers[0]->long_name;
+  {
+    char marker[] = { 2, 0, 0, 0 };
+    /* @todo
+    if (exr_header->non_image) {
+    marker[1] |= 0x8;
+    }
+    */
+    // tiled
+    if (num_parts == 1 && exr_images[0].tiles) {
+      marker[1] |= 0x2;
+    }
+    // long_name
+    if (long_name) {
+      marker[1] |= 0x4;
+    }
+    // multipart
+    if (num_parts > 1) {
+      marker[1] |= 0x10;
+    }
+    memory.insert(memory.end(), marker, marker + 4);
+  }
+
+  int total_chunk_count = 0;
+  std::vector<int> chunk_count(num_parts);
+  std::vector<OffsetData> offset_data(num_parts);
+  for (unsigned int i = 0; i < num_parts; ++i) {
+    if (!exr_images[i].tiles) {
+      int num_scanlines = NumScanlines(exr_headers[i]->compression_type);
+      chunk_count[i] =
+        (exr_images[i].height + num_scanlines - 1) / num_scanlines;
+      InitSingleResolutionOffsets(offset_data[i], chunk_count[i]);
+      total_chunk_count += chunk_count[i];
+    } else {
+      {
+        std::vector<int> num_x_tiles, num_y_tiles;
+        PrecalculateTileInfo(num_x_tiles, num_y_tiles, exr_headers[i]);
+        chunk_count[i] =
+          InitTileOffsets(offset_data[i], exr_headers[i], num_x_tiles, num_y_tiles);
+        total_chunk_count += chunk_count[i];
+      }
+    }
+  }
+  // Write attributes to memory buffer.
+  std::vector<std::vector<tinyexr::ChannelInfo>> channels(num_parts);
+  {
+    std::set<std::string> partnames;
+    for (unsigned int i = 0; i < num_parts; ++i) {
+      //channels
+      {
+        std::vector<unsigned char> data;
+
+        for (int c = 0; c < exr_headers[i]->num_channels; c++) {
+          tinyexr::ChannelInfo info;
+          info.p_linear = 0;
+          info.pixel_type = exr_headers[i]->requested_pixel_types[c];
+          info.x_sampling = 1;
+          info.y_sampling = 1;
+          info.name = std::string(exr_headers[i]->channels[c].name);
+          channels[i].push_back(info);
+        }
+
+        tinyexr::WriteChannelInfo(data, channels[i]);
+
+        tinyexr::WriteAttributeToMemory(&memory, "channels", "chlist", &data.at(0),
+                                        static_cast<int>(data.size()));
+      }
+
+      {
+        int comp = exr_headers[i]->compression_type;
+        swap4(&comp);
+        WriteAttributeToMemory(
+          &memory, "compression", "compression",
+          reinterpret_cast<const unsigned char*>(&comp), 1);
+      }
+
+      {
+        int data[4] = { 0, 0, exr_images[i].width - 1, exr_images[i].height - 1 };
+        swap4(&data[0]);
+        swap4(&data[1]);
+        swap4(&data[2]);
+        swap4(&data[3]);
+        WriteAttributeToMemory(
+          &memory, "dataWindow", "box2i",
+          reinterpret_cast<const unsigned char*>(data), sizeof(int) * 4);
+
+        int data0[4] = { 0, 0, exr_images[0].width - 1, exr_images[0].height - 1 };
+        swap4(&data0[0]);
+        swap4(&data0[1]);
+        swap4(&data0[2]);
+        swap4(&data0[3]);
+        // Note: must be the same across parts (currently, using value from the first header)
+        WriteAttributeToMemory(
+          &memory, "displayWindow", "box2i",
+          reinterpret_cast<const unsigned char*>(data0), sizeof(int) * 4);
+      }
+
+      {
+        unsigned char line_order = 0;  // @fixme { read line_order from EXRHeader }
+        WriteAttributeToMemory(&memory, "lineOrder", "lineOrder",
+                               &line_order, 1);
+      }
+
+      {
+        // Note: must be the same across parts
+        float aspectRatio = 1.0f;
+        swap4(&aspectRatio);
+        WriteAttributeToMemory(
+          &memory, "pixelAspectRatio", "float",
+          reinterpret_cast<const unsigned char*>(&aspectRatio), sizeof(float));
+      }
+
+      {
+        float center[2] = { 0.0f, 0.0f };
+        swap4(&center[0]);
+        swap4(&center[1]);
+        WriteAttributeToMemory(
+          &memory, "screenWindowCenter", "v2f",
+          reinterpret_cast<const unsigned char*>(center), 2 * sizeof(float));
+      }
+
+      {
+        float w = 1.0f;
+        swap4(&w);
+        WriteAttributeToMemory(&memory, "screenWindowWidth", "float",
+                               reinterpret_cast<const unsigned char*>(&w),
+                               sizeof(float));
+      }
+
+      if (exr_images[i].tiles) {
+        unsigned char tile_mode = static_cast<unsigned char>(exr_headers[i]->tile_level_mode & 0x3);
+        if (exr_headers[i]->tile_rounding_mode) tile_mode |= (1u << 4u);
+        //unsigned char data[9] = { 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+        unsigned int datai[3] = { 0, 0, 0 };
+        unsigned char* data = reinterpret_cast<unsigned char*>(&datai[0]);
+        datai[0] = static_cast<unsigned int>(exr_headers[i]->tile_size_x);
+        datai[1] = static_cast<unsigned int>(exr_headers[i]->tile_size_y);
+        data[8] = tile_mode;
+        swap4(reinterpret_cast<unsigned int*>(&data[0]));
+        swap4(reinterpret_cast<unsigned int*>(&data[4]));
+        WriteAttributeToMemory(
+          &memory, "tiles", "tiledesc",
+          reinterpret_cast<const unsigned char*>(data), 9);
+      }
+
+      // must be present for multi-part files - according to spec.
+      if (num_parts > 1) {
+        // name
+        {
+          size_t len = 0;
+          if ((len = strlen(exr_headers[i]->name)) > 0) {
+            partnames.insert(std::string(exr_headers[i]->name));
+            if (partnames.size() != i + 1) {
+              SetErrorMessage("'name' attributes must be unique for a multi-part file", err);
+              return 0;
+            }
+            WriteAttributeToMemory(
+              &memory, "name", "string",
+              reinterpret_cast<const unsigned char*>(exr_headers[i]->name),
+              static_cast<int>(len));
+          } else {
+            SetErrorMessage("Invalid 'name' attribute for a multi-part file", err);
+            return 0;
+          }
+        }
+        // type
+        {
+          const char* type = "scanlineimage";
+          if (exr_images[i].tiles) type = "tiledimage";
+          WriteAttributeToMemory(
+            &memory, "type", "string",
+            reinterpret_cast<const unsigned char*>(type),
+            static_cast<int>(strlen(type)));
+        }
+        // chunkCount
+        {
+          WriteAttributeToMemory(
+            &memory, "chunkCount", "int",
+            reinterpret_cast<const unsigned char*>(&chunk_count[i]),
+            4);
+        }
+      }
+
+      // Custom attributes
+      if (exr_headers[i]->num_custom_attributes > 0) {
+        for (int j = 0; j < exr_headers[i]->num_custom_attributes; j++) {
+          tinyexr::WriteAttributeToMemory(
+            &memory, exr_headers[i]->custom_attributes[j].name,
+            exr_headers[i]->custom_attributes[j].type,
+            reinterpret_cast<const unsigned char*>(
+              exr_headers[i]->custom_attributes[j].value),
+            exr_headers[i]->custom_attributes[j].size);
+        }
+      }
+
+      {  // end of header
+        memory.push_back(0);
+      }
+    }
+  }
+  if (num_parts > 1) {
+    // end of header list
+    memory.push_back(0);
+  }
+
+  tinyexr_uint64 chunk_offset = memory.size() + size_t(total_chunk_count) * sizeof(tinyexr_uint64);
+
+  tinyexr_uint64 total_size = 0;
+  std::vector<std::vector<std::vector<unsigned char>>> data_lists(num_parts);
+  for (unsigned int i = 0; i < num_parts; ++i) {
+    std::string e;
+    int ret = EncodeChunk(&exr_images[i], exr_headers[i],
+                          channels[i],
+                          chunk_count[i],
+                          // starting offset of current chunk after part-number
+                          chunk_offset,
+                          num_parts > 1,
+                          offset_data[i], // output: block offsets, must be initialized
+                          data_lists[i], // output
+                          total_size, // output
+                          &e);
+    if (ret != TINYEXR_SUCCESS) {
+      if (!e.empty()) {
+        tinyexr::SetErrorMessage(e, err);
+      }
+      return 0;
+    }
+    chunk_offset = total_size;
+  }
+
+  // Allocating required memory
+  if (total_size == 0) { // something went wrong
     tinyexr::SetErrorMessage("Output memory size is zero", err);
     return 0;
   }
+  (*memory_out) = static_cast<unsigned char*>(malloc(total_size));
 
-  (*memory_out) = static_cast<unsigned char *>(malloc(totalSize));
-  memcpy((*memory_out), &memory.at(0), memory.size());
-  unsigned char *memory_ptr = *memory_out + memory.size();
+  // Writing header
+  memcpy((*memory_out), &memory[0], memory.size());
+  unsigned char* memory_ptr = *memory_out + memory.size();
+  size_t sum = memory.size();
 
-  for (size_t i = 0; i < static_cast<size_t>(num_blocks); i++) {
-    memcpy(memory_ptr, &data_list[i].at(0), data_list[i].size());
-    memory_ptr += data_list[i].size();
+  // Writing offset data for chunks
+  for (unsigned int i = 0; i < num_parts; ++i) {
+    if (exr_images[i].tiles) {
+      const EXRImage* level_image = &exr_images[i];
+      int num_levels = (exr_headers[i]->tile_level_mode != TINYEXR_TILE_RIPMAP_LEVELS) ?
+        offset_data[i].num_x_levels : (offset_data[i].num_x_levels * offset_data[i].num_y_levels);
+      for (int level_index = 0; level_index < num_levels; ++level_index) {
+        for (size_t j = 0; j < offset_data[i].offsets[level_index].size(); ++j) {
+          size_t num_bytes = sizeof(tinyexr_uint64) * offset_data[i].offsets[level_index][j].size();
+          sum += num_bytes;
+          assert(sum <= total_size);
+          memcpy(memory_ptr,
+                 reinterpret_cast<unsigned char*>(&offset_data[i].offsets[level_index][j][0]),
+                 num_bytes);
+          memory_ptr += num_bytes;
+        }
+        level_image = level_image->next_level;
+      }
+    } else {
+      size_t num_bytes = sizeof(tinyexr::tinyexr_uint64) * static_cast<size_t>(chunk_count[i]);
+      sum += num_bytes;
+      assert(sum <= total_size);
+      std::vector<tinyexr::tinyexr_uint64>& offsets = offset_data[i].offsets[0][0];
+      memcpy(memory_ptr, reinterpret_cast<unsigned char*>(&offsets[0]), num_bytes);
+      memory_ptr += num_bytes;
+    }
   }
 
-  return totalSize;  // OK
+  // Writing chunk data
+  for (unsigned int i = 0; i < num_parts; ++i) {
+    for (size_t j = 0; j < static_cast<size_t>(chunk_count[i]); ++j) {
+      if (num_parts > 1) {
+        sum += 4;
+        assert(sum <= total_size);
+        unsigned int part_number = i;
+        swap4(&part_number);
+        memcpy(memory_ptr, &part_number, 4);
+        memory_ptr += 4;
+      }
+      sum += data_lists[i][j].size();
+      assert(sum <= total_size);
+      memcpy(memory_ptr, &data_lists[i][j][0], data_lists[i][j].size());
+      memory_ptr += data_lists[i][j].size();
+    }
+  }
+  assert(sum == total_size);
+  return total_size;  // OK
+}
+
+} // tinyexr
+
+size_t SaveEXRImageToMemory(const EXRImage* exr_image,
+                             const EXRHeader* exr_header,
+                             unsigned char** memory_out, const char** err) {
+  return tinyexr::SaveEXRNPartImageToMemory(exr_image, &exr_header, 1, memory_out, err);
+}
+
+size_t SaveEXRMultipartImageToMemory(const EXRImage* exr_images,
+                                     const EXRHeader** exr_headers,
+                                     unsigned int num_parts,
+                                     unsigned char** memory_out, const char** err) {
+  return tinyexr::SaveEXRNPartImageToMemory(exr_images, exr_headers, num_parts, memory_out, err);
 }
 
 int SaveEXRImageToFile(const EXRImage *exr_image, const EXRHeader *exr_header,
@@ -13304,10 +13768,8 @@ int LoadDeepEXR(DeepImage *deep_image, const char *filename, const char **err) {
   // Version, scanline.
   {
     // ver 2.0, scanline, deep bit on(0x800)
-    // 9'th, 11'th and 12'th bit must be 0: data is stored as regular scanline
-    // TODO: support long names(9th bit: 0x200)
-    // so, values must be [2, 8, 0, 0]
-    if (marker[0] != 2 || (marker[1] != 8) || marker[2] != 0 || marker[3] != 0) {
+    // must be [2, 0, 0, 0]
+    if (marker[0] != 2 || marker[1] != 8 || marker[2] != 0 || marker[3] != 0) {
       tinyexr::SetErrorMessage("Unsupported version or scanline", err);
       return TINYEXR_ERROR_UNSUPPORTED_FORMAT;
     }
@@ -13687,7 +14149,31 @@ int FreeEXRHeader(EXRHeader *exr_header) {
     free(exr_header->custom_attributes);
   }
 
+  EXRSetNameAttr(exr_header, NULL);
+
   return TINYEXR_SUCCESS;
+}
+
+void EXRSetNameAttr(EXRHeader* exr_header, const char* name) {
+  if (exr_header == NULL) {
+    return;
+  }
+  memset(exr_header->name, 0, 256);
+  if (name != NULL) {
+    size_t len = std::min(strlen(name), (size_t)255);
+    if (len) {
+      memcpy(exr_header->name, name, len);
+    }
+  }
+}
+
+int EXRNumLevels(const EXRImage* exr_image) {
+  if (exr_image == NULL) return 0;
+  if(exr_image->images) return 1; // scanlines
+  int levels = 1;
+  const EXRImage* level_image = exr_image;
+  while((level_image = level_image->next_level)) ++levels;
+  return levels;
 }
 
 int FreeEXRImage(EXRImage *exr_image) {
@@ -13841,8 +14327,11 @@ int ParseEXRMultipartHeaderFromMemory(EXRHeader ***exr_headers,
       static_cast<EXRHeader **>(malloc(sizeof(EXRHeader *) * infos.size()));
   for (size_t i = 0; i < infos.size(); i++) {
     EXRHeader *exr_header = static_cast<EXRHeader *>(malloc(sizeof(EXRHeader)));
+    memset(exr_header, 0, sizeof(EXRHeader));
 
     ConvertHeader(exr_header, infos[i]);
+
+    exr_header->multipart = exr_version->multipart ? 1 : 0;
 
     (*exr_headers)[i] = exr_header;
   }
@@ -14054,7 +14543,7 @@ int LoadEXRMultipartImageFromMemory(EXRImage *exr_images,
     chunk_offset_table_list.resize(chunk_offset_table_list.size() + 1);
     tinyexr::OffsetData& offset_data = chunk_offset_table_list.back();
     if (!exr_headers[i]->tiled || exr_headers[i]->tile_level_mode == TINYEXR_TILE_ONE_LEVEL) {
-      tinyexr::InitSingleResolutionOffsets(offset_data, exr_headers[i], exr_headers[i]->chunk_count);
+      tinyexr::InitSingleResolutionOffsets(offset_data, exr_headers[i]->chunk_count);
       std::vector<tinyexr::tinyexr_uint64>& offset_table = offset_data.offsets[0][0];
 
       for (size_t c = 0; c < offset_table.size(); c++) {
