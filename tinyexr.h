@@ -489,6 +489,18 @@ extern size_t SaveEXRImageToMemory(const EXRImage *image,
 // Saves multi-channel, multi-frame OpenEXR image to a memory.
 // Image is compressed using EXRImage.compression value.
 // File global attributes (eg. display_window) must be set in the first header.
+// Returns negative value and may set error string in `err` when there's an
+// error
+// When there was an error message, Application must free `err` with
+// FreeEXRErrorMessage()
+extern int SaveEXRMultipartImageToFile(const EXRImage *images,
+                                       const EXRHeader **exr_headers,
+                                       unsigned int num_parts,
+                                       const char *filename, const char **err);
+
+// Saves multi-channel, multi-frame OpenEXR image to a memory.
+// Image is compressed using EXRImage.compression value.
+// File global attributes (eg. display_window) must be set in the first header.
 // Return the number of bytes if success.
 // Return zero and will set error string in `err` when there's an
 // error.
@@ -13619,13 +13631,6 @@ size_t SaveEXRImageToMemory(const EXRImage* exr_image,
   return tinyexr::SaveEXRNPartImageToMemory(exr_image, &exr_header, 1, memory_out, err);
 }
 
-size_t SaveEXRMultipartImageToMemory(const EXRImage* exr_images,
-                                     const EXRHeader** exr_headers,
-                                     unsigned int num_parts,
-                                     unsigned char** memory_out, const char** err) {
-  return tinyexr::SaveEXRNPartImageToMemory(exr_images, exr_headers, num_parts, memory_out, err);
-}
-
 int SaveEXRImageToFile(const EXRImage *exr_image, const EXRHeader *exr_header,
                        const char *filename, const char **err) {
   if (exr_image == NULL || filename == NULL ||
@@ -13675,6 +13680,75 @@ int SaveEXRImageToFile(const EXRImage *exr_image, const EXRHeader *exr_header,
 
   unsigned char *mem = NULL;
   size_t mem_size = SaveEXRImageToMemory(exr_image, exr_header, &mem, err);
+  if (mem_size == 0) {
+    return TINYEXR_ERROR_SERIALZATION_FAILED;
+  }
+
+  size_t written_size = 0;
+  if ((mem_size > 0) && mem) {
+    written_size = fwrite(mem, 1, mem_size, fp);
+  }
+  free(mem);
+
+  fclose(fp);
+
+  if (written_size != mem_size) {
+    tinyexr::SetErrorMessage("Cannot write a file", err);
+    return TINYEXR_ERROR_CANT_WRITE_FILE;
+  }
+
+  return TINYEXR_SUCCESS;
+}
+
+size_t SaveEXRMultipartImageToMemory(const EXRImage* exr_images,
+                                     const EXRHeader** exr_headers,
+                                     unsigned int num_parts,
+                                     unsigned char** memory_out, const char** err) {
+  if (exr_images == NULL || exr_headers == NULL || num_parts < 2 ||
+      memory_out == NULL) {
+    tinyexr::SetErrorMessage("Invalid argument for SaveEXRNPartImageToMemory",
+                              err);
+    return 0;
+  }
+  return tinyexr::SaveEXRNPartImageToMemory(exr_images, exr_headers, num_parts, memory_out, err);
+}
+
+int SaveEXRMultipartImageToFile(const EXRImage* exr_images,
+                                const EXRHeader** exr_headers,
+                                unsigned int num_parts,
+                                const char* filename,
+                                const char** err) {
+  if (exr_images == NULL || exr_headers == NULL || num_parts < 2) {
+    tinyexr::SetErrorMessage("Invalid argument for SaveEXRMultipartImageToFile",
+                              err);
+    return TINYEXR_ERROR_INVALID_ARGUMENT;
+  }
+
+  FILE *fp = NULL;
+#ifdef _WIN32
+#if defined(_MSC_VER) || defined(__MINGW32__)  // MSVC, MinGW gcc or clang
+  errno_t errcode =
+    _wfopen_s(&fp, tinyexr::UTF8ToWchar(filename).c_str(), L"wb");
+  if (errcode != 0) {
+    tinyexr::SetErrorMessage("Cannot write a file: " + std::string(filename),
+                             err);
+    return TINYEXR_ERROR_CANT_WRITE_FILE;
+  }
+#else
+  // Unknown compiler
+  fp = fopen(filename, "wb");
+#endif
+#else
+  fp = fopen(filename, "wb");
+#endif
+  if (!fp) {
+    tinyexr::SetErrorMessage("Cannot write a file: " + std::string(filename),
+                             err);
+    return TINYEXR_ERROR_CANT_WRITE_FILE;
+  }
+
+  unsigned char *mem = NULL;
+  size_t mem_size = SaveEXRMultipartImageToMemory(exr_images, exr_headers, num_parts, &mem, err);
   if (mem_size == 0) {
     return TINYEXR_ERROR_SERIALZATION_FAILED;
   }
