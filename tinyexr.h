@@ -13376,7 +13376,7 @@ static size_t SaveEXRNPartImageToMemory(const EXRImage* exr_images,
     }
   }
   // Write attributes to memory buffer.
-  std::vector<std::vector<tinyexr::ChannelInfo>> channels(num_parts);
+  std::vector< std::vector<tinyexr::ChannelInfo> > channels(num_parts);
   {
     std::set<std::string> partnames;
     for (unsigned int i = 0; i < num_parts; ++i) {
@@ -13540,7 +13540,7 @@ static size_t SaveEXRNPartImageToMemory(const EXRImage* exr_images,
   tinyexr_uint64 chunk_offset = memory.size() + size_t(total_chunk_count) * sizeof(tinyexr_uint64);
 
   tinyexr_uint64 total_size = 0;
-  std::vector<std::vector<std::vector<unsigned char>>> data_lists(num_parts);
+  std::vector< std::vector< std::vector<unsigned char> > > data_lists(num_parts);
   for (unsigned int i = 0; i < num_parts; ++i) {
     std::string e;
     int ret = EncodeChunk(&exr_images[i], exr_headers[i],
