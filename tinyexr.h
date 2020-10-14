@@ -12054,8 +12054,6 @@ static int DecodeEXRImage(EXRImage *exr_image, const EXRHeader *exr_header,
     InitSingleResolutionOffsets(offset_data, num_blocks);
   }
 
-  // validate shit here son!  DO NOT SUBMIT:
-
   if (!exr_header->tiled) {
     std::vector<tinyexr::tinyexr_uint64>& offsets = offset_data.offsets[0][0];
     for (size_t y = 0; y < num_blocks; y++) {
