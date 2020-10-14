@@ -577,7 +577,9 @@ extern int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
 #include <vector>
 #include <set>
 
-#if __cplusplus > 199711L
+// https://stackoverflow.com/questions/5047971/how-do-i-check-for-c11-support
+#if __cplusplus > 199711L || (defined(_MSC_VER) && _MSC_VER >= 1900)
+#define TINYEXR_HAS_CXX11 (1)
 // C++11
 #include <cstdint>
 
@@ -11096,6 +11098,19 @@ static int DecodeTiledLevel(EXRImage* exr_image, const EXRHeader* exr_header,
   int num_tiles = num_x_tiles * num_y_tiles;
 
   int err_code = TINYEXR_SUCCESS;
+
+  enum {
+    EF_SUCCESS = 0,
+    EF_INVALID_DATA = 1,
+    EF_INSUFFICIENT_DATA = 2,
+    EF_FAILED_TO_DECODE = 4
+  };
+#if TINYEXR_HAS_CXX11 && (TINYEXR_USE_THREAD > 0)
+  std::atomic<unsigned> error_flag(EF_SUCCESS);
+#else
+  unsigned error_flag(EF_SUCCESS);
+#endif
+  
   // Although the spec says : "...the data window is subdivided into an array of smaller rectangles...",
   // the IlmImf library allows the dimensions of the tile to be larger (or equal) than the dimensions of the data window.
 #if 0
@@ -11110,10 +11125,9 @@ static int DecodeTiledLevel(EXRImage* exr_image, const EXRHeader* exr_header,
   exr_image->tiles = static_cast<EXRTile*>(
     calloc(sizeof(EXRTile), static_cast<size_t>(num_tiles)));
 
-#if (__cplusplus > 199711L) && (TINYEXR_USE_THREAD > 0)
-
+#if TINYEXR_HAS_CXX11 && (TINYEXR_USE_THREAD > 0)
   std::vector<std::thread> workers;
-  std::atomic<size_t> tile_count(0);
+  std::atomic<int> tile_count(0);
 
   int num_threads = std::max(1, int(std::thread::hardware_concurrency()));
   if (num_threads > int(num_tiles)) {
@@ -11123,11 +11137,14 @@ static int DecodeTiledLevel(EXRImage* exr_image, const EXRHeader* exr_header,
   for (int t = 0; t < num_threads; t++) {
     workers.emplace_back(std::thread([&]()
       {
-        size_t tile_idx = 0;
+        int tile_idx = 0;
         while ((tile_idx = tile_count++) < num_tiles) {
 
 #else
-  for (size_t tile_idx = 0; tile_idx < num_tiles; tile_idx++) {
+#if TINYEXR_USE_OPENMP
+#pragma omp parallel for
+#endif
+  for (int tile_idx = 0; tile_idx < num_tiles; tile_idx++) {
 #endif
     // Allocate memory for each tile.
     exr_image->tiles[tile_idx].images = tinyexr::AllocateImage(
@@ -11135,18 +11152,15 @@ static int DecodeTiledLevel(EXRImage* exr_image, const EXRHeader* exr_header,
       exr_header->requested_pixel_types, exr_header->tile_size_x,
       exr_header->tile_size_y);
 
-    size_t x_tile = tile_idx % num_x_tiles;
-    size_t y_tile = tile_idx / num_x_tiles;
+    int x_tile = tile_idx % num_x_tiles;
+    int y_tile = tile_idx / num_x_tiles;
     // 16 byte: tile coordinates
     // 4 byte : data size
     // ~      : data(uncompressed or compressed)
     tinyexr::tinyexr_uint64 offset = offset_data.offsets[level_index][y_tile][x_tile];
     if (offset + sizeof(int) * 5 > size) {
-      // TODO(LTE): atomic
-      if (err) {
-        (*err) += "Insufficient data size.\n";
-      }
-      err_code = TINYEXR_ERROR_INVALID_DATA;
+      // Insufficient data size.
+      error_flag |= EF_INSUFFICIENT_DATA; 
       break;
     }
 
@@ -11163,11 +11177,13 @@ static int DecodeTiledLevel(EXRImage* exr_image, const EXRHeader* exr_header,
     tinyexr::swap4(&tile_coordinates[3]);
 
     if (tile_coordinates[2] != exr_image->level_x) {
-      err_code = TINYEXR_ERROR_INVALID_DATA;
+      // Invalid data.
+      error_flag |= EF_INVALID_DATA;
       break;
     }
     if (tile_coordinates[3] != exr_image->level_y) {
-      err_code = TINYEXR_ERROR_INVALID_DATA;
+      // Invalid data.
+      error_flag |= EF_INVALID_DATA;
       break;
     }
 
@@ -11177,11 +11193,8 @@ static int DecodeTiledLevel(EXRImage* exr_image, const EXRHeader* exr_header,
     tinyexr::swap4(&data_len);
 
     if (data_len < 2 || size_t(data_len) > data_size) {
-      // TODO(LTE): atomic
-      if (err) {
-        (*err) += "Insufficient data length.\n";
-      }
-      err_code = TINYEXR_ERROR_INVALID_DATA;
+      // Insufficient data size.
+      error_flag |= EF_INSUFFICIENT_DATA;
       break;
     }
 
@@ -11203,11 +11216,8 @@ static int DecodeTiledLevel(EXRImage* exr_image, const EXRHeader* exr_header,
       exr_header->channels, channel_offset_list);
 
     if (!ret) {
-      // TODO(LTE): atomic
-      if (err) {
-        (*err) += "Failed to decode tile data.\n";
-      }
-      err_code = TINYEXR_ERROR_INVALID_DATA;
+      // Failed to decode tile data.
+      error_flag |= EF_FAILED_TO_DECODE;
     }
 
     exr_image->tiles[tile_idx].offset_x = tile_coordinates[0];
@@ -11215,8 +11225,8 @@ static int DecodeTiledLevel(EXRImage* exr_image, const EXRHeader* exr_header,
     exr_image->tiles[tile_idx].level_x = tile_coordinates[2];
     exr_image->tiles[tile_idx].level_y = tile_coordinates[3];
 
-#if (__cplusplus > 199711L) && (TINYEXR_USE_THREAD > 0)
-  }
+#if TINYEXR_HAS_CXX11 && (TINYEXR_USE_THREAD > 0)
+  }  
         }));
     }  // num_thread loop
 
@@ -11225,13 +11235,22 @@ static int DecodeTiledLevel(EXRImage* exr_image, const EXRHeader* exr_header,
     }
 
 #else
-  }
+  } // parallel for
 #endif
 
   // Even in the event of an error, the reserved memory may be freed.
   exr_image->num_channels = num_channels;
   exr_image->num_tiles = static_cast<int>(num_tiles);
 
+  if (error_flag)  err_code = TINYEXR_ERROR_INVALID_DATA;
+  if (err) {
+    if (error_flag & EF_INSUFFICIENT_DATA) {
+      (*err) += "Insufficient data length.\n";
+    }
+    if (error_flag & EF_FAILED_TO_DECODE) {
+      (*err) += "Failed to decode tile data.\n";
+    }
+  }
   return err_code;
 }
 
@@ -11313,7 +11332,11 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
     return TINYEXR_ERROR_INVALID_DATA;
   }
 
-  bool invalid_data = false;  // TODO(LTE): Use atomic lock for MT safety.
+#if TINYEXR_HAS_CXX11 && (TINYEXR_USE_THREAD > 0)
+  std::atomic<bool> invalid_data(false);
+#else
+  bool invalid_data(false);
+#endif
 
   if (exr_header->tiled) {
     // value check
@@ -11409,7 +11432,7 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
         num_channels, exr_header->channels, exr_header->requested_pixel_types,
         data_width, data_height);
 
-#if (__cplusplus > 199711L) && (TINYEXR_USE_THREAD > 0)
+#if TINYEXR_HAS_CXX11 && (TINYEXR_USE_THREAD > 0)
     std::vector<std::thread> workers;
     std::atomic<int> y_count(0);
 
@@ -11510,7 +11533,7 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
             }
           }
 
-#if (__cplusplus > 199711L) && (TINYEXR_USE_THREAD > 0)
+#if TINYEXR_HAS_CXX11 && (TINYEXR_USE_THREAD > 0)
         }
       }));
     }
@@ -11853,7 +11876,6 @@ static void ReconstructTileOffsets(OffsetData& offset_data,
                                    bool isMultiPartFile,
                                    bool isDeep) {
   int numXLevels = offset_data.num_x_levels;
-  int numYLevels = offset_data.num_y_levels;
   for (unsigned int l = 0; l < offset_data.offsets.size(); ++l) {
     for (unsigned int dy = 0; dy < offset_data.offsets[l].size(); ++dy) {
       for (unsigned int dx = 0; dx < offset_data.offsets[l][dy].size(); ++dx) {
@@ -11911,8 +11933,8 @@ static void ReconstructTileOffsets(OffsetData& offset_data,
           tileX, tileY, levelX, levelY))
           return;
 
-        int l = LevelIndex(levelX, levelY, exr_header->tile_level_mode, numXLevels);
-        offset_data.offsets[l][tileY][tileX] = tileOffset;
+        int level_idx = LevelIndex(levelX, levelY, exr_header->tile_level_mode, numXLevels);
+        offset_data.offsets[level_idx][tileY][tileX] = tileOffset;
       }
     }
   }
@@ -11923,9 +11945,6 @@ static int ReadOffsets(OffsetData& offset_data,
                        const unsigned char* head,
                        const unsigned char*& marker,
                        const size_t size,
-                       const EXRHeader* exr_header,
-                       //bool isMultiPartFile,
-                       //bool isDeep,
                        const char** err) {
   for (unsigned int l = 0; l < offset_data.offsets.size(); ++l) {
     for (unsigned int dy = 0; dy < offset_data.offsets[l].size(); ++dy) {
@@ -12029,10 +12048,7 @@ static int DecodeEXRImage(EXRImage *exr_image, const EXRHeader *exr_header,
       }
     }
 
-    int ret = ReadOffsets(offset_data, head, marker, size,
-                          exr_header,
-                          //exr_header->multipart, exr_header->non_image,
-                          err);
+    int ret = ReadOffsets(offset_data, head, marker, size, err);
     if (ret != TINYEXR_SUCCESS) return ret;
     if (IsAnyOffsetsAreInvalid(offset_data)) {
       ReconstructTileOffsets(offset_data, exr_header,
@@ -13019,7 +13035,6 @@ static int EncodeTiledLevel(const EXRImage* level_image, const EXRHeader* exr_he
   int num_tiles = num_x_tiles * num_y_tiles;
   assert(num_tiles == level_image->num_tiles);
 
-  int err_code = TINYEXR_SUCCESS;
   if ((exr_header->tile_size_x > level_image->width || exr_header->tile_size_y > level_image->height) &&
       level_image->level_x == 0 && level_image->level_y == 0) {
       if (err) {
@@ -13027,14 +13042,37 @@ static int EncodeTiledLevel(const EXRImage* level_image, const EXRHeader* exr_he
     }
     return TINYEXR_ERROR_INVALID_DATA;
   }
-  // TODO(LTE): C++11 thread
 
+
+#if TINYEXR_HAS_CXX11 && (TINYEXR_USE_THREAD > 0)
+  std::atomic<bool> invalid_data(false);
+#else
+  bool invalid_data(false);
+#endif
+
+#if TINYEXR_HAS_CXX11 && (TINYEXR_USE_THREAD > 0)
+  std::vector<std::thread> workers;
+  std::atomic<int> tile_count(0);
+
+  int num_threads = std::max(1, int(std::thread::hardware_concurrency()));
+  if (num_threads > int(num_tiles)) {
+    num_threads = int(num_tiles);
+  }
+
+  for (int t = 0; t < num_threads; t++) {
+    workers.emplace_back(std::thread([&]() {
+      int i = 0;
+      while ((i = tile_count++) < num_tiles) {
+
+#else
   // Use signed int since some OpenMP compiler doesn't allow unsigned type for
   // `parallel for`
 #if TINYEXR_USE_OPENMP
 #pragma omp parallel for
 #endif
   for (int i = 0; i < num_tiles; i++) {
+
+#endif
     size_t tile_idx = static_cast<size_t>(i);
     size_t data_idx = tile_idx + start_index;
 
@@ -13063,10 +13101,8 @@ static int EncodeTiledLevel(const EXRImage* level_image, const EXRHeader* exr_he
                                channel_offset_list,
                                compression_param);
     if (!ret) {
-      if (err) {
-        (*err) += "Failed to encode tile data.\n";
-      }
-      return TINYEXR_ERROR_INVALID_DATA;
+      invalid_data = true;
+      break;
     }
     assert(data_list[data_idx].size() > data_header_size);
     int data_len = static_cast<int>(data_list[data_idx].size() - data_header_size);
@@ -13082,8 +13118,25 @@ static int EncodeTiledLevel(const EXRImage* level_image, const EXRHeader* exr_he
     swap4(reinterpret_cast<int*>(&data_list[data_idx][8]));
     swap4(reinterpret_cast<int*>(&data_list[data_idx][12]));
     swap4(reinterpret_cast<int*>(&data_list[data_idx][16]));
-  }  // omp parallel
 
+#if TINYEXR_HAS_CXX11 && (TINYEXR_USE_THREAD > 0)
+  }
+}));
+    }
+
+    for (auto &t : workers) {
+      t.join();
+    }
+#else
+    }  // omp parallel
+#endif
+
+  if (invalid_data) {
+    if (err) {
+      (*err) += "Failed to encode tile data.\n";  
+    }
+    return TINYEXR_ERROR_INVALID_DATA;
+  }
   return TINYEXR_SUCCESS;
 }
 
@@ -13220,15 +13273,30 @@ static int EncodeChunk(const EXRImage* exr_image, const EXRHeader* exr_header,
     total_size = offset;
   } else { // scanlines
     std::vector<tinyexr::tinyexr_uint64>& offsets = offset_data.offsets[0][0];
+
+#if TINYEXR_HAS_CXX11 && (TINYEXR_USE_THREAD > 0)
+    std::atomic<bool> invalid_data(false);
+    std::vector<std::thread> workers;
+    std::atomic<int> block_count(0);
+
+    int num_threads = std::min(std::max(1, int(std::thread::hardware_concurrency())), num_blocks);
+
+    for (int t = 0; t < num_threads; t++) {
+      workers.emplace_back(std::thread([&]() {
+        int i = 0;
+        while ((i = block_count++) < num_blocks) {
+
+#else
+    bool invalid_data(false);
 #if TINYEXR_USE_OPENMP
 #pragma omp parallel for
 #endif
     for (int i = 0; i < num_blocks; i++) {
-      size_t ii = static_cast<size_t>(i);
+
+#endif
       int start_y = num_scanlines * i;
       int end_Y = (std::min)(num_scanlines * (i + 1), exr_image->height);
       int num_lines = end_Y - start_y;
-
 
       const unsigned char* const* images =
         static_cast<const unsigned char* const*>(exr_image->images);
@@ -13251,10 +13319,8 @@ static int EncodeChunk(const EXRImage* exr_image, const EXRHeader* exr_header,
                                  channel_offset_list,
                                  compression_param);
       if (!ret) {
-        if (err) {
-          (*err) += "Failed to encode scanline data.\n";
-        }
-        return TINYEXR_ERROR_INVALID_DATA;
+        invalid_data = true;
+        break;
       }
       assert(data_list[i].size() > data_header_size);
       int data_len = static_cast<int>(data_list[i].size() - data_header_size);
@@ -13263,8 +13329,24 @@ static int EncodeChunk(const EXRImage* exr_image, const EXRHeader* exr_header,
 
       swap4(reinterpret_cast<int*>(&data_list[i][0]));
       swap4(reinterpret_cast<int*>(&data_list[i][4]));
+#if TINYEXR_HAS_CXX11 && (TINYEXR_USE_THREAD > 0)
+        }
+                                       }));
+    }
 
+    for (auto &t : workers) {
+      t.join();
+    }
+#else
     }  // omp parallel
+#endif
+
+    if (invalid_data) {
+      if (err) {
+        (*err) += "Failed to encode scanline data.\n";
+      }
+      return TINYEXR_ERROR_INVALID_DATA;
+    }
 
     for (size_t i = 0; i < static_cast<size_t>(num_blocks); i++) {
       offsets[i] = offset;
