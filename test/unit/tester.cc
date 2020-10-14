@@ -1,6 +1,7 @@
 // Assume this file is encoded in UTF-8
 #define CATCH_CONFIG_MAIN  // This tells Catch to provide a main() - only do
                            // this in one cpp file
+
 #include <cassert>
 #include <cstdio>
 #include <cstdlib>
@@ -20,6 +21,9 @@
 #define TINYEXR_IMPLEMENTATION
 #include "../../tinyexr.h"
 
+// uncomment it to write out memory-saved images to files
+//#define DUMP_IMAGES
+
 // path to https://github.com/openexr/openexr-images
 // TODO(syoyo): Read openexr-images path from command argument.
 const char* kOpenEXRImagePath = "../../../openexr-images/";
@@ -27,6 +31,18 @@ const char* kOpenEXRImagePath = "../../../openexr-images/";
 std::string GetPath(const char* basename) {
   std::string s;
   s = std::string(kOpenEXRImagePath) + std::string(basename);
+  return s;
+}
+
+// simply dumping to build folder
+std::string GetDumpPath(const char* basename) {
+  std::string s = basename;
+  size_t index = s.find_last_of("/\\");
+
+  if (index != std::string::npos && index + 1 < s.size()) {
+    s = s.substr(index + 1);
+  }
+  //return "dump/" + s;
   return s;
 }
 
@@ -58,6 +74,114 @@ std::wstring UTF8_to_wchar(const char* in) {
     }
   }
   return out;
+}
+
+#ifdef DUMP_IMAGES
+// return true if success
+static bool WriteMemoryToFile(const char *filename, const unsigned char* memory, size_t size)
+{
+  std::cout << "Saving:" << std::string(filename) << std::endl;
+  FILE *fp = NULL;
+#ifdef _WIN32
+#if defined(_MSC_VER) || defined(__MINGW32__)  // MSVC, MinGW gcc or clang
+  errno_t errcode =
+      _wfopen_s(&fp, UTF8_to_wchar(filename).c_str(), L"wb");
+  if (errcode != 0) return false;
+#else
+  // Unknown compiler
+  fp = fopen(filename, "wb");
+#endif
+#else
+  fp = fopen(filename, "wb");
+#endif
+  if (!fp) return false;
+
+  size_t written_size = 0;
+  if (size && memory) {
+    written_size = fwrite(memory, 1, size, fp);
+  }
+
+  fclose(fp);
+  
+  return written_size == size;
+}
+#endif
+
+// some helper funcs
+static bool operator == (const EXRBox2i& a, const EXRBox2i& b)
+{
+  return a.min_x == b.min_x && a.min_y == b.min_y &&
+    a.max_x == b.max_x && a.max_y == b.max_y;
+}
+
+static int GetWidth(const EXRBox2i& box)
+{
+  return box.max_x - box.min_x + 1;
+}
+
+static int GetHeight(const EXRBox2i& box)
+{
+  return box.max_y - box.min_y + 1;
+}
+
+static void CompareHeaders(const EXRHeader& header1, const EXRHeader& header2)
+{
+#if 0
+  printf("header1.dataWindow = %d, %d, %d, %d\n", header1.data_window.min_x,
+     header1.data_window.min_y, header1.data_window.max_x, header1.data_window.max_y);
+  printf("header2.dataWindow = %d, %d, %d, %d\n", header2.data_window.min_x,
+     header2.data_window.min_y, header2.data_window.max_x, header2.data_window.max_y);
+#endif
+  REQUIRE(header1.compression_type == header2.compression_type);
+  REQUIRE(header1.num_channels == header2.num_channels);
+  REQUIRE(GetWidth(header1.data_window) == GetWidth(header2.data_window));
+  REQUIRE(GetHeight(header1.data_window) == GetHeight(header2.data_window));
+  //REQUIRE(header1.display_window == header2.display_window);
+  //REQUIRE(header1.screen_window_width == header2.screen_window_width);
+  //REQUIRE(header1.pixel_aspect_ratio == header2.pixel_aspect_ratio);
+  REQUIRE(header1.tiled == header2.tiled);
+  REQUIRE(header1.tile_size_x == header2.tile_size_x);
+  REQUIRE(header1.tile_size_y == header2.tile_size_y);
+  REQUIRE(header1.tile_level_mode == header2.tile_level_mode);
+  REQUIRE(header1.tile_rounding_mode == header2.tile_rounding_mode);
+
+  REQUIRE(header1.non_image == header2.non_image);
+
+  REQUIRE(0 == strcmp(header1.name, header2.name));
+
+  for (int c = 0; c < header1.num_channels; c++)
+  {
+    REQUIRE(header1.pixel_types[c] == header2.pixel_types[c]); // assume no conversion
+    REQUIRE(0 == strcmp(header1.channels[c].name, header2.channels[c].name));
+    REQUIRE(header1.channels[c].pixel_type == header2.pixel_types[c]);
+    //REQUIRE(header1.channels[c].p_linear == header2.channels[c].p_linear);
+    //REQUIRE(header1.channels[c].x_sampling == header2.channels[c].x_sampling);
+    //REQUIRE(header1.channels[c].y_sampling == header2.channels[c].y_sampling);
+  }
+}
+
+static void CompareImages(const EXRImage& image1, const EXRImage& image2)
+{
+  bool tiles_ok = image1.tiles && image2.tiles || image1.tiles == NULL && image2.tiles == NULL;
+  REQUIRE(true == tiles_ok);
+  bool images_ok = image1.images && image2.images || image1.images == NULL && image2.images == NULL;
+  REQUIRE(true == images_ok);
+  REQUIRE(image1.num_channels == image2.num_channels);
+  
+  const EXRImage* level_image1 = &image1;
+  const EXRImage* level_image2 = &image2;
+  while(level_image1 && level_image2)
+  {
+    REQUIRE(level_image1->level_x == level_image2->level_x);
+    REQUIRE(level_image1->level_y == level_image2->level_y);
+    REQUIRE(level_image1->width == level_image2->width);
+    REQUIRE(level_image1->height == level_image2->height);
+    REQUIRE(level_image1->num_tiles == level_image2->num_tiles);
+    level_image1 = level_image1->next_level;
+    level_image2 = level_image2->next_level;
+    bool levels_ok = level_image1 && level_image2 || level_image1 == NULL && level_image2 == NULL;
+    REQUIRE(true == levels_ok);
+  }
 }
 
 TEST_CASE("asakusa", "[Load]") {
@@ -377,10 +501,18 @@ TEST_CASE("Tiles/GoldenGate.exr|Load", "[Load]") {
   const char* err;
   ret = ParseEXRHeaderFromFile(&header, &exr_version, filepath.c_str(), &err);
   REQUIRE(TINYEXR_SUCCESS == ret);
-
+  REQUIRE(1 == header.tiled);
+  REQUIRE(TINYEXR_TILE_ONE_LEVEL == header.tile_level_mode);
+  REQUIRE(128 == header.tile_size_x);
+  REQUIRE(128 == header.tile_size_y);
+  
   ret = LoadEXRImageFromFile(&image, &header, filepath.c_str(), &err);
   REQUIRE(TINYEXR_SUCCESS == ret);
-
+  REQUIRE(NULL != image.tiles);
+  REQUIRE(0 == image.level_x);
+  REQUIRE(0 == image.level_y);
+  REQUIRE(1 == EXRNumLevels(&image));
+  
   FreeEXRHeader(&header);
   FreeEXRImage(&image);
 }
@@ -456,12 +588,424 @@ TEST_CASE("MultiResolution/Bonita.exr", "[Load]") {
   const char* err;
   ret = ParseEXRHeaderFromFile(&header, &exr_version, filepath.c_str(), &err);
   REQUIRE(TINYEXR_SUCCESS == ret);
-
+  REQUIRE(1 == header.tiled);
+  REQUIRE(TINYEXR_TILE_MIPMAP_LEVELS == header.tile_level_mode);
+  REQUIRE(TINYEXR_TILE_ROUND_DOWN == header.tile_rounding_mode);
+  
   ret = LoadEXRImageFromFile(&image, &header, filepath.c_str(), &err);
   REQUIRE(TINYEXR_SUCCESS == ret);
-
+  REQUIRE(10 == EXRNumLevels(&image));
+  
   FreeEXRHeader(&header);
   FreeEXRImage(&image);
+}
+
+TEST_CASE("MultiResolution/Kapaa.exr", "[Load]") {
+  EXRVersion exr_version;
+  std::string filepath = GetPath("MultiResolution/Kapaa.exr");
+  std::cout << "Loading" << filepath << std::endl;
+  int ret = ParseEXRVersionFromFile(&exr_version, filepath.c_str());
+  REQUIRE(TINYEXR_SUCCESS == ret);
+  REQUIRE(true == exr_version.tiled);
+  REQUIRE(false == exr_version.non_image);
+  REQUIRE(false == exr_version.multipart);
+
+  EXRVersion version;
+  EXRHeader header;
+  EXRImage image;
+  InitEXRHeader(&header);
+  InitEXRImage(&image);
+
+  const char* err;
+  ret = ParseEXRHeaderFromFile(&header, &exr_version, filepath.c_str(), &err);
+  REQUIRE(TINYEXR_SUCCESS == ret);
+  REQUIRE(1 == header.tiled);
+  REQUIRE(TINYEXR_TILE_RIPMAP_LEVELS == header.tile_level_mode);
+  REQUIRE(TINYEXR_TILE_ROUND_UP == header.tile_rounding_mode);
+  REQUIRE(64 == header.tile_size_x);
+  REQUIRE(64 == header.tile_size_y);
+  
+  ret = LoadEXRImageFromFile(&image, &header, filepath.c_str(), &err);
+  REQUIRE(TINYEXR_SUCCESS == ret);
+  REQUIRE(11*11 == EXRNumLevels(&image));
+  
+  FreeEXRHeader(&header);
+  FreeEXRImage(&image);
+}
+
+TEST_CASE("Saving ScanLines", "[Save]") {
+  std::vector<std::string> inputs;
+  inputs.push_back("ScanLines/Blobbies.exr");
+  inputs.push_back("ScanLines/CandleGlass.exr");
+  // inputs.push_back("ScanLines/Cannon.exr"); // Cannon.exr will fail since it
+  // uses b44 compression which is not yet supported on TinyEXR.
+  inputs.push_back("ScanLines/Desk.exr");
+  inputs.push_back("ScanLines/MtTamWest.exr");
+  inputs.push_back("ScanLines/PrismsLenses.exr");
+  inputs.push_back("ScanLines/StillLife.exr");
+  inputs.push_back("ScanLines/Tree.exr");
+
+  for (size_t i = 0; i < inputs.size(); i++) {
+    std::string filepath = GetPath(inputs[i].c_str());
+    std::cout << "Input:" << filepath << std::endl;
+  
+    EXRVersion version1;
+    int ret = ParseEXRVersionFromFile(&version1, filepath.c_str());
+    REQUIRE(TINYEXR_SUCCESS == ret);
+
+    EXRHeader header1;
+    EXRImage image1;
+    unsigned char *data = NULL;
+    size_t data_size;
+    // loading from file
+    {
+      InitEXRHeader(&header1);
+      InitEXRImage(&image1);
+
+      const char* err;
+      ret = ParseEXRHeaderFromFile(&header1, &version1, filepath.c_str(), &err);
+      REQUIRE(TINYEXR_SUCCESS == ret);
+
+      ret = LoadEXRImageFromFile(&image1, &header1, filepath.c_str(), &err);
+      REQUIRE(TINYEXR_SUCCESS == ret);
+    }
+    // saving to memory
+    {
+      const char* err = NULL;
+      data_size = SaveEXRImageToMemory(&image1, &header1, &data, &err);
+      REQUIRE(0 != data_size);
+      //FreeEXRHeader(&header);
+#ifdef DUMP_IMAGES
+      bool ret = WriteMemoryToFile(GetDumpPath(inputs[i].c_str()).c_str(), data, data_size);
+      REQUIRE(true == ret);
+#endif
+    }
+    // loading back from memory
+    {
+      EXRVersion version2;
+      {
+        int ret = ParseEXRVersionFromMemory(&version2, data, data_size);
+        REQUIRE(0 == ret);
+      }
+      EXRHeader header2;
+      {
+        const char* err = NULL;
+        InitEXRHeader(&header2);
+        int ret = ParseEXRHeaderFromMemory(&header2, &version2, data, data_size, &err);
+        REQUIRE(0 == ret);
+      }
+      EXRImage image2;
+      {
+        const char* err = NULL;
+        InitEXRImage(&image2);
+        int ret = LoadEXRImageFromMemory(&image2, &header2, data, data_size, &err);
+        REQUIRE(TINYEXR_SUCCESS == ret);
+        free(data);
+      }
+    
+      CompareHeaders(header1, header2);
+      CompareImages(image1, image2);
+    
+      FreeEXRImage(&image2);
+      FreeEXRHeader(&header2);
+    }
+  
+    FreeEXRHeader(&header1);
+    FreeEXRImage(&image1);
+  }
+}
+
+TEST_CASE("Saving MultiResolution", "[Save]") {
+  //std::string filepath = GetPath("MultiResolution/Bonita.exr");
+  //std::cout << "Load-save-reload:" << filepath << std::endl;
+  
+  std::vector<std::string> inputs;
+  inputs.push_back("MultiResolution/Bonita.exr");
+  inputs.push_back("MultiResolution/Kapaa.exr");
+
+  for (size_t i = 0; i < inputs.size(); i++) {
+    std::string filepath = GetPath(inputs[i].c_str());
+    std::cout << "Input:" << filepath << std::endl;
+  
+    EXRVersion version1;
+    int ret = ParseEXRVersionFromFile(&version1, filepath.c_str());
+    REQUIRE(TINYEXR_SUCCESS == ret);
+
+    EXRHeader header1;
+    EXRImage image1;
+    unsigned char *data = NULL;
+    size_t data_size;
+    // loading from file
+    {
+      InitEXRHeader(&header1);
+      InitEXRImage(&image1);
+
+      const char* err;
+      ret = ParseEXRHeaderFromFile(&header1, &version1, filepath.c_str(), &err);
+      REQUIRE(TINYEXR_SUCCESS == ret);
+
+      ret = LoadEXRImageFromFile(&image1, &header1, filepath.c_str(), &err);
+      REQUIRE(TINYEXR_SUCCESS == ret);
+    }
+    // saving to memory
+    {
+      const char* err = NULL;
+      data_size = SaveEXRImageToMemory(&image1, &header1, &data, &err);
+      REQUIRE(0 != data_size);
+#ifdef DUMP_IMAGES
+      bool ret = WriteMemoryToFile(GetDumpPath(inputs[i].c_str()).c_str(), data, data_size);
+      REQUIRE(true == ret);
+#endif
+    }
+    // loading back from memory
+    {
+      EXRVersion version2;
+      {
+        int ret = ParseEXRVersionFromMemory(&version2, data, data_size);
+        REQUIRE(0 == ret);
+      }
+      EXRHeader header2;
+      {
+        const char* err = NULL;
+        InitEXRHeader(&header2);
+        int ret = ParseEXRHeaderFromMemory(&header2, &version2, data, data_size, &err);
+        REQUIRE(0 == ret);
+      }
+      EXRImage image2;
+      {
+        const char* err = NULL;
+        InitEXRImage(&image2);
+        int ret = LoadEXRImageFromMemory(&image2, &header2, data, data_size, &err);
+        REQUIRE(TINYEXR_SUCCESS == ret);
+        free(data);
+      }
+    
+      CompareHeaders(header1, header2);
+      CompareImages(image1, image2);
+    
+      FreeEXRImage(&image2);
+      FreeEXRHeader(&header2);
+    } 
+    FreeEXRHeader(&header1);
+    FreeEXRImage(&image1);
+  }
+}
+
+TEST_CASE("Saving multipart", "[Save]") {
+  
+  std::vector<std::string> inputs;
+  inputs.push_back("Beachball/multipart.0001.exr");
+
+  for (size_t i = 0; i < inputs.size(); i++) {
+    std::string filepath = GetPath(inputs[i].c_str());
+    std::cout << "Input:" << filepath << std::endl;
+  
+    EXRVersion version1;
+    {
+      int ret = ParseEXRVersionFromFile(&version1, filepath.c_str());
+      REQUIRE(TINYEXR_SUCCESS == ret);
+      REQUIRE(true == version1.multipart);
+    }
+  
+    EXRHeader** headers1;  // list of EXRHeader pointers.
+    int num_headers1;
+    {
+      const char* err = NULL;
+      int ret = ParseEXRMultipartHeaderFromFile(&headers1, &num_headers1,
+                        &version1, filepath.c_str(), &err);
+      REQUIRE(TINYEXR_SUCCESS == ret);
+    }
+  
+    unsigned char *data = NULL;
+    size_t data_size;
+  
+    std::vector<EXRImage> images1(num_headers1);
+    // loading from file
+    {
+      const char* err = NULL;
+      for (int j = 0; j < num_headers1; j++) {
+        InitEXRImage(&images1[j]);
+      }
+      int ret = LoadEXRMultipartImageFromFile(&images1[0], const_cast<const EXRHeader**>(headers1),
+      static_cast<unsigned int>(num_headers1), filepath.c_str(), &err);
+      REQUIRE(TINYEXR_SUCCESS == ret);
+    }
+    // saving to memory
+    {
+      const char* err = NULL;
+      data_size = SaveEXRMultipartImageToMemory(&images1[0],
+        const_cast<const EXRHeader**>(headers1), static_cast<unsigned int>(num_headers1), &data, &err);
+      REQUIRE(0 != data_size);
+  #ifdef DUMP_IMAGES
+      bool ret = WriteMemoryToFile(GetDumpPath(inputs[i].c_str()).c_str(), data, data_size);
+      REQUIRE(true == ret);
+  #endif
+    }
+    // loading back from memory
+    {
+      EXRVersion version2;
+      {
+        int ret = ParseEXRVersionFromMemory(&version2, data, data_size);
+        REQUIRE(TINYEXR_SUCCESS == ret);
+        REQUIRE(true == version2.multipart);
+      }
+      EXRHeader** headers2;
+      int num_headers2;
+      {
+        const char* err = NULL;
+        int ret = ParseEXRMultipartHeaderFromMemory(&headers2, &num_headers2, &version2,
+                                               data, data_size, &err);
+              REQUIRE(TINYEXR_SUCCESS == ret);
+                           
+      }
+      REQUIRE(num_headers1 == num_headers2);
+    
+      std::vector<EXRImage> images2(num_headers2);
+      {
+        for (int j = 0; j < num_headers2; j++) {
+          InitEXRImage(&images2[j]);
+        }
+        const char* err = NULL;
+        int ret = LoadEXRMultipartImageFromMemory(&images2[0], const_cast<const EXRHeader**>(headers2),
+                              static_cast<unsigned int>(num_headers2),
+                               data, data_size, &err);
+        REQUIRE(TINYEXR_SUCCESS == ret);
+        free(data);
+      }
+    
+      for (int j = 0; j < num_headers2; j++) {
+        CompareHeaders(*headers1[j], *headers2[j]);
+      }
+      for (int j = 0; j < num_headers2; j++) {
+        CompareImages(images1[j], images2[j]);
+      }
+        
+      for (int j = 0; j < num_headers2; j++) {
+        FreeEXRImage(&images2[j]);
+        FreeEXRHeader(headers2[j]);
+        free(headers2[j]);
+      }
+      free(headers2);
+    }
+  
+    for (int j = 0; j < num_headers1; j++) {
+      FreeEXRImage(&images1[j]);
+      FreeEXRHeader(headers1[j]);
+      free(headers1[j]);
+    }
+    free(headers1);
+  }
+}
+
+TEST_CASE("Saving multipart|Combine", "[Save]") {
+
+  std::vector<std::string> inputs;
+  inputs.push_back("MultiResolution/Kapaa.exr"); // tiled, ripmap
+  inputs.push_back("Tiles/GoldenGate.exr"); // tiled, one level
+  inputs.push_back("ScanLines/Desk.exr"); // scanline
+  inputs.push_back("MultiResolution/PeriodicPattern.exr"); // tiled, mipmap
+
+  const char* dstName = "multipart.collection.exr";
+
+  unsigned num_headers1 = inputs.size();
+  std::vector<EXRHeader> headers1(num_headers1);
+  std::vector<EXRImage> images1(num_headers1);
+  // collecting images
+  for (size_t i = 0; i < num_headers1; i++) {
+    std::string filepath = GetPath(inputs[i].c_str());
+    std::cout << "Input:" << filepath << std::endl;
+
+    EXRVersion version1;
+    {
+      int ret = ParseEXRVersionFromFile(&version1, filepath.c_str());
+      REQUIRE(TINYEXR_SUCCESS == ret);
+      REQUIRE(false == version1.multipart);
+    }
+    {
+      InitEXRHeader(&headers1[i]);
+      const char* err = NULL;
+      int ret = ParseEXRHeaderFromFile(&headers1[i], &version1, filepath.c_str(), &err);
+      REQUIRE(TINYEXR_SUCCESS == ret);
+    }
+    {
+      InitEXRImage(&images1[i]);
+      const char* err = NULL;
+      int ret = LoadEXRImageFromFile(&images1[i], &headers1[i], filepath.c_str(), &err);
+      REQUIRE(TINYEXR_SUCCESS == ret);
+    }
+  }
+
+  unsigned char *data = NULL;
+  size_t data_size;
+  // saving collection to memory as multipart
+  {
+    std::vector<EXRHeader*> pheaders1(num_headers1);
+    for(unsigned i = 0; i < num_headers1; ++i) pheaders1[i] = &headers1[i];
+    for (size_t i = 0; i < num_headers1; i++) {
+      EXRSetNameAttr(pheaders1[i], inputs[i].c_str());
+    }
+    const char* err = NULL;
+    data_size = SaveEXRMultipartImageToMemory(&images1[0],
+                                              const_cast<const EXRHeader**>(&pheaders1[0]),
+                                              static_cast<unsigned int>(num_headers1),
+                                              &data, &err);
+    REQUIRE(0 != data_size);
+#ifdef DUMP_IMAGES
+    bool ret = WriteMemoryToFile(GetDumpPath(dstName).c_str(), data, data_size);
+    REQUIRE(true == ret);
+#endif
+  }
+  // loading back from memory
+  {
+    EXRVersion version2;
+    {
+      int ret = ParseEXRVersionFromMemory(&version2, data, data_size);
+      REQUIRE(TINYEXR_SUCCESS == ret);
+      REQUIRE(true == version2.multipart);
+    }
+    EXRHeader** headers2;
+    int num_headers2;
+    {
+      const char* err = NULL;
+      int ret = ParseEXRMultipartHeaderFromMemory(&headers2, &num_headers2, &version2,
+                                                  data, data_size, &err);
+      REQUIRE(TINYEXR_SUCCESS == ret);
+
+    }
+    REQUIRE(num_headers1 == num_headers2);
+
+    std::vector<EXRImage> images2(num_headers2);
+    {
+      for (int j = 0; j < num_headers2; j++) {
+        InitEXRImage(&images2[j]);
+      }
+      const char* err = NULL;
+      int ret = LoadEXRMultipartImageFromMemory(&images2[0], const_cast<const EXRHeader**>(headers2),
+                                                static_cast<unsigned int>(num_headers2),
+                                                data, data_size, &err);
+      REQUIRE(TINYEXR_SUCCESS == ret);
+      free(data);
+    }
+
+    for (int j = 0; j < num_headers2; j++) {
+      CompareHeaders(headers1[j], *headers2[j]);
+    }
+    for (int j = 0; j < num_headers2; j++) {
+      CompareImages(images1[j], images2[j]);
+    }
+
+    for (int j = 0; j < num_headers2; j++) {
+      FreeEXRImage(&images2[j]);
+      FreeEXRHeader(headers2[j]);
+      free(headers2[j]);
+    }
+    free(headers2);
+  }
+
+  for (int i = 0; i < num_headers1; i++) {
+    FreeEXRImage(&images1[i]);
+    FreeEXRHeader(&headers1[i]);
+  }
 }
 
 #if 0  // Spirals.exr uses pxr24 compression
