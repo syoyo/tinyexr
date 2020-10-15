@@ -11161,7 +11161,7 @@ static int DecodeTiledLevel(EXRImage* exr_image, const EXRHeader* exr_header,
     if (offset + sizeof(int) * 5 > size) {
       // Insufficient data size.
       error_flag |= EF_INSUFFICIENT_DATA; 
-      break;
+      continue;
     }
 
     size_t data_size =
@@ -11179,12 +11179,12 @@ static int DecodeTiledLevel(EXRImage* exr_image, const EXRHeader* exr_header,
     if (tile_coordinates[2] != exr_image->level_x) {
       // Invalid data.
       error_flag |= EF_INVALID_DATA;
-      break;
+      continue;
     }
     if (tile_coordinates[3] != exr_image->level_y) {
       // Invalid data.
       error_flag |= EF_INVALID_DATA;
-      break;
+      continue;
     }
 
     int data_len;
@@ -11195,7 +11195,7 @@ static int DecodeTiledLevel(EXRImage* exr_image, const EXRHeader* exr_header,
     if (data_len < 2 || size_t(data_len) > data_size) {
       // Insufficient data size.
       error_flag |= EF_INSUFFICIENT_DATA;
-      break;
+      continue;
     }
 
     // Move to data addr: 20 = 16 + 4;
@@ -13102,7 +13102,7 @@ static int EncodeTiledLevel(const EXRImage* level_image, const EXRHeader* exr_he
                                compression_param);
     if (!ret) {
       invalid_data = true;
-      break;
+      continue;
     }
     assert(data_list[data_idx].size() > data_header_size);
     int data_len = static_cast<int>(data_list[data_idx].size() - data_header_size);
@@ -13320,7 +13320,7 @@ static int EncodeChunk(const EXRImage* exr_image, const EXRHeader* exr_header,
                                  compression_param);
       if (!ret) {
         invalid_data = true;
-        break;
+        continue; // "break" cannot be used with OpenMP 
       }
       assert(data_list[i].size() > data_header_size);
       int data_len = static_cast<int>(data_list[i].size() - data_header_size);
