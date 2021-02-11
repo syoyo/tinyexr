@@ -559,6 +559,9 @@ extern int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>  // for UTF-8
 
 #endif
