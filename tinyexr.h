@@ -11875,7 +11875,7 @@ static bool isValidTile(const EXRHeader* exr_header,
 
 static void ReconstructTileOffsets(OffsetData& offset_data,
                                    const EXRHeader* exr_header,
-                                   const unsigned char* head, const unsigned char* marker, const size_t size,
+                                   const unsigned char* head, const unsigned char* marker, const size_t /*size*/,
                                    bool isMultiPartFile,
                                    bool isDeep) {
   int numXLevels = offset_data.num_x_levels;
@@ -12044,7 +12044,7 @@ static int DecodeEXRImage(EXRImage *exr_image, const EXRHeader *exr_header,
       PrecalculateTileInfo(num_x_tiles, num_y_tiles, exr_header);
       num_blocks = InitTileOffsets(offset_data, exr_header, num_x_tiles, num_y_tiles);
       if (exr_header->chunk_count > 0) {
-        if (exr_header->chunk_count != num_blocks) {
+        if (exr_header->chunk_count != static_cast<int>(num_blocks)) {
           tinyexr::SetErrorMessage("Invalid offset table size.", err);
           return TINYEXR_ERROR_INVALID_DATA;
         }
@@ -12807,9 +12807,9 @@ static bool EncodePixelData(/* out */ std::vector<unsigned char>& out_data,
                             const unsigned char* const* images,
                             const int* requested_pixel_types,
                             int compression_type,
-                            int line_order,
+                            int /*line_order*/,
                             int width, // for tiled : tile.width
-                            int height, // for tiled : header.tile_size_y
+                            int /*height*/, // for tiled : header.tile_size_y
                             int x_stride, // for tiled : header.tile_size_x
                             int line_no, // for tiled : 0
                             int num_lines, // for tiled : tile.height
@@ -13016,6 +13016,7 @@ static bool EncodePixelData(/* out */ std::vector<unsigned char>& out_data,
     out_data.insert(out_data.end(), block.begin(), block.begin() + data_len);
 
 #else
+    (void)compression_param;
     assert(0);
 #endif
   } else {
@@ -13272,7 +13273,7 @@ static int EncodeChunk(const EXRImage* exr_image, const EXRHeader* exr_header,
         }
       level_image = level_image->next_level;
     }
-    assert(block_idx == num_blocks);
+    assert(static_cast<int>(block_idx) == num_blocks);
     total_size = offset;
   } else { // scanlines
     std::vector<tinyexr::tinyexr_uint64>& offsets = offset_data.offsets[0][0];
