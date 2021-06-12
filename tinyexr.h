@@ -7489,6 +7489,7 @@ static void WriteAttributeToMemory(std::vector<unsigned char> *out,
 typedef struct {
   std::string name;  // less than 255 bytes long
   int pixel_type;
+  int requested_pixel_type;
   int x_sampling;
   int y_sampling;
   unsigned char p_linear;
@@ -7632,7 +7633,7 @@ static void WriteChannelInfo(std::vector<unsigned char> &data,
     (*p) = '\0';
     p++;
 
-    int pixel_type = channels[c].pixel_type;
+    int pixel_type = channels[c].requested_pixel_type;
     int x_sampling = channels[c].x_sampling;
     int y_sampling = channels[c].y_sampling;
     tinyexr::swap4(&pixel_type);
@@ -9416,7 +9417,7 @@ static bool CompressPiz(unsigned char *outPtr, unsigned int *outSize,
     // cd.ys = c.channel().ySampling;
 
     size_t pixelSize = sizeof(int);  // UINT and FLOAT
-    if (channelInfo[c].pixel_type == TINYEXR_PIXELTYPE_HALF) {
+    if (channelInfo[c].requested_pixel_type == TINYEXR_PIXELTYPE_HALF) {
       pixelSize = sizeof(short);
     }
 
@@ -12805,7 +12806,6 @@ namespace tinyexr
 // of the current image(-part) type
 static bool EncodePixelData(/* out */ std::vector<unsigned char>& out_data,                         
                             const unsigned char* const* images,
-                            const int* requested_pixel_types,
                             int compression_type,
                             int /*line_order*/,
                             int width, // for tiled : tile.width
@@ -12829,7 +12829,7 @@ static bool EncodePixelData(/* out */ std::vector<unsigned char>& out_data,
   size_t start_y = static_cast<size_t>(line_no);
   for (size_t c = 0; c < channels.size(); c++) {
     if (channels[c].pixel_type == TINYEXR_PIXELTYPE_HALF) {
-      if (requested_pixel_types[c] == TINYEXR_PIXELTYPE_FLOAT) {
+      if (channels[c].requested_pixel_type == TINYEXR_PIXELTYPE_FLOAT) {
         for (int y = 0; y < num_lines; y++) {
           // Assume increasing Y
           float *line_ptr = reinterpret_cast<float *>(&buf.at(
@@ -12849,7 +12849,7 @@ static bool EncodePixelData(/* out */ std::vector<unsigned char>& out_data,
             tinyexr::cpy4(line_ptr + x, &(f32.f));
           }
         }
-      } else if (requested_pixel_types[c] == TINYEXR_PIXELTYPE_HALF) {
+      } else if (channels[c].requested_pixel_type == TINYEXR_PIXELTYPE_HALF) {
         for (int y = 0; y < num_lines; y++) {
           // Assume increasing Y
           unsigned short *line_ptr = reinterpret_cast<unsigned short *>(
@@ -12872,7 +12872,7 @@ static bool EncodePixelData(/* out */ std::vector<unsigned char>& out_data,
       }
 
     } else if (channels[c].pixel_type == TINYEXR_PIXELTYPE_FLOAT) {
-      if (requested_pixel_types[c] == TINYEXR_PIXELTYPE_HALF) {
+      if (channels[c].requested_pixel_type == TINYEXR_PIXELTYPE_HALF) {
         for (int y = 0; y < num_lines; y++) {
           // Assume increasing Y
           unsigned short *line_ptr = reinterpret_cast<unsigned short *>(
@@ -12894,7 +12894,7 @@ static bool EncodePixelData(/* out */ std::vector<unsigned char>& out_data,
             tinyexr::cpy2(line_ptr + x, &(h16.u));
           }
         }
-      } else if (requested_pixel_types[c] == TINYEXR_PIXELTYPE_FLOAT) {
+      } else if (channels[c].requested_pixel_type == TINYEXR_PIXELTYPE_FLOAT) {
         for (int y = 0; y < num_lines; y++) {
           // Assume increasing Y
           float *line_ptr = reinterpret_cast<float *>(&buf.at(
@@ -13092,7 +13092,6 @@ static int EncodeTiledLevel(const EXRImage* level_image, const EXRHeader* exr_he
     size_t data_header_size = data_list[data_idx].size();
     bool ret = EncodePixelData(data_list[data_idx],                         
                                images,
-                               exr_header->requested_pixel_types,
                                exr_header->compression_type,
                                0, // increasing y
                                tile.width,
@@ -13177,14 +13176,14 @@ static int EncodeChunk(const EXRImage* exr_image, const EXRHeader* exr_header,
     size_t channel_offset = 0;
     for (size_t c = 0; c < static_cast<size_t>(exr_header->num_channels); c++) {
       channel_offset_list[c] = channel_offset;
-      if (exr_header->requested_pixel_types[c] == TINYEXR_PIXELTYPE_HALF) {
+      if (channels[c].requested_pixel_type == TINYEXR_PIXELTYPE_HALF) {
         pixel_data_size += sizeof(unsigned short);
         channel_offset += sizeof(unsigned short);
-      } else if (exr_header->requested_pixel_types[c] ==
+      } else if (channels[c].requested_pixel_type ==
                  TINYEXR_PIXELTYPE_FLOAT) {
         pixel_data_size += sizeof(float);
         channel_offset += sizeof(float);
-      } else if (exr_header->requested_pixel_types[c] == TINYEXR_PIXELTYPE_UINT) {
+      } else if (channels[c].requested_pixel_type == TINYEXR_PIXELTYPE_UINT) {
         pixel_data_size += sizeof(unsigned int);
         channel_offset += sizeof(unsigned int);
       } else {
@@ -13310,7 +13309,6 @@ static int EncodeChunk(const EXRImage* exr_image, const EXRHeader* exr_header,
 
       bool ret = EncodePixelData(data_list[i],                         
                                  images,
-                                 exr_header->requested_pixel_types,
                                  exr_header->compression_type,
                                  0, // increasing y
                                  exr_image->width,
@@ -13471,7 +13469,8 @@ static size_t SaveEXRNPartImageToMemory(const EXRImage* exr_images,
         for (int c = 0; c < exr_headers[i]->num_channels; c++) {
           tinyexr::ChannelInfo info;
           info.p_linear = 0;
-          info.pixel_type = exr_headers[i]->requested_pixel_types[c];
+          info.pixel_type = exr_headers[i]->pixel_types[c];
+          info.requested_pixel_type = exr_headers[i]->requested_pixel_types[c];
           info.x_sampling = 1;
           info.y_sampling = 1;
           info.name = std::string(exr_headers[i]->channels[c].name);
