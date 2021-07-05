@@ -8,8 +8,14 @@ CXX=$(HOME)/local/llvm-mingw-20200325-ubuntu-18.04/bin/x86_64-w64-mingw32-clang+
 #CXXFLAGS += -DTINYEXR_USE_ZFP=1 -I./deps/ZFP/inc
 #LDFLAGS += -L./deps/ZFP/lib -lzfp
 
+# miniz
+CXXFLAGS += -DTINYEXR_USE_MINIZ=1 -I./deps/miniz
+miniz.o:
+	$(CXX) $(CXXFLAGS) -c ./deps/miniz.c
+
+# 
 all:
-	$(CXX) $(CXXFLAGS) -o test_tinyexr test_tinyexr.cc $(LDFLAGS)
+	$(CXX) $(CXXFLAGS) -o test_tinyexr test_tinyexr.cc miniz.o $(LDFLAGS)
 
 test:
 	./test_tinyexr asakusa.exr
