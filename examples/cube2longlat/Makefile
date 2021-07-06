@@ -1,9 +1,10 @@
-INC_DIR = -I../../ -I../common
+INC_DIR = -I../../ -I../common -I ../../deps/miniz
 
 INCLUDES := ../../tinyexr.h
-OBJS := tinyexr.o cube2longlat.o
+OBJS := miniz.o tinyexr.o cube2longlat.o
 
-CXXFLAGS := -fsanitize=address -std=c++11 -O2
+CFLAGS := -fsanitize=address -O2
+CXXFLAGS := $(CFLAGS) -std=c++11
 LDFLAGS := -fsanitize=address
 
 TARGET=cube2longlat
@@ -12,6 +13,9 @@ all: $(TARGET)
 
 $(TARGET): $(OBJS)
 	$(CXX) -o $(TARGET) $(LDFLAGS) $(OBJS)
+
+miniz.o: ../../deps/miniz/miniz.c
+	$(CC) $(CFLAGS) -c $(INC_DIR) $<
 
 tinyexr.o: ../../tinyexr.cc
 	$(CXX) $(CXXFLAGS) -c $(INC_DIR) $<

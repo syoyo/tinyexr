@@ -6,7 +6,8 @@ newoption {
 sources = {
    "main.cc",
    "exr-io.cc",
-   }
+   "../../deps/miniz/miniz.c"
+}
 
 -- premake4.lua
 solution "EXRViewSolution"
@@ -26,7 +27,7 @@ solution "EXRViewSolution"
       language "C++"
       files { sources }
 
-      includedirs { "./", "../../" }
+      includedirs { "./", "../../", "../../deps/miniz" }
 
       if os.is("Windows") then
          defines { "USE_NATIVEFILEDIALOG" }
