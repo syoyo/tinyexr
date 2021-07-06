@@ -1,5 +1,6 @@
 
 CXX=clang++
+CC=clang
 
 CFLAGS = -fsanitize=address -Weverything -Wno-padded -g -O2 -I../../ -I../../deps/miniz
 CXXFLAGS = -std=c++11 -Wno-c++98-compat -Wno-variadic-macros $(CFLAGS)
@@ -12,7 +13,7 @@ LDFLAGS = -fsanitize=address
 
 all: exr2fptiff
 
-exr2fptiff: exr2fptiff.o tinyexr.o
+exr2fptiff: exr2fptiff.o tinyexr.o miniz.o
 	$(CXX) -o $@ $^ $(LDFLAGS)
 
 exr2fptiff.o: exr2fptiff.cc tiny_dng_writer.h
