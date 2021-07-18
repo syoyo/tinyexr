@@ -80,12 +80,12 @@ static const char* GetPixelType(int id) {
 
 // Simple tile -> scanline converter. Assumes FLOAT pixel type for all channels.
 static void TiledImageToScanlineImage(EXRImage* src, const EXRHeader* header) {
-  assert(header->data_window[2] - header->data_window[0] + 1 >= 0);
-  assert(header->data_window[3] - header->data_window[1] + 1 >= 0);
+  assert(header->data_window.max_x - header->data_window.min_x + 1 >= 0);
+  assert(header->data_window.max_y - header->data_window.min_y + 1 >= 0);
   size_t data_width =
-      static_cast<size_t>(header->data_window[2] - header->data_window[0] + 1);
+      static_cast<size_t>(header->data_window.max_x - header->data_window.min_x + 1);
   size_t data_height =
-      static_cast<size_t>(header->data_window[3] - header->data_window[1] + 1);
+      static_cast<size_t>(header->data_window.max_y - header->data_window.min_y + 1);
 
   src->images = static_cast<unsigned char**>(
       malloc(sizeof(float*) * static_cast<size_t>(header->num_channels)));
@@ -276,12 +276,12 @@ int test_main(int argc, char** argv) {
 
       printf("Part: %lu\n", static_cast<unsigned long>(i));
 
-      printf("dataWindow = %d, %d, %d, %d\n", exr_header.data_window[0],
-             exr_header.data_window[1], exr_header.data_window[2],
-             exr_header.data_window[3]);
-      printf("displayWindow = %d, %d, %d, %d\n", exr_header.display_window[0],
-             exr_header.display_window[1], exr_header.display_window[2],
-             exr_header.display_window[3]);
+      printf("dataWindow = %d, %d, %d, %d\n", exr_header.data_window.min_x,
+             exr_header.data_window.min_y, exr_header.data_window.max_x,
+             exr_header.data_window.max_y);
+      printf("displayWindow = %d, %d, %d, %d\n", exr_header.display_window.min_x,
+             exr_header.display_window.min_y, exr_header.display_window.max_x,
+             exr_header.display_window.max_y);
       printf("screenWindowCenter = %f, %f\n",
              static_cast<double>(exr_header.screen_window_center[0]),
              static_cast<double>(exr_header.screen_window_center[1]));
@@ -349,12 +349,12 @@ int test_main(int argc, char** argv) {
       return ret;
     }
 
-    printf("dataWindow = %d, %d, %d, %d\n", exr_header.data_window[0],
-           exr_header.data_window[1], exr_header.data_window[2],
-           exr_header.data_window[3]);
-    printf("displayWindow = %d, %d, %d, %d\n", exr_header.display_window[0],
-           exr_header.display_window[1], exr_header.display_window[2],
-           exr_header.display_window[3]);
+    printf("dataWindow = %d, %d, %d, %d\n", exr_header.data_window.min_x,
+           exr_header.data_window.min_y, exr_header.data_window.max_x,
+           exr_header.data_window.max_y);
+    printf("displayWindow = %d, %d, %d, %d\n", exr_header.display_window.min_x,
+           exr_header.display_window.min_y, exr_header.display_window.max_x,
+           exr_header.display_window.max_y);
     printf("screenWindowCenter = %f, %f\n",
            static_cast<double>(exr_header.screen_window_center[0]),
            static_cast<double>(exr_header.screen_window_center[1]));

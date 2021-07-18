@@ -9,13 +9,17 @@
 CFLAGS += -I./deps/miniz
 CXXFLAGS += -I./deps/miniz
 
+.PHONY: test clean
+
+all: miniz.o
+	$(CXX) $(CXXFLAGS) -o test_tinyexr test_tinyexr.cc miniz.o $(LDFLAGS)
+
 miniz.o:
 	$(CC) $(CFLAGS) -c ./deps/miniz/miniz.c
-
-all:
-	$(CXX) $(CXXFLAGS) -o test_tinyexr test_tinyexr.cc miniz.o $(LDFLAGS)
 
 test:
 	./test_tinyexr asakusa.exr
 
-.PHONY: test
+clean:
+	rm -rf test_tinyexr miniz.o
+
