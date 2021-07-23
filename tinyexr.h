@@ -2604,7 +2604,8 @@ static bool getCode(int po, int rlc, long long &c, int &lc, const char *&in,
   if (po == rlc) {
     if (lc < 8) {
       /* TinyEXR issue 78 */
-      if ((in + 1) >= in_end) {
+      /* TinyEXR issue 160. in + 1 -> in */
+      if (in >= in_end) {
         return false;
       }
 
