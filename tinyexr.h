@@ -2604,7 +2604,8 @@ static bool getCode(int po, int rlc, long long &c, int &lc, const char *&in,
   if (po == rlc) {
     if (lc < 8) {
       /* TinyEXR issue 78 */
-      if ((in + 1) >= in_end) {
+      /* TinyEXR issue 160. in + 1 -> in */
+      if (in >= in_end) {
         return false;
       }
 
@@ -3060,10 +3061,10 @@ static bool CompressPiz(unsigned char *outPtr, unsigned int *outSize,
 }
 
 static bool DecompressPiz(unsigned char *outPtr, const unsigned char *inPtr,
-                          size_t tmpBufSize, size_t inLen, int num_channels,
+                          size_t tmpBufSizeInBytes, size_t inLen, int num_channels,
                           const EXRChannelInfo *channels, int data_width,
                           int num_lines) {
-  if (inLen == tmpBufSize) {
+  if (inLen == tmpBufSizeInBytes) {
     // Data is not compressed(Issue 40).
     memcpy(outPtr, inPtr, inLen);
     return true;
@@ -3116,7 +3117,7 @@ static bool DecompressPiz(unsigned char *outPtr, const unsigned char *inPtr,
     return false;
   }
 
-  std::vector<unsigned short> tmpBuffer(tmpBufSize);
+  std::vector<unsigned short> tmpBuffer(tmpBufSizeInBytes / sizeof(unsigned short));
   hufUncompress(reinterpret_cast<const char *>(ptr), length, &tmpBuffer);
 
   //
@@ -3158,7 +3159,7 @@ static bool DecompressPiz(unsigned char *outPtr, const unsigned char *inPtr,
   // Expand the pixel data to their original range
   //
 
-  applyLut(lut.data(), &tmpBuffer.at(0), static_cast<int>(tmpBufSize));
+  applyLut(lut.data(), &tmpBuffer.at(0), static_cast<int>(tmpBufSizeInBytes / sizeof(unsigned short)));
 
   for (int y = 0; y < num_lines; y++) {
     for (size_t i = 0; i < channelData.size(); ++i) {
