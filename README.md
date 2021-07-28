@@ -144,7 +144,7 @@ Include `tinyexr.h` with `TINYEXR_IMPLEMENTATION` flag (do this only for **one**
 
 ### Compile flags
 
-* `TINYEXR_USE_MINIZ` Use embedded miniz (default = 1). Please include `zlib.h` header (before `tinyexr.h`) if you disable miniz support.
+* `TINYEXR_USE_MINIZ` Use miniz (default = 1). Please include `zlib.h` header before `tinyexr.h` if you disable miniz support(e.g. use system's zlib).
 * `TINYEXR_USE_PIZ` Enable PIZ compression support (default = 1)
 * `TINYEXR_USE_ZFP` Enable ZFP compression supoort (TinyEXR extension, default = 0)
 * `TINYEXR_USE_THREAD` Enable threaded loading using C++11 thread (Requires C++11 compiler, default = 0)
