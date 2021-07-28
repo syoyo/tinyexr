@@ -12,7 +12,7 @@
 
 `tinyexr` is a small, single header-only library to load and save OpenEXR (.exr) images.
 `tinyexr` is written in portable C++ (no library dependency except for STL), thus `tinyexr` is good to embed into your application.
-To use `tinyexr`, simply copy `tinyexr.h` into your project.
+To use `tinyexr`, simply copy `tinyexr.h`, `miniz.c` and `miniz.h`(for zlib. You can use system-installed zlib instead of miniz. Controlled with `TINYEXR_USE_MINIZ` compile flag) into your project.
 
 # Features
 
@@ -82,7 +82,7 @@ Current status of `tinyexr` is:
   * [x] aarch64 linux(e.g. Raspberry Pi)
   * [x] Android
   * [x] iOS
-  * [ ] macOS(Should work)
+  * [x] macOS
 * [ ] RISC-V(Should work)
 * [x] Big endian machine(not maintained, but should work)
   * SPARC, PowerPC, ...
