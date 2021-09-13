@@ -6285,7 +6285,7 @@ int LoadEXRImageFromFile(EXRImage *exr_image, const EXRHeader *exr_header,
 
   FILE *fp = NULL;
 #ifdef _WIN32
-#if defined(_MSC_VER) || defined(__MINGW32__)  // MSVC, MinGW gcc or clang
+#if defined(_MSC_VER) || (defined(MINGW_HAS_SECURE_API) && MINGW_HAS_SECURE_API) // MSVC, MinGW GCC, or Clang.
   errno_t errcode =
       _wfopen_s(&fp, tinyexr::UTF8ToWchar(filename).c_str(), L"rb");
   if (errcode != 0) {
@@ -6294,7 +6294,7 @@ int LoadEXRImageFromFile(EXRImage *exr_image, const EXRHeader *exr_header,
     return TINYEXR_ERROR_CANT_OPEN_FILE;
   }
 #else
-  // Unknown compiler
+  // Unknown compiler or MinGW without MINGW_HAS_SECURE_API.
   fp = fopen(filename, "rb");
 #endif
 #else
@@ -7294,7 +7294,7 @@ int SaveEXRImageToFile(const EXRImage *exr_image, const EXRHeader *exr_header,
 
   FILE *fp = NULL;
 #ifdef _WIN32
-#if defined(_MSC_VER) || defined(__MINGW32__)  // MSVC, MinGW gcc or clang
+#if defined(_MSC_VER) || (defined(MINGW_HAS_SECURE_API) && MINGW_HAS_SECURE_API) // MSVC, MinGW GCC, or Clang
   errno_t errcode =
       _wfopen_s(&fp, tinyexr::UTF8ToWchar(filename).c_str(), L"wb");
   if (errcode != 0) {
@@ -7303,7 +7303,7 @@ int SaveEXRImageToFile(const EXRImage *exr_image, const EXRHeader *exr_header,
     return TINYEXR_ERROR_CANT_WRITE_FILE;
   }
 #else
-  // Unknown compiler
+  // Unknown compiler or MinGW without MINGW_HAS_SECURE_API.
   fp = fopen(filename, "wb");
 #endif
 #else
@@ -7363,7 +7363,7 @@ int SaveEXRMultipartImageToFile(const EXRImage* exr_images,
 
   FILE *fp = NULL;
 #ifdef _WIN32
-#if defined(_MSC_VER) || defined(__MINGW32__)  // MSVC, MinGW gcc or clang
+#if defined(_MSC_VER) || (defined(MINGW_HAS_SECURE_API) && MINGW_HAS_SECURE_API) // MSVC, MinGW GCC, or Clang.
   errno_t errcode =
     _wfopen_s(&fp, tinyexr::UTF8ToWchar(filename).c_str(), L"wb");
   if (errcode != 0) {
@@ -7372,7 +7372,7 @@ int SaveEXRMultipartImageToFile(const EXRImage* exr_images,
     return TINYEXR_ERROR_CANT_WRITE_FILE;
   }
 #else
-  // Unknown compiler
+  // Unknown compiler or MinGW without MINGW_HAS_SECURE_API.
   fp = fopen(filename, "wb");
 #endif
 #else
@@ -7414,7 +7414,7 @@ int LoadDeepEXR(DeepImage *deep_image, const char *filename, const char **err) {
 
 #ifdef _WIN32
   FILE *fp = NULL;
-#if defined(_MSC_VER) || defined(__MINGW32__)  // MSVC, MinGW gcc or clang
+#if defined(_MSC_VER) || (defined(MINGW_HAS_SECURE_API) && MINGW_HAS_SECURE_API) // MSVC, MinGW GCC, or Clang.
   errno_t errcode =
       _wfopen_s(&fp, tinyexr::UTF8ToWchar(filename).c_str(), L"rb");
   if (errcode != 0) {
@@ -7423,7 +7423,7 @@ int LoadDeepEXR(DeepImage *deep_image, const char *filename, const char **err) {
     return TINYEXR_ERROR_CANT_OPEN_FILE;
   }
 #else
-  // Unknown compiler
+  // Unknown compiler or MinGW without MINGW_HAS_SECURE_API.
   fp = fopen(filename, "rb");
 #endif
   if (!fp) {
@@ -7934,7 +7934,7 @@ int ParseEXRHeaderFromFile(EXRHeader *exr_header, const EXRVersion *exr_version,
 
   FILE *fp = NULL;
 #ifdef _WIN32
-#if defined(_MSC_VER) || defined(__MINGW32__)  // MSVC, MinGW gcc or clang
+#if defined(_MSC_VER) || (defined(MINGW_HAS_SECURE_API) && MINGW_HAS_SECURE_API) // MSVC, MinGW GCC, or Clang.
   errno_t errcode =
       _wfopen_s(&fp, tinyexr::UTF8ToWchar(filename).c_str(), L"rb");
   if (errcode != 0) {
@@ -7942,7 +7942,7 @@ int ParseEXRHeaderFromFile(EXRHeader *exr_header, const EXRVersion *exr_version,
     return TINYEXR_ERROR_INVALID_FILE;
   }
 #else
-  // Unknown compiler
+  // Unknown compiler or MinGW without MINGW_HAS_SECURE_API.
   fp = fopen(filename, "rb");
 #endif
 #else
@@ -8064,7 +8064,7 @@ int ParseEXRMultipartHeaderFromFile(EXRHeader ***exr_headers, int *num_headers,
 
   FILE *fp = NULL;
 #ifdef _WIN32
-#if defined(_MSC_VER) || defined(__MINGW32__)  // MSVC, MinGW gcc or clang
+#if defined(_MSC_VER) || (defined(MINGW_HAS_SECURE_API) && MINGW_HAS_SECURE_API) // MSVC, MinGW GCC, or Clang.
   errno_t errcode =
       _wfopen_s(&fp, tinyexr::UTF8ToWchar(filename).c_str(), L"rb");
   if (errcode != 0) {
@@ -8072,7 +8072,7 @@ int ParseEXRMultipartHeaderFromFile(EXRHeader ***exr_headers, int *num_headers,
     return TINYEXR_ERROR_INVALID_FILE;
   }
 #else
-  // Unknown compiler
+  // Unknown compiler or MinGW without MINGW_HAS_SECURE_API.
   fp = fopen(filename, "rb");
 #endif
 #else
@@ -8170,14 +8170,14 @@ int ParseEXRVersionFromFile(EXRVersion *version, const char *filename) {
 
   FILE *fp = NULL;
 #ifdef _WIN32
-#if defined(_MSC_VER) || defined(__MINGW32__)  // MSVC, MinGW gcc or clang
+#if defined(_MSC_VER) || (defined(MINGW_HAS_SECURE_API) && MINGW_HAS_SECURE_API) // MSVC, MinGW GCC, or Clang.
   errno_t err = _wfopen_s(&fp, tinyexr::UTF8ToWchar(filename).c_str(), L"rb");
   if (err != 0) {
     // TODO(syoyo): return wfopen_s erro code
     return TINYEXR_ERROR_CANT_OPEN_FILE;
   }
 #else
-  // Unknown compiler
+  // Unknown compiler or MinGW without MINGW_HAS_SECURE_API.
   fp = fopen(filename, "rb");
 #endif
 #else
@@ -8348,7 +8348,7 @@ int LoadEXRMultipartImageFromFile(EXRImage *exr_images,
 
   FILE *fp = NULL;
 #ifdef _WIN32
-#if defined(_MSC_VER) || defined(__MINGW32__)  // MSVC, MinGW gcc or clang
+#if defined(_MSC_VER) || (defined(MINGW_HAS_SECURE_API) && MINGW_HAS_SECURE_API) // MSVC, MinGW GCC, or Clang.
   errno_t errcode =
       _wfopen_s(&fp, tinyexr::UTF8ToWchar(filename).c_str(), L"rb");
   if (errcode != 0) {
@@ -8356,7 +8356,7 @@ int LoadEXRMultipartImageFromFile(EXRImage *exr_images,
     return TINYEXR_ERROR_CANT_OPEN_FILE;
   }
 #else
-  // Unknown compiler
+  // Unknown compiler or MinGW without MINGW_HAS_SECURE_API.
   fp = fopen(filename, "rb");
 #endif
 #else
