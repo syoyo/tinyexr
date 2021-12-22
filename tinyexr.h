@@ -4503,7 +4503,7 @@ static int ParseEXRHeader(HeaderInfo *info, bool *empty_header,
 }
 
 // C++ HeaderInfo to C EXRHeader conversion.
-static void ConvertHeader(EXRHeader *exr_header, const HeaderInfo &info) {
+static void ConvertHeader(EXRHeader *exr_header, const HeaderInfo &info, std::string *warn) {
   exr_header->pixel_aspect_ratio = info.pixel_aspect_ratio;
   exr_header->screen_window_center[0] = info.screen_window_center[0];
   exr_header->screen_window_center[1] = info.screen_window_center[1];
@@ -4539,7 +4539,11 @@ static void ConvertHeader(EXRHeader *exr_header, const HeaderInfo &info) {
       exr_header->non_image = 1;
       assert(!exr_header->tiled);
     } else {
-      assert(false);
+      if (warn) {
+        std::stringstream ss;
+        ss << "(ConvertHeader) Unsupported or unknown info.type: " << info.type << "\n";
+        (*warn) += ss.str();
+      }
     }
   }
 
@@ -6076,7 +6080,8 @@ int ParseEXRHeaderFromMemory(EXRHeader *exr_header, const EXRVersion *version,
     }
   }
 
-  ConvertHeader(exr_header, info);
+  std::string warn;
+  ConvertHeader(exr_header, info, &warn);
 
   exr_header->multipart = version->multipart ? 1 : 0;
   exr_header->non_image = version->non_image ? 1 : 0;
@@ -8036,7 +8041,8 @@ int ParseEXRMultipartHeaderFromMemory(EXRHeader ***exr_headers,
     EXRHeader *exr_header = static_cast<EXRHeader *>(malloc(sizeof(EXRHeader)));
     memset(exr_header, 0, sizeof(EXRHeader));
 
-    ConvertHeader(exr_header, infos[i]);
+    std::string warn;
+    ConvertHeader(exr_header, infos[i], &warn);
 
     exr_header->multipart = exr_version->multipart ? 1 : 0;
 

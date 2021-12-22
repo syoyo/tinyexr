@@ -1,8 +1,9 @@
-# Test with libFuzzer
+# Test with llvm Fuzzer
 
 ## Requirements
 
-Ubuntu 16.04 + apt installed clang 5.0 libFuzzer.
+clang 12 or later
+(recent clang does not require libFuzzer anymore)
 
 ## Compile and run
 
