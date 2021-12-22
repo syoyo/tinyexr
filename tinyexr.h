@@ -673,6 +673,16 @@ static void SetErrorMessage(const std::string &msg, const char **err) {
   }
 }
 
+static void SetWarningMessage(const std::string &msg, const char **warn) {
+  if (warn) {
+#ifdef _WIN32
+    (*warn) = _strdup(msg.c_str());
+#else
+    (*warn) = strdup(msg.c_str());
+#endif
+  }
+}
+
 static const int kEXRVersionSize = 8;
 
 static void cpy2(unsigned short *dst_val, const unsigned short *src_val) {
@@ -4510,7 +4520,7 @@ static int ParseEXRHeader(HeaderInfo *info, bool *empty_header,
 }
 
 // C++ HeaderInfo to C EXRHeader conversion.
-static void ConvertHeader(EXRHeader *exr_header, const HeaderInfo &info, std::string *warn) {
+static bool ConvertHeader(EXRHeader *exr_header, const HeaderInfo &info, std::string *warn, std::string *err) {
   exr_header->pixel_aspect_ratio = info.pixel_aspect_ratio;
   exr_header->screen_window_center[0] = info.screen_window_center[0];
   exr_header->screen_window_center[1] = info.screen_window_center[1];
@@ -4536,12 +4546,27 @@ static void ConvertHeader(EXRHeader *exr_header, const HeaderInfo &info, std::st
 
   if (!info.type.empty()) {
     if (info.type == "scanlineimage") {
-      assert(!exr_header->tiled);
+      if (!exr_header->tiled) {
+        if (err) {
+          (*err) += "(ConvertHeader) tiled bit must be on for `scanlineimage` type.\n";
+        }
+        return false;
+      }
     } else if (info.type == "tiledimage") {
-      assert(exr_header->tiled);
+      if (!exr_header->tiled) {
+        if (err) {
+          (*err) += "(ConvertHeader) tiled bit must be on for `tiledimage` type.\n";
+        }
+        return false;
+      }
     } else if (info.type == "deeptile") {
       exr_header->non_image = 1;
-      assert(exr_header->tiled);
+      if (!exr_header->tiled) {
+        if (err) {
+          (*err) += "(ConvertHeader) tiled bit must be on for `deeptile` type.\n";
+        }
+        return false;
+      }
     } else if (info.type == "deepscanline") {
       exr_header->non_image = 1;
       assert(!exr_header->tiled);
@@ -4613,6 +4638,8 @@ static void ConvertHeader(EXRHeader *exr_header, const HeaderInfo &info, std::st
   }
 
   exr_header->header_len = info.header_len;
+
+  return true;
 }
 
 struct OffsetData {
@@ -6078,17 +6105,29 @@ int ParseEXRHeaderFromMemory(EXRHeader *exr_header, const EXRVersion *version,
   tinyexr::HeaderInfo info;
   info.clear();
 
-  std::string err_str;
-  int ret = ParseEXRHeader(&info, NULL, version, &err_str, marker, marker_size);
+  int ret;
+  {
+    std::string err_str;
+    ret = ParseEXRHeader(&info, NULL, version, &err_str, marker, marker_size);
 
-  if (ret != TINYEXR_SUCCESS) {
-    if (err && !err_str.empty()) {
-      tinyexr::SetErrorMessage(err_str, err);
+    if (ret != TINYEXR_SUCCESS) {
+      if (err && !err_str.empty()) {
+        tinyexr::SetErrorMessage(err_str, err);
+      }
     }
   }
 
-  std::string warn;
-  ConvertHeader(exr_header, info, &warn);
+  {
+    std::string warn;
+    std::string err_str;
+
+    if (!ConvertHeader(exr_header, info, &warn, &err_str)) {
+      if (err && !err_str.empty()) {
+        tinyexr::SetErrorMessage(err_str, err);
+      }
+      return TINYEXR_ERROR_INVALID_HEADER;
+    }
+  }
 
   exr_header->multipart = version->multipart ? 1 : 0;
   exr_header->non_image = version->non_image ? 1 : 0;
@@ -8049,7 +8088,14 @@ int ParseEXRMultipartHeaderFromMemory(EXRHeader ***exr_headers,
     memset(exr_header, 0, sizeof(EXRHeader));
 
     std::string warn;
-    ConvertHeader(exr_header, infos[i], &warn);
+    std::string _err;
+    if (!ConvertHeader(exr_header, infos[i], &warn, &_err)) {
+      if (!_err.empty()) {
+        tinyexr::SetErrorMessage(
+            _err, err);
+      }
+      return TINYEXR_ERROR_INVALID_HEADER;
+    }
 
     exr_header->multipart = exr_version->multipart ? 1 : 0;
 
