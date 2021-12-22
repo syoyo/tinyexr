@@ -4258,6 +4258,13 @@ static int ParseEXRHeader(HeaderInfo *info, bool *empty_header,
     if ((version->tiled || version->multipart || version->non_image) && attr_name.compare("tiles") == 0) {
       unsigned int x_size, y_size;
       unsigned char tile_mode;
+      if (data.size() != 9) {
+        if (err) {
+          (*err) += "(ParseEXRHeader) Invalid attribute data size. Attribute data size must be 9.\n";
+        }
+        return TINYEXR_ERROR_INVALID_DATA;
+      }
+
       assert(data.size() == 9);
       memcpy(&x_size, &data.at(0), sizeof(int));
       memcpy(&y_size, &data.at(4), sizeof(int));
