@@ -4544,20 +4544,22 @@ static bool ConvertHeader(EXRHeader *exr_header, const HeaderInfo &info, std::st
 
   EXRSetNameAttr(exr_header, info.name.c_str());
 
+  bool valid = true;
+
   if (!info.type.empty()) {
     if (info.type == "scanlineimage") {
-      if (!exr_header->tiled) {
+      if (exr_header->tiled) {
         if (err) {
-          (*err) += "(ConvertHeader) tiled bit must be on for `scanlineimage` type.\n";
+          (*err) += "(ConvertHeader) tiled bit must be off for `scanlineimage` type.\n";
         }
-        return false;
+        valid = false;
       }
     } else if (info.type == "tiledimage") {
       if (!exr_header->tiled) {
         if (err) {
           (*err) += "(ConvertHeader) tiled bit must be on for `tiledimage` type.\n";
         }
-        return false;
+        valid = false;
       }
     } else if (info.type == "deeptile") {
       exr_header->non_image = 1;
@@ -4565,11 +4567,16 @@ static bool ConvertHeader(EXRHeader *exr_header, const HeaderInfo &info, std::st
         if (err) {
           (*err) += "(ConvertHeader) tiled bit must be on for `deeptile` type.\n";
         }
-        return false;
+        valid = false;
       }
     } else if (info.type == "deepscanline") {
       exr_header->non_image = 1;
-      assert(!exr_header->tiled);
+      if (exr_header->tiled) {
+        if (err) {
+          (*err) += "(ConvertHeader) tiled bit must be off for `deepscanline` type.\n";
+        }
+        valid = false;
+      }
     } else {
       if (warn) {
         std::stringstream ss;
@@ -6125,7 +6132,7 @@ int ParseEXRHeaderFromMemory(EXRHeader *exr_header, const EXRVersion *version,
       if (err && !err_str.empty()) {
         tinyexr::SetErrorMessage(err_str, err);
       }
-      return TINYEXR_ERROR_INVALID_HEADER;
+      ret = TINYEXR_ERROR_INVALID_HEADER;
     }
   }
 
@@ -8083,6 +8090,10 @@ int ParseEXRMultipartHeaderFromMemory(EXRHeader ***exr_headers,
   // allocate memory for EXRHeader and create array of EXRHeader pointers.
   (*exr_headers) =
       static_cast<EXRHeader **>(malloc(sizeof(EXRHeader *) * infos.size()));
+
+  
+  int retcode = TINYEXR_SUCCESS;
+
   for (size_t i = 0; i < infos.size(); i++) {
     EXRHeader *exr_header = static_cast<EXRHeader *>(malloc(sizeof(EXRHeader)));
     memset(exr_header, 0, sizeof(EXRHeader));
@@ -8094,7 +8105,8 @@ int ParseEXRMultipartHeaderFromMemory(EXRHeader ***exr_headers,
         tinyexr::SetErrorMessage(
             _err, err);
       }
-      return TINYEXR_ERROR_INVALID_HEADER;
+      // continue to converting headers
+      retcode = TINYEXR_ERROR_INVALID_HEADER;
     }
 
     exr_header->multipart = exr_version->multipart ? 1 : 0;
@@ -8104,7 +8116,7 @@ int ParseEXRMultipartHeaderFromMemory(EXRHeader ***exr_headers,
 
   (*num_headers) = static_cast<int>(infos.size());
 
-  return TINYEXR_SUCCESS;
+  return retcode;
 }
 
 int ParseEXRMultipartHeaderFromFile(EXRHeader ***exr_headers, int *num_headers,
