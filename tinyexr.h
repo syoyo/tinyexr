@@ -104,9 +104,14 @@ extern "C" {
 #endif
 
 // Use miniz or not to decode ZIP format pixel. Linking with zlib
-// required if this flas is 0.
+// required if this flas is 0 and TINYEXR_USE_STB_ZLIB is 0.
 #ifndef TINYEXR_USE_MINIZ
 #define TINYEXR_USE_MINIZ (1)
+#endif
+
+// Use the ZIP implementation of stb_image.h and stb_image_write.h.
+#ifndef TINYEXR_USE_STB_ZLIB
+#define TINYEXR_USE_STB_ZLIB (0)
 #endif
 
 // Disable PIZ comporession when applying cpplint.
@@ -617,6 +622,16 @@ extern int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
 //  Issue #46. Please include your own zlib-compatible API header before
 //  including `tinyexr.h`
 //#include "zlib.h"
+#endif
+
+#if TINYEXR_USE_STB_ZLIB
+// Since we don't know where a project has stb_image.h and stb_image_write.h
+// and whether they are in the include path, we don't include them here, and
+// instead declare the two relevant functions manually.
+// from stb_image.h:
+extern "C" int stbi_zlib_decode_buffer(char *obuffer, int olen, const char *ibuffer, int ilen);
+// from stb_image_write.h:
+extern "C" unsigned char *stbi_zlib_compress(unsigned char *data, int data_len, int *out_len, int quality);
 #endif
 
 #if TINYEXR_USE_ZFP
@@ -1285,6 +1300,14 @@ static void CompressZip(unsigned char *dst,
   (void)ret;
 
   compressedSize = outSize;
+#elif TINYEXR_USE_STB_ZLIB
+  int outSize;
+  unsigned char* r = stbi_zlib_compress(const_cast<unsigned char*>(&tmpBuf.at(0)), src_size, &outSize, 8);
+  assert(ret);
+  memcpy(dst, r, outSize);
+  free(r);
+
+  compressedSize = outSize;
 #else
   uLong outSize = compressBound(static_cast<uLong>(src_size));
   int ret = compress(dst, &outSize, static_cast<const Bytef *>(&tmpBuf.at(0)),
@@ -1316,6 +1339,12 @@ static bool DecompressZip(unsigned char *dst,
   int ret =
       mz_uncompress(&tmpBuf.at(0), uncompressed_size, src, src_size);
   if (MZ_OK != ret) {
+    return false;
+  }
+#elif TINYEXR_USE_STB_ZLIB
+  int ret = stbi_zlib_decode_buffer(reinterpret_cast<char*>(&tmpBuf.at(0)),
+      *uncompressed_size, reinterpret_cast<const char*>(src), src_size);
+  if (ret < 0) {
     return false;
   }
 #else
@@ -6566,6 +6595,10 @@ static bool EncodePixelData(/* out */ std::vector<unsigned char>& out_data,
 #if TINYEXR_USE_MINIZ
     std::vector<unsigned char> block(mz_compressBound(
       static_cast<unsigned long>(buf.size())));
+#elif TINYEXR_USE_STB_ZLIB
+    // there is no compressBound() function, so we use a value that
+    // is grossly overestimated, but should always work
+    std::vector<unsigned char> block(256 + 2 * buf.size());
 #else
     std::vector<unsigned char> block(
       compressBound(static_cast<uLong>(buf.size())));
