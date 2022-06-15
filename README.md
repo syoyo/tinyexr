@@ -103,6 +103,8 @@ Current status of `tinyexr` is:
 * Filament. PBR engine(used in a converter tool). https://github.com/google/filament
 * PyEXR. Loading OpenEXR (.exr) images using Python. https://github.com/ialhashim/PyEXR
 * The-Forge. The Forge Cross-Platform Rendering Framework PC, Linux, Ray Tracing, macOS / iOS, Android, XBOX, PS4 https://github.com/ConfettiFX/The-Forge
+* psdr-cuda. Path-space differentiable renderer. https://github.com/uci-rendering/psdr-cuda
+* Studying Microfacets BSDFs https://virtualgonio.pages.xlim.fr/
 * Your project here!
 
 ## Older TinyEXR (v0.9.0)
