@@ -44,6 +44,7 @@ Current status of `tinyexr` is:
   - [ ] B44?
   - [ ] B44A?
   - [ ] PIX24?
+  - [ ] DWA (not planned, patent encumbered)
 - Line order.
   - [x] Increasing, decreasing (load)
   - [ ] Random?
