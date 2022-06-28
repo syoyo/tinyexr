@@ -151,6 +151,7 @@ extern "C" {
 #define TINYEXR_ERROR_CANT_WRITE_FILE (-11)
 #define TINYEXR_ERROR_SERIALZATION_FAILED (-12)
 #define TINYEXR_ERROR_LAYER_NOT_FOUND (-13)
+#define TINYEXR_ERROR_DATA_TO_LARGE (-14)
 
 // @note { OpenEXR file format: http://www.openexr.com/openexrfilelayout.pdf }
 
@@ -351,15 +352,15 @@ extern int LoadEXRWithLayer(float **out_rgba, int *width, int *height,
 extern int EXRLayers(const char *filename, const char **layer_names[],
                      int *num_layers, const char **err);
 
-// @deprecated { to be removed. }
+// @deprecated
 // Simple wrapper API for ParseEXRHeaderFromFile.
 // checking given file is a EXR file(by just look up header)
 // @return TINYEXR_SUCCEES for EXR image, TINYEXR_ERROR_INVALID_HEADER for
 // others
 extern int IsEXR(const char *filename);
 
-// @deprecated { to be removed. }
-// Saves single-frame OpenEXR image. Assume EXR image contains RGB(A) channels.
+// @deprecated
+// Saves single-frame OpenEXR image to a buffer. Assume EXR image contains RGB(A) channels.
 // components must be 1(Grayscale), 3(RGB) or 4(RGBA).
 // Input image format is: `float x width x height`, or `float x RGB(A) x width x
 // hight`
@@ -367,6 +368,25 @@ extern int IsEXR(const char *filename);
 // value.
 // Save image as fp32(FLOAT) format when `save_as_fp16` is 0.
 // Use ZIP compression by default.
+// `buffer` is the pointer to write EXR data.
+// Memory for `buffer` is allocated internally in SaveEXRToMemory.
+// Returns the data size of EXR file when the value is positive(up to 2GB EXR data).
+// Returns negative value and may set error string in `err` when there's an
+// error
+extern int SaveEXRToMemory(const float *data, const int width, const int height,
+                   const int components, const int save_as_fp16,
+                   const unsigned char **buffer, const char **err);
+
+// @deprecated { Not recommended, but handy to use. }
+// Saves single-frame OpenEXR image to a buffer. Assume EXR image contains RGB(A) channels.
+// components must be 1(Grayscale), 3(RGB) or 4(RGBA).
+// Input image format is: `float x width x height`, or `float x RGB(A) x width x
+// hight`
+// Save image as fp16(HALF) format when `save_as_fp16` is positive non-zero
+// value.
+// Save image as fp32(FLOAT) format when `save_as_fp16` is 0.
+// Use ZIP compression by default.
+// Returns TINYEXR_SUCCEES(0) when success.
 // Returns negative value and may set error string in `err` when there's an
 // error
 extern int SaveEXR(const float *data, const int width, const int height,
@@ -8499,6 +8519,156 @@ int LoadEXRMultipartImageFromFile(EXRImage *exr_images,
 
   return LoadEXRMultipartImageFromMemory(exr_images, exr_headers, num_parts,
                                          &buf.at(0), filesize, err);
+}
+
+int SaveEXRToMemory(const float *data, int width, int height, int components,
+            const int save_as_fp16, const unsigned char **outbuf, const char **err) {
+
+  if ((components == 1) || components == 3 || components == 4) {
+    // OK
+  } else {
+    std::stringstream ss;
+    ss << "Unsupported component value : " << components << std::endl;
+
+    tinyexr::SetErrorMessage(ss.str(), err);
+    return TINYEXR_ERROR_INVALID_ARGUMENT;
+  }
+
+  EXRHeader header;
+  InitEXRHeader(&header);
+
+  if ((width < 16) && (height < 16)) {
+    // No compression for small image.
+    header.compression_type = TINYEXR_COMPRESSIONTYPE_NONE;
+  } else {
+    header.compression_type = TINYEXR_COMPRESSIONTYPE_ZIP;
+  }
+
+  EXRImage image;
+  InitEXRImage(&image);
+
+  image.num_channels = components;
+
+  std::vector<float> images[4];
+
+  if (components == 1) {
+    images[0].resize(static_cast<size_t>(width * height));
+    memcpy(images[0].data(), data, sizeof(float) * size_t(width * height));
+  } else {
+    images[0].resize(static_cast<size_t>(width * height));
+    images[1].resize(static_cast<size_t>(width * height));
+    images[2].resize(static_cast<size_t>(width * height));
+    images[3].resize(static_cast<size_t>(width * height));
+
+    // Split RGB(A)RGB(A)RGB(A)... into R, G and B(and A) layers
+    for (size_t i = 0; i < static_cast<size_t>(width * height); i++) {
+      images[0][i] = data[static_cast<size_t>(components) * i + 0];
+      images[1][i] = data[static_cast<size_t>(components) * i + 1];
+      images[2][i] = data[static_cast<size_t>(components) * i + 2];
+      if (components == 4) {
+        images[3][i] = data[static_cast<size_t>(components) * i + 3];
+      }
+    }
+  }
+
+  float *image_ptr[4] = {0, 0, 0, 0};
+  if (components == 4) {
+    image_ptr[0] = &(images[3].at(0));  // A
+    image_ptr[1] = &(images[2].at(0));  // B
+    image_ptr[2] = &(images[1].at(0));  // G
+    image_ptr[3] = &(images[0].at(0));  // R
+  } else if (components == 3) {
+    image_ptr[0] = &(images[2].at(0));  // B
+    image_ptr[1] = &(images[1].at(0));  // G
+    image_ptr[2] = &(images[0].at(0));  // R
+  } else if (components == 1) {
+    image_ptr[0] = &(images[0].at(0));  // A
+  }
+
+  image.images = reinterpret_cast<unsigned char **>(image_ptr);
+  image.width = width;
+  image.height = height;
+
+  header.num_channels = components;
+  header.channels = static_cast<EXRChannelInfo *>(malloc(
+      sizeof(EXRChannelInfo) * static_cast<size_t>(header.num_channels)));
+  // Must be (A)BGR order, since most of EXR viewers expect this channel order.
+  if (components == 4) {
+#ifdef _MSC_VER
+    strncpy_s(header.channels[0].name, "A", 255);
+    strncpy_s(header.channels[1].name, "B", 255);
+    strncpy_s(header.channels[2].name, "G", 255);
+    strncpy_s(header.channels[3].name, "R", 255);
+#else
+    strncpy(header.channels[0].name, "A", 255);
+    strncpy(header.channels[1].name, "B", 255);
+    strncpy(header.channels[2].name, "G", 255);
+    strncpy(header.channels[3].name, "R", 255);
+#endif
+    header.channels[0].name[strlen("A")] = '\0';
+    header.channels[1].name[strlen("B")] = '\0';
+    header.channels[2].name[strlen("G")] = '\0';
+    header.channels[3].name[strlen("R")] = '\0';
+  } else if (components == 3) {
+#ifdef _MSC_VER
+    strncpy_s(header.channels[0].name, "B", 255);
+    strncpy_s(header.channels[1].name, "G", 255);
+    strncpy_s(header.channels[2].name, "R", 255);
+#else
+    strncpy(header.channels[0].name, "B", 255);
+    strncpy(header.channels[1].name, "G", 255);
+    strncpy(header.channels[2].name, "R", 255);
+#endif
+    header.channels[0].name[strlen("B")] = '\0';
+    header.channels[1].name[strlen("G")] = '\0';
+    header.channels[2].name[strlen("R")] = '\0';
+  } else {
+#ifdef _MSC_VER
+    strncpy_s(header.channels[0].name, "A", 255);
+#else
+    strncpy(header.channels[0].name, "A", 255);
+#endif
+    header.channels[0].name[strlen("A")] = '\0';
+  }
+
+  header.pixel_types = static_cast<int *>(
+      malloc(sizeof(int) * static_cast<size_t>(header.num_channels)));
+  header.requested_pixel_types = static_cast<int *>(
+      malloc(sizeof(int) * static_cast<size_t>(header.num_channels)));
+  for (int i = 0; i < header.num_channels; i++) {
+    header.pixel_types[i] =
+        TINYEXR_PIXELTYPE_FLOAT;  // pixel type of input image
+
+    if (save_as_fp16 > 0) {
+      header.requested_pixel_types[i] =
+          TINYEXR_PIXELTYPE_HALF;  // save with half(fp16) pixel format
+    } else {
+      header.requested_pixel_types[i] =
+          TINYEXR_PIXELTYPE_FLOAT;  // save with float(fp32) pixel format(i.e.
+                                    // no precision reduction)
+    }
+  }
+
+
+  unsigned char *mem_buf;
+  size_t mem_size = SaveEXRImageToMemory(&image, &header, &mem_buf, err);
+
+  if (mem_size == 0) {
+    return TINYEXR_ERROR_SERIALZATION_FAILED;
+  }
+
+  free(header.channels);
+  free(header.pixel_types);
+  free(header.requested_pixel_types);
+
+  if (mem_size > std::numeric_limits<int>::max()) {
+    free(mem_buf);
+    return TINYEXR_ERROR_DATA_TO_LARGE;
+  }
+
+  (*outbuf) = mem_buf;
+
+  return int(mem_size);
 }
 
 int SaveEXR(const float *data, int width, int height, int components,
