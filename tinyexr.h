@@ -1517,7 +1517,7 @@ static int rleUncompress(int inLength, int maxLength, const signed char in[],
       int count = *in++;
       inLength -= 2;
 
-      if (0 > (maxLength -= count + 1)) return 0;
+      if (0 > (maxLength -= count + 1) || inLength < 0) return 0;
 
       memset(out, *reinterpret_cast<const char *>(in), count + 1);
       out += count + 1;
