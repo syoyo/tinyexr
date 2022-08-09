@@ -359,6 +359,12 @@ extern int EXRLayers(const char *filename, const char **layer_names[],
 // others
 extern int IsEXR(const char *filename);
 
+// Simple wrapper API for ParseEXRHeaderFromMemory.
+// Check if given data is a EXR image(by just looking up a header section)
+// @return TINYEXR_SUCCEES for EXR image, TINYEXR_ERROR_INVALID_HEADER for
+// others
+extern int IsEXRFromMemory(const unsigned char *memory, size_t size);
+
 // @deprecated
 // Saves single-frame OpenEXR image to a buffer. Assume EXR image contains RGB(A) channels.
 // components must be 1(Grayscale), 3(RGB) or 4(RGBA).
@@ -1517,7 +1523,7 @@ static int rleUncompress(int inLength, int maxLength, const signed char in[],
       int count = *in++;
       inLength -= 2;
 
-      if (0 > (maxLength -= count + 1)) return 0;
+      if ((0 > (maxLength -= count + 1)) || (inLength < 0)) return 0;
 
       memset(out, *reinterpret_cast<const char *>(in), count + 1);
       out += count + 1;
@@ -6136,6 +6142,17 @@ int IsEXR(const char *filename) {
   EXRVersion exr_version;
 
   int ret = ParseEXRVersionFromFile(&exr_version, filename);
+  if (ret != TINYEXR_SUCCESS) {
+    return ret;
+  }
+
+  return TINYEXR_SUCCESS;
+}
+
+int IsEXRFromMemory(const unsigned char *memory, size_t size) {
+  EXRVersion exr_version;
+
+  int ret = ParseEXRVersionFromMemory(&exr_version, memory, size);
   if (ret != TINYEXR_SUCCESS) {
     return ret;
   }
