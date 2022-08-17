@@ -1328,10 +1328,10 @@ static void CompressZip(unsigned char *dst,
   compressedSize = outSize;
 #elif TINYEXR_USE_STB_ZLIB
   int outSize;
-  unsigned char* r = stbi_zlib_compress(const_cast<unsigned char*>(&tmpBuf.at(0)), src_size, &outSize, 8);
+  unsigned char* ret = stbi_zlib_compress(const_cast<unsigned char*>(&tmpBuf.at(0)), src_size, &outSize, 8);
   assert(ret);
-  memcpy(dst, r, outSize);
-  free(r);
+  memcpy(dst, ret, outSize);
+  free(ret);
 
   compressedSize = outSize;
 #else
@@ -2503,7 +2503,7 @@ static bool hufBuildDecTable(const long long *hcode,  // i : encoding table
         unsigned int *p = pl->p;
         pl->p = new unsigned int[pl->lit];
 
-        for (int i = 0; i < pl->lit - 1; ++i) pl->p[i] = p[i];
+        for (unsigned int i = 0; i < pl->lit - 1; ++i) pl->p[i] = p[i];
 
         delete[] p;
       } else {
@@ -2758,7 +2758,7 @@ static bool hufDecode(const long long *hcode,  // i : encoding table
         // Search long code
         //
 
-        int j;
+        unsigned int j;
 
         for (j = 0; j < pl.lit; j++) {
           int l = hufLength(hcode[pl.p[j]]);
@@ -7342,7 +7342,7 @@ static size_t SaveEXRNPartImageToMemory(const EXRImage* exr_images,
     tinyexr::SetErrorMessage("Output memory size is zero", err);
     return 0;
   }
-  (*memory_out) = static_cast<unsigned char*>(malloc(total_size));
+  (*memory_out) = static_cast<unsigned char*>(malloc((size_t)total_size));
 
   // Writing header
   memcpy((*memory_out), &memory[0], memory.size());
@@ -7395,7 +7395,7 @@ static size_t SaveEXRNPartImageToMemory(const EXRImage* exr_images,
     }
   }
   assert(sum == total_size);
-  return total_size;  // OK
+  return (size_t)total_size;  // OK
 }
 
 #ifdef __clang__
@@ -8678,7 +8678,7 @@ int SaveEXRToMemory(const float *data, int width, int height, int components,
   free(header.pixel_types);
   free(header.requested_pixel_types);
 
-  if (mem_size > std::numeric_limits<int>::max()) {
+  if (mem_size > (size_t)std::numeric_limits<int>::max()) {
     free(mem_buf);
     return TINYEXR_ERROR_DATA_TO_LARGE;
   }
