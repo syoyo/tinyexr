@@ -7342,7 +7342,7 @@ static size_t SaveEXRNPartImageToMemory(const EXRImage* exr_images,
     tinyexr::SetErrorMessage("Output memory size is zero", err);
     return 0;
   }
-  (*memory_out) = static_cast<unsigned char*>(malloc((size_t)total_size));
+  (*memory_out) = static_cast<unsigned char*>(malloc(size_t(total_size)));
 
   // Writing header
   memcpy((*memory_out), &memory[0], memory.size());
@@ -7395,7 +7395,7 @@ static size_t SaveEXRNPartImageToMemory(const EXRImage* exr_images,
     }
   }
   assert(sum == total_size);
-  return (size_t)total_size;  // OK
+  return size_t(total_size);  // OK
 }
 
 #ifdef __clang__
@@ -8678,7 +8678,7 @@ int SaveEXRToMemory(const float *data, int width, int height, int components,
   free(header.pixel_types);
   free(header.requested_pixel_types);
 
-  if (mem_size > (size_t)std::numeric_limits<int>::max()) {
+  if (mem_size > size_t(std::numeric_limits<int>::max())) {
     free(mem_buf);
     return TINYEXR_ERROR_DATA_TO_LARGE;
   }
