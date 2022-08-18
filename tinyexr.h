@@ -1262,7 +1262,7 @@ static void WriteChannelInfo(std::vector<unsigned char> &data,
   (*p) = '\0';
 }
 
-static void CompressZip(unsigned char *dst,
+static bool CompressZip(unsigned char *dst,
                         tinyexr::tinyexr_uint64 &compressedSize,
                         const unsigned char *src, unsigned long src_size) {
   std::vector<unsigned char> tmpBuf(src_size);
@@ -1322,14 +1322,17 @@ static void CompressZip(unsigned char *dst,
   int ret = mz_compress(
       dst, &outSize, static_cast<const unsigned char *>(&tmpBuf.at(0)),
       src_size);
-  assert(ret == MZ_OK);
-  (void)ret;
+  if (ret != MZ_OK) {
+    return false;
+  }
 
   compressedSize = outSize;
 #elif TINYEXR_USE_STB_ZLIB
   int outSize;
   unsigned char* ret = stbi_zlib_compress(const_cast<unsigned char*>(&tmpBuf.at(0)), src_size, &outSize, 8);
-  assert(ret);
+  if (!ret) {
+    return false;
+  }
   memcpy(dst, ret, outSize);
   free(ret);
 
@@ -1338,7 +1341,9 @@ static void CompressZip(unsigned char *dst,
   uLong outSize = compressBound(static_cast<uLong>(src_size));
   int ret = compress(dst, &outSize, static_cast<const Bytef *>(&tmpBuf.at(0)),
                      src_size);
-  assert(ret == Z_OK);
+  if (ret != Z_OK) {
+    return false;
+  }
 
   compressedSize = outSize;
 #endif
@@ -1349,6 +1354,8 @@ static void CompressZip(unsigned char *dst,
     compressedSize = src_size;
     memcpy(dst, src, src_size);
   }
+
+  return true;
 }
 
 static bool DecompressZip(unsigned char *dst,
@@ -6504,6 +6511,7 @@ static bool EncodePixelData(/* out */ std::vector<unsigned char>& out_data,
                             size_t pixel_data_size,
                             const std::vector<ChannelInfo>& channels,
                             const std::vector<size_t>& channel_offset_list,
+                            std::string *err,
                             const void* compression_param = 0) // zfp compression param
 {
   size_t buf_size = static_cast<size_t>(width) *
@@ -6556,7 +6564,10 @@ static bool EncodePixelData(/* out */ std::vector<unsigned char>& out_data,
           }
         }
       } else {
-        assert(0);
+        if (err) {
+          (*err) += "Invalid requested_pixel_type.\n";
+        }
+        return false;
       }
 
     } else if (channels[c].pixel_type == TINYEXR_PIXELTYPE_FLOAT) {
@@ -6600,7 +6611,10 @@ static bool EncodePixelData(/* out */ std::vector<unsigned char>& out_data,
           }
         }
       } else {
-        assert(0);
+        if (err) {
+          (*err) += "Invalid requested_pixel_type.\n";
+        }
+        return false;
       }
     } else if (channels[c].pixel_type == TINYEXR_PIXELTYPE_UINT) {
       for (int y = 0; y < num_lines; y++) {
@@ -6642,9 +6656,14 @@ static bool EncodePixelData(/* out */ std::vector<unsigned char>& out_data,
 #endif
     tinyexr::tinyexr_uint64 outSize = block.size();
 
-    tinyexr::CompressZip(&block.at(0), outSize,
+    if (!tinyexr::CompressZip(&block.at(0), outSize,
                          reinterpret_cast<const unsigned char *>(&buf.at(0)),
-                         static_cast<unsigned long>(buf.size()));
+                         static_cast<unsigned long>(buf.size()))) {
+      if (err) {
+        (*err) += "Zip compresssion failed.\n";
+      }
+      return false;
+    }
 
     // 4 byte: scan line
     // 4 byte: data size
@@ -6689,7 +6708,10 @@ static bool EncodePixelData(/* out */ std::vector<unsigned char>& out_data,
     out_data.insert(out_data.end(), block.begin(), block.begin() + data_len);
 
 #else
-    assert(0);
+    if (err) {
+      (*err) += "PIZ compression is disabled in this build.\n";
+    }
+    return false;
 #endif
   } else if (compression_type == TINYEXR_COMPRESSIONTYPE_ZFP) {
 #if TINYEXR_USE_ZFP
@@ -6708,11 +6730,13 @@ static bool EncodePixelData(/* out */ std::vector<unsigned char>& out_data,
     out_data.insert(out_data.end(), block.begin(), block.begin() + data_len);
 
 #else
+    if (err) {
+      (*err) += "ZFP compression is disabled in this build.\n";
+    }
     (void)compression_param;
-    assert(0);
+    return false;
 #endif
   } else {
-    assert(0);
     return false;
   }
 
@@ -6794,7 +6818,7 @@ static int EncodeTiledLevel(const EXRImage* level_image, const EXRHeader* exr_he
                                pixel_data_size,
                                channels,
                                channel_offset_list,
-                               compression_param);
+                               err, compression_param);
     if (!ret) {
       invalid_data = true;
       continue;
@@ -7011,6 +7035,7 @@ static int EncodeChunk(const EXRImage* exr_image, const EXRHeader* exr_header,
                                  pixel_data_size,
                                  channels,
                                  channel_offset_list,
+                                 err,
                                  compression_param);
       if (!ret) {
         invalid_data = true;
