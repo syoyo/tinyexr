@@ -151,7 +151,7 @@ extern "C" {
 #define TINYEXR_ERROR_CANT_WRITE_FILE (-11)
 #define TINYEXR_ERROR_SERIALZATION_FAILED (-12)
 #define TINYEXR_ERROR_LAYER_NOT_FOUND (-13)
-#define TINYEXR_ERROR_DATA_TO_LARGE (-14)
+#define TINYEXR_ERROR_DATA_TOO_LARGE (-14)
 
 // @note { OpenEXR file format: http://www.openexr.com/openexrfilelayout.pdf }
 
@@ -8705,7 +8705,7 @@ int SaveEXRToMemory(const float *data, int width, int height, int components,
 
   if (mem_size > size_t(std::numeric_limits<int>::max())) {
     free(mem_buf);
-    return TINYEXR_ERROR_DATA_TO_LARGE;
+    return TINYEXR_ERROR_DATA_TOO_LARGE;
   }
 
   (*outbuf) = mem_buf;
