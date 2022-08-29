@@ -149,7 +149,7 @@ extern "C" {
 #define TINYEXR_ERROR_INVALID_HEADER (-9)
 #define TINYEXR_ERROR_UNSUPPORTED_FEATURE (-10)
 #define TINYEXR_ERROR_CANT_WRITE_FILE (-11)
-#define TINYEXR_ERROR_SERIALZATION_FAILED (-12)
+#define TINYEXR_ERROR_SERIALIZATION_FAILED (-12)
 #define TINYEXR_ERROR_LAYER_NOT_FOUND (-13)
 #define TINYEXR_ERROR_DATA_TOO_LARGE (-14)
 
@@ -7485,7 +7485,7 @@ int SaveEXRImageToFile(const EXRImage *exr_image, const EXRHeader *exr_header,
   unsigned char *mem = NULL;
   size_t mem_size = SaveEXRImageToMemory(exr_image, exr_header, &mem, err);
   if (mem_size == 0) {
-    return TINYEXR_ERROR_SERIALZATION_FAILED;
+    return TINYEXR_ERROR_SERIALIZATION_FAILED;
   }
 
   size_t written_size = 0;
@@ -7554,7 +7554,7 @@ int SaveEXRMultipartImageToFile(const EXRImage* exr_images,
   unsigned char *mem = NULL;
   size_t mem_size = SaveEXRMultipartImageToMemory(exr_images, exr_headers, num_parts, &mem, err);
   if (mem_size == 0) {
-    return TINYEXR_ERROR_SERIALZATION_FAILED;
+    return TINYEXR_ERROR_SERIALIZATION_FAILED;
   }
 
   size_t written_size = 0;
@@ -8696,7 +8696,7 @@ int SaveEXRToMemory(const float *data, int width, int height, int components,
   size_t mem_size = SaveEXRImageToMemory(&image, &header, &mem_buf, err);
 
   if (mem_size == 0) {
-    return TINYEXR_ERROR_SERIALZATION_FAILED;
+    return TINYEXR_ERROR_SERIALIZATION_FAILED;
   }
 
   free(header.channels);
