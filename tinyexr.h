@@ -3618,8 +3618,8 @@ static bool DecodePixelData(/* out */ unsigned char **out_images,
         assert(requested_pixel_types[c] == TINYEXR_PIXELTYPE_FLOAT);
         for (size_t v = 0; v < static_cast<size_t>(num_lines); v++) {
           const float *line_ptr = reinterpret_cast<float *>(&outBuf.at(
-              v * pixel_data_size * static_cast<size_t>(x_stride) +
-              channel_offset_list[c] * static_cast<size_t>(x_stride)));
+              v * pixel_data_size * static_cast<size_t>(width) +
+              channel_offset_list[c] * static_cast<size_t>(width)));
           for (size_t u = 0; u < static_cast<size_t>(width); u++) {
             float val;
             // val = line_ptr[u];
