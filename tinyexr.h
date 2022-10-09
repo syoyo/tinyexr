@@ -4508,6 +4508,7 @@ static int ParseEXRHeader(HeaderInfo *info, bool *empty_header,
 #endif
         attrib.name[255] = '\0';
         attrib.type[255] = '\0';
+        //std::cout << "i = " << info->attributes.size() << ", dsize = " << data.size() << "\n";
         attrib.size = static_cast<int>(data.size());
         attrib.value = static_cast<unsigned char *>(malloc(data.size()));
         memcpy(reinterpret_cast<char *>(attrib.value), &data.at(0),
@@ -4574,6 +4575,7 @@ static int ParseEXRHeader(HeaderInfo *info, bool *empty_header,
       if (err) {
         (*err) += ss_err.str();
       }
+
       return TINYEXR_ERROR_INVALID_HEADER;
     }
   }
@@ -4698,7 +4700,7 @@ static bool ConvertHeader(EXRHeader *exr_header, const HeaderInfo &info, std::st
     exr_header->custom_attributes = static_cast<EXRAttribute *>(malloc(
         sizeof(EXRAttribute) * size_t(exr_header->num_custom_attributes)));
 
-    for (size_t i = 0; i < info.attributes.size(); i++) {
+    for (size_t i = 0; i < exr_header->num_custom_attributes; i++) {
       memcpy(exr_header->custom_attributes[i].name, info.attributes[i].name,
              256);
       memcpy(exr_header->custom_attributes[i].type, info.attributes[i].type,
@@ -6208,6 +6210,12 @@ int ParseEXRHeaderFromMemory(EXRHeader *exr_header, const EXRVersion *version,
     std::string err_str;
 
     if (!ConvertHeader(exr_header, info, &warn, &err_str)) {
+      // release mem
+      for (size_t i = 0; i < info.attributes.size(); i++) {
+        if (info.attributes[i].value) {
+          free(info.attributes[i].value);
+        }
+      }
       if (err && !err_str.empty()) {
         tinyexr::SetErrorMessage(err_str, err);
       }
@@ -8174,6 +8182,14 @@ int ParseEXRMultipartHeaderFromMemory(EXRHeader ***exr_headers,
                              marker, marker_size);
 
     if (ret != TINYEXR_SUCCESS) {
+
+      // Free malloc-allocated memory here.
+      for (size_t i = 0; i < info.attributes.size(); i++) {
+        if (info.attributes[i].value) {
+          free(info.attributes[i].value);
+        }
+      }
+
       tinyexr::SetErrorMessage(err_str, err);
       return ret;
     }
@@ -8185,6 +8201,14 @@ int ParseEXRMultipartHeaderFromMemory(EXRHeader ***exr_headers,
 
     // `chunkCount` must exist in the header.
     if (info.chunk_count == 0) {
+
+      // Free malloc-allocated memory here.
+      for (size_t i = 0; i < info.attributes.size(); i++) {
+        if (info.attributes[i].value) {
+          free(info.attributes[i].value);
+        }
+      }
+
       tinyexr::SetErrorMessage(
           "`chunkCount' attribute is not found in the header.", err);
       return TINYEXR_ERROR_INVALID_DATA;
@@ -8211,6 +8235,14 @@ int ParseEXRMultipartHeaderFromMemory(EXRHeader ***exr_headers,
     std::string warn;
     std::string _err;
     if (!ConvertHeader(exr_header, infos[i], &warn, &_err)) {
+
+      // Free malloc-allocated memory here.
+      for (size_t k = 0; k < infos[i].attributes.size(); i++) {
+        if (infos[i].attributes[k].value) {
+          free(infos[i].attributes[k].value);
+        }
+      }
+
       if (!_err.empty()) {
         tinyexr::SetErrorMessage(
             _err, err);
