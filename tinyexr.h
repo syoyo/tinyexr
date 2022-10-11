@@ -4700,7 +4700,7 @@ static bool ConvertHeader(EXRHeader *exr_header, const HeaderInfo &info, std::st
     exr_header->custom_attributes = static_cast<EXRAttribute *>(malloc(
         sizeof(EXRAttribute) * size_t(exr_header->num_custom_attributes)));
 
-    for (size_t i = 0; i < exr_header->num_custom_attributes; i++) {
+    for (size_t i = 0; i < size_t(exr_header->num_custom_attributes); i++) {
       memcpy(exr_header->custom_attributes[i].name, info.attributes[i].name,
              256);
       memcpy(exr_header->custom_attributes[i].type, info.attributes[i].type,
