@@ -5997,11 +5997,11 @@ int LoadEXRWithLayer(float **out_rgba, int *width, int *height,
   for (size_t c = 0; c < ch_count; c++) {
     const tinyexr::LayerChannel &ch = channels[c];
 
-    if (ch.name == "R") {
+    if (ch.name == "R" || ch.name == "X") {
       idxR = int(ch.index);
-    } else if (ch.name == "G") {
+    } else if (ch.name == "G" || ch.name == "Y") {
       idxG = int(ch.index);
-    } else if (ch.name == "B") {
+    } else if (ch.name == "B" || ch.name == "Z") {
       idxB = int(ch.index);
     } else if (ch.name == "A") {
       idxA = int(ch.index);
