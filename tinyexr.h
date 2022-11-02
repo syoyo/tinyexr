@@ -5850,7 +5850,8 @@ static void ChannelsInLayer(const EXRHeader &exr_header,
     if (layer_name.empty()) {
       const size_t pos = ch_name.find_last_of('.');
       if (pos != std::string::npos && pos < ch_name.size()) {
-        continue;
+        if(pos != 0) continue;
+        ch_name = ch_name.substr(pos + 1);
       }
     } else {
       const size_t pos = ch_name.find(layer_name + '.');
