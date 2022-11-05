@@ -5921,7 +5921,9 @@ static void ChannelsInLayer(const EXRHeader &exr_header,
                             const std::string &layer_name,
                             std::vector<LayerChannel> &channels) {
   channels.clear();
+  //std::cout << "layer_name = " << layer_name << "\n";
   for (int c = 0; c < exr_header.num_channels; c++) {
+    //std::cout << "chan[" << c << "] = " << exr_header.channels[c].name << "\n";
     std::string ch_name(exr_header.channels[c].name);
     if (layer_name.empty()) {
       const size_t pos = ch_name.find_last_of('.');
@@ -6063,8 +6065,14 @@ int LoadEXRWithLayer(float **out_rgba, int *width, int *height,
   tinyexr::ChannelsInLayer(
       exr_header, layername == NULL ? "" : std::string(layername), channels);
 
+
   if (channels.size() < 1) {
-    tinyexr::SetErrorMessage("Layer Not Found", err);
+    if (layername == NULL) {
+      tinyexr::SetErrorMessage("Layer Not Foound. Seems EXR contains channels with layer(e.g. `diffuse.R`). if you are using LoadEXR(), please try LoadEXRWithLayer(). LoadEXR() cannot load EXR having channels with layer.", err);
+    
+    } else {
+      tinyexr::SetErrorMessage("Layer Not Found", err);
+    }
     FreeEXRHeader(&exr_header);
     FreeEXRImage(&exr_image);
     return TINYEXR_ERROR_LAYER_NOT_FOUND;
