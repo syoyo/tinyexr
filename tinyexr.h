@@ -4870,7 +4870,7 @@ static int DecodeTiledLevel(EXRImage* exr_image, const EXRHeader* exr_header,
   for (int tile_idx = 0; tile_idx < num_tiles; tile_idx++) {
 #endif
     // Allocate memory for each tile.
-    bool alloc_success{false};
+    bool alloc_success = false;
     exr_image->tiles[tile_idx].images = tinyexr::AllocateImage(
       num_channels, exr_header->channels,
       exr_header->requested_pixel_types, exr_header->tile_size_x,

@@ -1619,7 +1619,7 @@ TEST_CASE("Regression: Issue53|Channels", "[issue53]") {
 
   std::vector<tinyexr::LayerChannel> channels;
   tinyexr::ChannelsInLayer(header, "", channels);
-  REQUIRE(8 == channels.size());
+  REQUIRE(0 == channels.size());
 
   channels.clear();
   tinyexr::ChannelsInLayer(header, "Warstwa 3", channels);
@@ -1653,16 +1653,22 @@ TEST_CASE("Regression: Issue53|Image", "[issue53]") {
   int width, height;
   float* image;
   ret = LoadEXRWithLayer(&image, &width, &height, filepath.c_str(), NULL, &err);
-  REQUIRE(TINYEXR_SUCCESS == ret);
-  free(image);
+  REQUIRE(TINYEXR_SUCCESS != ret);
+  if (TINYEXR_SUCCESS == ret) {
+    free(image);
+  }
   if (err) {
     FreeEXRErrorMessage(err);
+    err = nullptr;
   }
 
   ret = LoadEXRWithLayer(&image, &width, &height, filepath.c_str(), "Warstwa 1",
                          &err);
   REQUIRE(TINYEXR_SUCCESS == ret);
-  free(image);
+  if (TINYEXR_SUCCESS == ret) {
+    free(image);
+  }
+
   if (err) {
     FreeEXRErrorMessage(err);
   }
