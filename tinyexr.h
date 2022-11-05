@@ -4118,12 +4118,13 @@ static bool DecodePixelData(/* out */ unsigned char **out_images,
                 (size_t(height) - 1 - (size_t(y) + v)) * size_t(x_stride);
           }
 
+          if (reinterpret_cast<const unsigned char *>(line_ptr + width) >
+              (data_ptr + data_len)) {
+            // Corrupsed data
+            return false;
+          }
+
           for (int u = 0; u < width; u++) {
-            if (reinterpret_cast<const unsigned char *>(line_ptr + u) >=
-                (data_ptr + data_len)) {
-              // Corrupsed data?
-              return false;
-            }
 
             unsigned int val;
             tinyexr::cpy4(&val, line_ptr + u);
