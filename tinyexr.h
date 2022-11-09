@@ -618,7 +618,7 @@ extern int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
 #include <cstring>
 #include <sstream>
 
-// #include <iostream> // debug
+//#include <iostream> // debug
 
 #include <limits>
 #include <string>
@@ -3156,21 +3156,41 @@ static bool DecompressPiz(unsigned char *outPtr, const unsigned char *inPtr,
 
   memset(bitmap.data(), 0, BITMAP_SIZE);
 
+  if (inLen < 4) {
+    return false;
+  }
+
+  size_t readLen = 0;
+
   const unsigned char *ptr = inPtr;
   // minNonZero = *(reinterpret_cast<const unsigned short *>(ptr));
   tinyexr::cpy2(&minNonZero, reinterpret_cast<const unsigned short *>(ptr));
   // maxNonZero = *(reinterpret_cast<const unsigned short *>(ptr + 2));
   tinyexr::cpy2(&maxNonZero, reinterpret_cast<const unsigned short *>(ptr + 2));
   ptr += 4;
+  readLen += 4;
 
   if (maxNonZero >= BITMAP_SIZE) {
     return false;
   }
 
+  //printf("maxNonZero = %d\n", maxNonZero);
+  //printf("minNonZero = %d\n", minNonZero);
+  //printf("len = %d\n", (maxNonZero - minNonZero + 1));
+  //printf("BITMAPSIZE - min = %d\n", (BITMAP_SIZE - minNonZero));
+
   if (minNonZero <= maxNonZero) {
+    if (((maxNonZero - minNonZero + 1) + readLen) > inLen) {
+      // Input too short
+      return false;
+    }
+
     memcpy(reinterpret_cast<char *>(&bitmap[0] + minNonZero), ptr,
            maxNonZero - minNonZero + 1);
     ptr += maxNonZero - minNonZero + 1;
+    readLen += maxNonZero - minNonZero + 1;
+  } else {
+    return false;
   }
 
   std::vector<unsigned short> lut(USHORT_RANGE);
@@ -3182,6 +3202,10 @@ static bool DecompressPiz(unsigned char *outPtr, const unsigned char *inPtr,
   //
 
   int length;
+
+  if ((readLen + 4) > inLen) {
+    return false;
+  }
 
   // length = *(reinterpret_cast<const int *>(ptr));
   tinyexr::cpy4(&length, reinterpret_cast<const int *>(ptr));
@@ -4094,12 +4118,13 @@ static bool DecodePixelData(/* out */ unsigned char **out_images,
                 (size_t(height) - 1 - (size_t(y) + v)) * size_t(x_stride);
           }
 
+          if (reinterpret_cast<const unsigned char *>(line_ptr + width) >
+              (data_ptr + data_len)) {
+            // Corrupsed data
+            return false;
+          }
+
           for (int u = 0; u < width; u++) {
-            if (reinterpret_cast<const unsigned char *>(line_ptr + u) >=
-                (data_ptr + data_len)) {
-              // Corrupsed data?
-              return false;
-            }
 
             unsigned int val;
             tinyexr::cpy4(&val, line_ptr + u);
@@ -4180,13 +4205,20 @@ static bool ComputeChannelLayout(std::vector<size_t> *channel_offset_list,
   return true;
 }
 
+// TODO: Simply return nullptr when failed to allocate?
 static unsigned char **AllocateImage(int num_channels,
                                      const EXRChannelInfo *channels,
                                      const int *requested_pixel_types,
-                                     int data_width, int data_height) {
+                                     int data_width, int data_height, bool *success) {
   unsigned char **images =
       reinterpret_cast<unsigned char **>(static_cast<float **>(
           malloc(sizeof(float *) * static_cast<size_t>(num_channels))));
+
+  for (size_t c = 0; c < static_cast<size_t>(num_channels); c++) {
+    images[c] = NULL;
+  }
+
+  bool valid = true;
 
   for (size_t c = 0; c < static_cast<size_t>(num_channels); c++) {
     size_t data_len =
@@ -4216,10 +4248,29 @@ static unsigned char **AllocateImage(int num_channels,
       images[c] = reinterpret_cast<unsigned char *>(
           static_cast<unsigned int *>(malloc(sizeof(unsigned int) * data_len)));
     } else {
-      assert(0);
+      images[c] = NULL; // just in case.
+      valid = false;
+      break;
     }
   }
 
+  if (!valid) {
+    for (size_t c = 0; c < static_cast<size_t>(num_channels); c++) {
+      if (images[c]) {
+        free(images[c]);
+        images[c] = NULL;
+      }
+    }
+
+    if (success) {
+      (*success) = false;
+    }
+  } else {
+    if (success) {
+      (*success) = true;
+    }
+  }  
+  
   return images;
 }
 
@@ -4820,10 +4871,16 @@ static int DecodeTiledLevel(EXRImage* exr_image, const EXRHeader* exr_header,
   for (int tile_idx = 0; tile_idx < num_tiles; tile_idx++) {
 #endif
     // Allocate memory for each tile.
+    bool alloc_success = false;
     exr_image->tiles[tile_idx].images = tinyexr::AllocateImage(
       num_channels, exr_header->channels,
       exr_header->requested_pixel_types, exr_header->tile_size_x,
-      exr_header->tile_size_y);
+      exr_header->tile_size_y, &alloc_success);
+
+    if (!alloc_success) {
+      error_flag |= EF_INVALID_DATA; 
+      continue;
+    }
 
     int x_tile = tile_idx % num_x_tiles;
     int y_tile = tile_idx / num_x_tiles;
@@ -5101,9 +5158,21 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
       return TINYEXR_ERROR_INVALID_DATA;
     }
 
+    bool alloc_success = false;
     exr_image->images = tinyexr::AllocateImage(
         num_channels, exr_header->channels, exr_header->requested_pixel_types,
-        data_width, data_height);
+        data_width, data_height, &alloc_success);
+
+    if (!alloc_success) {
+      if (err) {
+        std::stringstream ss;
+        ss << "Failed to allocate memory for Images. Maybe EXR header is corrupted or Image data size is too large: width = " << data_width
+           << ", height = " << data_height << ", channels = " << num_channels
+           << std::endl;
+        (*err) += ss.str();
+      }
+      return TINYEXR_ERROR_INVALID_DATA;
+    }
 
 #if TINYEXR_HAS_CXX11 && (TINYEXR_USE_THREAD > 0)
     std::vector<std::thread> workers;
@@ -5221,7 +5290,15 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
 
   if (invalid_data) {
     if (err) {
-      (*err) += "Invalid data found when decoding pixels.\n";
+      (*err) += "Invalid/Corrupted data found when decoding pixels.\n";
+    }
+
+    // free alloced image.
+    for (size_t c = 0; c < static_cast<size_t>(num_channels); c++) {
+      if (exr_image->images[c]) {
+        free(exr_image->images[c]);
+        exr_image->images[c] = NULL;
+      }
     }
     return TINYEXR_ERROR_INVALID_DATA;
   }
@@ -5845,7 +5922,9 @@ static void ChannelsInLayer(const EXRHeader &exr_header,
                             const std::string &layer_name,
                             std::vector<LayerChannel> &channels) {
   channels.clear();
+  //std::cout << "layer_name = " << layer_name << "\n";
   for (int c = 0; c < exr_header.num_channels; c++) {
+    //std::cout << "chan[" << c << "] = " << exr_header.channels[c].name << "\n";
     std::string ch_name(exr_header.channels[c].name);
     if (layer_name.empty()) {
       const size_t pos = ch_name.find_last_of('.');
@@ -5987,8 +6066,14 @@ int LoadEXRWithLayer(float **out_rgba, int *width, int *height,
   tinyexr::ChannelsInLayer(
       exr_header, layername == NULL ? "" : std::string(layername), channels);
 
+
   if (channels.size() < 1) {
-    tinyexr::SetErrorMessage("Layer Not Found", err);
+    if (layername == NULL) {
+      tinyexr::SetErrorMessage("Layer Not Foound. Seems EXR contains channels with layer(e.g. `diffuse.R`). if you are using LoadEXR(), please try LoadEXRWithLayer(). LoadEXR() cannot load EXR having channels with layer.", err);
+    
+    } else {
+      tinyexr::SetErrorMessage("Layer Not Found", err);
+    }
     FreeEXRHeader(&exr_header);
     FreeEXRImage(&exr_image);
     return TINYEXR_ERROR_LAYER_NOT_FOUND;
