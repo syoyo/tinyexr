@@ -2,9 +2,9 @@
 
 [![Total alerts](https://img.shields.io/lgtm/alerts/g/syoyo/tinyexr.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/syoyo/tinyexr/alerts/)
 
-![Example](https://github.com/syoyo/tinyexr/blob/master/asakusa.png?raw=true)
+![Example](https://github.com/syoyo/tinyexr/blob/release/asakusa.png?raw=true)
 
-[![AppVeyor build status](https://ci.appveyor.com/api/projects/status/k07ftfe4ph057qau/branch/master?svg=true)](https://ci.appveyor.com/project/syoyo/tinyexr/branch/master)
+[![AppVeyor build status](https://ci.appveyor.com/api/projects/status/k07ftfe4ph057qau/branch/release?svg=true)](https://ci.appveyor.com/project/syoyo/tinyexr/branch/release)
 
 [![Travis build Status](https://travis-ci.org/syoyo/tinyexr.svg)](https://travis-ci.org/syoyo/tinyexr)
 
@@ -123,7 +123,7 @@ Current status of `tinyexr` is:
 * [examples/ldr2exr/](examples/exr2rgbe) LDR to EXR converter
 * [examples/exr2ldr/](examples/exr2ldr) EXR to LDR converter
 * [examples/exr2fptiff/](examples/exr2fptiff) EXR to 32bit floating point TIFF converter
-  * for 32bit floating point TIFF to EXR convert, see https://github.com/syoyo/tinydngloader/tree/master/examples/fptiff2exr
+  * for 32bit floating point TIFF to EXR convert, see https://github.com/syoyo/tinydngloader/tree/release/examples/fptiff2exr
 * [examples/cube2longlat/](examples/cube2longlat) Cubemap to longlat (equirectangler) converter
 
 ## Experimental
@@ -439,7 +439,7 @@ See `example/deepview` for actual usage.
 
 `examples/deepview` is simple deep image viewer in OpenGL.
 
-![DeepViewExample](https://github.com/syoyo/tinyexr/blob/master/examples/deepview/deepview_screencast.gif?raw=true)
+![DeepViewExample](https://github.com/syoyo/tinyexr/blob/release/examples/deepview/deepview_screencast.gif?raw=true)
 
 ## TinyEXR extension
 
