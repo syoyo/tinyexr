@@ -6106,22 +6106,22 @@ int LoadEXRWithLayer(float **out_rgba, int *width, int *height,
       for (int it = 0; it < exr_image.num_tiles; it++) {
         for (int j = 0; j < exr_header.tile_size_y; j++) {
           for (int i = 0; i < exr_header.tile_size_x; i++) {
-            const int ii = exr_image.tiles[it].offset_x *
-                               static_cast<int>(exr_header.tile_size_x) +
-                           i;
-            const int jj = exr_image.tiles[it].offset_y *
-                               static_cast<int>(exr_header.tile_size_y) +
-                           j;
-            const int idx = ii + jj * static_cast<int>(exr_image.width);
+            const size_t ii = exr_image.tiles[it].offset_x *
+                                  static_cast<size_t>(exr_header.tile_size_x) +
+                              i;
+            const size_t jj = exr_image.tiles[it].offset_y *
+                                  static_cast<size_t>(exr_header.tile_size_y) +
+                              j;
+            const size_t idx = ii + jj * static_cast<size_t>(exr_image.width);
 
             // out of region check.
-            if (ii >= exr_image.width) {
+            if (ii >= static_cast<size_t>(exr_image.width)) {
               continue;
             }
-            if (jj >= exr_image.height) {
+            if (jj >= static_cast<size_t>(exr_image.height)) {
               continue;
             }
-            const int srcIdx = i + j * exr_header.tile_size_x;
+            const size_t srcIdx = i + j * exr_header.tile_size_x;
             unsigned char **src = exr_image.tiles[it].images;
             (*out_rgba)[4 * idx + 0] =
                 reinterpret_cast<float **>(src)[chIdx][srcIdx];
@@ -6135,7 +6135,9 @@ int LoadEXRWithLayer(float **out_rgba, int *width, int *height,
         }
       }
     } else {
-      for (int i = 0; i < exr_image.width * exr_image.height; i++) {
+      const size_t pixel_size = static_cast<size_t>(exr_image.width) *
+        static_cast<size_t>(exr_image.height);
+      for (size_t i = 0; i < pixel_size; i++) {
         const float val =
             reinterpret_cast<float **>(exr_image.images)[chIdx][i];
         (*out_rgba)[4 * i + 0] = val;
@@ -6176,20 +6178,20 @@ int LoadEXRWithLayer(float **out_rgba, int *width, int *height,
       for (int it = 0; it < exr_image.num_tiles; it++) {
         for (int j = 0; j < exr_header.tile_size_y; j++) {
           for (int i = 0; i < exr_header.tile_size_x; i++) {
-            const int ii =
+            const size_t ii =
                 exr_image.tiles[it].offset_x * exr_header.tile_size_x + i;
-            const int jj =
+            const size_t jj =
                 exr_image.tiles[it].offset_y * exr_header.tile_size_y + j;
-            const int idx = ii + jj * exr_image.width;
+            const size_t idx = ii + jj * exr_image.width;
 
             // out of region check.
-            if (ii >= exr_image.width) {
+            if (ii >= static_cast<size_t>(exr_image.width)) {
               continue;
             }
-            if (jj >= exr_image.height) {
+            if (jj >= static_cast<size_t>(exr_image.height)) {
               continue;
             }
-            const int srcIdx = i + j * exr_header.tile_size_x;
+            const size_t srcIdx = i + j * exr_header.tile_size_x;
             unsigned char **src = exr_image.tiles[it].images;
             (*out_rgba)[4 * idx + 0] =
                 reinterpret_cast<float **>(src)[idxR][srcIdx];
@@ -6207,7 +6209,9 @@ int LoadEXRWithLayer(float **out_rgba, int *width, int *height,
         }
       }
     } else {
-      for (int i = 0; i < exr_image.width * exr_image.height; i++) {
+      const size_t pixel_size = static_cast<size_t>(exr_image.width) *
+        static_cast<size_t>(exr_image.height);
+      for (size_t i = 0; i < pixel_size; i++) {
         (*out_rgba)[4 * i + 0] =
             reinterpret_cast<float **>(exr_image.images)[idxR][i];
         (*out_rgba)[4 * i + 1] =
@@ -6384,20 +6388,20 @@ int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
       for (int it = 0; it < exr_image.num_tiles; it++) {
         for (int j = 0; j < exr_header.tile_size_y; j++) {
           for (int i = 0; i < exr_header.tile_size_x; i++) {
-            const int ii =
+            const size_t ii =
                 exr_image.tiles[it].offset_x * exr_header.tile_size_x + i;
-            const int jj =
+            const size_t jj =
                 exr_image.tiles[it].offset_y * exr_header.tile_size_y + j;
-            const int idx = ii + jj * exr_image.width;
+            const size_t idx = ii + jj * exr_image.width;
 
             // out of region check.
-            if (ii >= exr_image.width) {
+            if (ii >= static_cast<size_t>(exr_image.width)) {
               continue;
             }
-            if (jj >= exr_image.height) {
+            if (jj >= static_cast<size_t>(exr_image.height)) {
               continue;
             }
-            const int srcIdx = i + j * exr_header.tile_size_x;
+            const size_t srcIdx = i + j * exr_header.tile_size_x;
             unsigned char **src = exr_image.tiles[it].images;
             (*out_rgba)[4 * idx + 0] =
                 reinterpret_cast<float **>(src)[0][srcIdx];
@@ -6411,7 +6415,9 @@ int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
         }
       }
     } else {
-      for (int i = 0; i < exr_image.width * exr_image.height; i++) {
+      const size_t pixel_size = static_cast<size_t>(exr_image.width) *
+        static_cast<size_t>(exr_image.height);
+      for (size_t i = 0; i < pixel_size; i++) {
         const float val = reinterpret_cast<float **>(exr_image.images)[0][i];
         (*out_rgba)[4 * i + 0] = val;
         (*out_rgba)[4 * i + 1] = val;
@@ -6450,20 +6456,20 @@ int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
       for (int it = 0; it < exr_image.num_tiles; it++) {
         for (int j = 0; j < exr_header.tile_size_y; j++)
           for (int i = 0; i < exr_header.tile_size_x; i++) {
-            const int ii =
+            const size_t ii =
                 exr_image.tiles[it].offset_x * exr_header.tile_size_x + i;
-            const int jj =
+            const size_t jj =
                 exr_image.tiles[it].offset_y * exr_header.tile_size_y + j;
-            const int idx = ii + jj * exr_image.width;
+            const size_t idx = ii + jj * exr_image.width;
 
             // out of region check.
-            if (ii >= exr_image.width) {
+            if (ii >= static_cast<size_t>(exr_image.width)) {
               continue;
             }
-            if (jj >= exr_image.height) {
+            if (jj >= static_cast<size_t>(exr_image.height)) {
               continue;
             }
-            const int srcIdx = i + j * exr_header.tile_size_x;
+            const size_t srcIdx = i + j * exr_header.tile_size_x;
             unsigned char **src = exr_image.tiles[it].images;
             (*out_rgba)[4 * idx + 0] =
                 reinterpret_cast<float **>(src)[idxR][srcIdx];
@@ -6480,7 +6486,9 @@ int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
           }
       }
     } else {
-      for (int i = 0; i < exr_image.width * exr_image.height; i++) {
+      const size_t pixel_size = static_cast<size_t>(exr_image.width) *
+        static_cast<size_t>(exr_image.height);
+      for (size_t i = 0; i < pixel_size; i++) {
         (*out_rgba)[4 * i + 0] =
             reinterpret_cast<float **>(exr_image.images)[idxR][i];
         (*out_rgba)[4 * i + 1] =
