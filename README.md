@@ -1,7 +1,5 @@
 # Tiny OpenEXR image library.
 
-[![Total alerts](https://img.shields.io/lgtm/alerts/g/syoyo/tinyexr.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/syoyo/tinyexr/alerts/)
-
 ![Example](https://github.com/syoyo/tinyexr/blob/release/asakusa.png?raw=true)
 
 [![AppVeyor build status](https://ci.appveyor.com/api/projects/status/k07ftfe4ph057qau/branch/release?svg=true)](https://ci.appveyor.com/project/syoyo/tinyexr/branch/release)
