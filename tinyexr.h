@@ -607,8 +607,15 @@ extern int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
-#include <windows.h>  // for UTF-8
+#include <windows.h>  // for UTF-8 and memory-mapping
+#define TINYEXR_USE_WIN32_MMAP (1)
 
+#elif defined(__linux__) || defined(__unix__)
+#include <fcntl.h>     // for open()
+#include <sys/mman.h>  // for memory-mapping
+#include <sys/stat.h>  // for stat
+#include <unistd.h>    // for close()
+#define TINYEXR_USE_POSIX_MMAP (1)
 #endif
 
 #include <algorithm>
@@ -1181,7 +1188,7 @@ static bool ReadChannelInfo(std::vector<ChannelInfo> &channels,
     if ((*p) == 0) {
       break;
     }
-    ChannelInfo info;
+    ChannelInfo info = ChannelInfo();
 
     tinyexr_int64 data_len = static_cast<tinyexr_int64>(data.size()) -
                              (p - reinterpret_cast<const char *>(data.data()));
@@ -6514,6 +6521,152 @@ int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
   return TINYEXR_SUCCESS;
 }
 
+// Represents a read-only file mapped to an address space in memory.
+// If no memory-mapping API is available, falls back to allocating a buffer
+// with a copy of the file's data.
+struct MemoryMappedFile {
+  unsigned char *data = nullptr;  // To the start of the file's data.
+  size_t size = 0;                // The size of the file in bytes.
+#ifdef _WIN32
+  HANDLE windows_file = INVALID_HANDLE_VALUE;
+  HANDLE windows_file_mapping = NULL;
+#else  // Assuming POSIX API available.
+  int posix_descriptor = -1;
+#endif
+
+  // MemoryMappedFile's constructor tries to map memory to a file.
+  // If this succeeds, valid() will return true and all fields
+  // are usable; otherwise, valid() will return false.
+  MemoryMappedFile(const char *filename) {
+#ifdef TINYEXR_USE_WIN32_MMAP
+    windows_file =
+        CreateFileW(tinyexr::UTF8ToWchar(filename).c_str(),  // lpFileName
+                    GENERIC_READ,                            // dwDesiredAccess
+                    FILE_SHARE_READ,                         // dwShareMode
+                    NULL,                     // lpSecurityAttributes
+                    OPEN_EXISTING,            // dwCreationDisposition
+                    FILE_ATTRIBUTE_READONLY,  // dwFlagsAndAttributes
+                    NULL);                    // hTemplateFile
+    if (windows_file == INVALID_HANDLE_VALUE) {
+      return;
+    }
+
+    windows_file_mapping = CreateFileMapping(windows_file,  // hFile
+                                             NULL,  // lpFileMappingAttributes
+                                             PAGE_READONLY,  // flProtect
+                                             0,      // dwMaximumSizeHigh
+                                             0,      // dwMaximumSizeLow
+                                             NULL);  // lpName
+    if (windows_file_mapping == NULL) {
+      return;
+    }
+
+    data = reinterpret_cast<unsigned char *>(
+        MapViewOfFile(windows_file_mapping,  // hFileMappingObject
+                      FILE_MAP_READ,         // dwDesiredAccess
+                      0,                     // dwFileOffsetHigh
+                      0,                     // dwFileOffsetLow
+                      0));                   // dwNumberOfBytesToMap
+    if (data == nullptr) {
+      return;
+    }
+
+    LARGE_INTEGER windows_file_size = {};
+    if (!GetFileSizeEx(windows_file, &windows_file_size) ||
+        static_cast<ULONGLONG>(windows_file_size.QuadPart) >
+            std::numeric_limits<size_t>::max()) {
+      UnmapViewOfFile(data);
+      data = nullptr;
+      return;
+    }
+    size = static_cast<size_t>(windows_file_size.QuadPart);
+#elif defined(TINYEXR_USE_POSIX_MMAP)
+    posix_descriptor = open(filename, O_RDONLY);
+    if (posix_descriptor == -1) {
+      return;
+    }
+
+    struct stat info;
+    if (fstat(posix_descriptor, &info) < 0) {
+      return;
+    }
+    size = info.st_size;
+
+    data = reinterpret_cast<unsigned char *>(
+        mmap(0, size, PROT_READ, MAP_SHARED, posix_descriptor, 0));
+    if (data == MAP_FAILED) {
+      return;
+    }
+#else
+    FILE *fp = fopen(filename, "rb");
+    if (!fp) {
+      return;
+    }
+
+    // Calling fseek(fp, 0, SEEK_END) isn't strictly-conforming C code, but
+    // since neither the WIN32 nor POSIX APIs are available in this branch, this
+    // is a reasonable fallback option.
+    fseek(fp, 0, SEEK_END);
+    long ftell_result = ftell(fp);
+    if (ftell_result < 0) {
+      // Error from ftell
+      fclose(fp);
+      return;
+    }
+    size = static_cast<size_t>(ftell_result);
+    fseek(fp, 0, SEEK_SET);
+
+    data = reinterpret_cast<unsigned char*>(malloc(size));
+    if (data == nullptr) {
+      fclose(fp);
+      return;
+    }
+    size_t read_bytes = fread(data, 1, size, fp);
+    assert(read_bytes == size);
+    fclose(fp);
+    (void)read_bytes;
+#endif
+    assert(valid());
+  }
+
+  // MemoryMappedFile's destructor closes all its handles.
+  ~MemoryMappedFile() {
+#ifdef TINYEXR_USE_WIN32_MMAP
+    if (data != nullptr) {
+      (void)UnmapViewOfFile(data);
+      data = nullptr;
+    }
+
+    if (windows_file_mapping != NULL) {
+      (void)CloseHandle(windows_file_mapping);
+    }
+
+    if (windows_file != INVALID_HANDLE_VALUE) {
+      (void)CloseHandle(windows_file);
+    }
+#elif defined(TINYEXR_USE_POSIX_MMAP)
+    if (data != nullptr) {
+      (void)munmap(data, size);
+      data = nullptr;
+    }
+
+    if (posix_descriptor != -1) {
+      (void)close(posix_descriptor);
+    }
+#else
+    (void)free(data);
+    data = nullptr;
+#endif
+  }
+
+  // A MemoryMappedFile cannot be copied.
+  MemoryMappedFile(const MemoryMappedFile &) = delete;
+  MemoryMappedFile &operator=(const MemoryMappedFile &) = delete;
+
+  // Returns whether this was successfully opened.
+  bool valid() const { return data != nullptr; }
+};
+
 int LoadEXRImageFromFile(EXRImage *exr_image, const EXRHeader *exr_header,
                          const char *filename, const char **err) {
   if (exr_image == NULL) {
@@ -6521,50 +6674,19 @@ int LoadEXRImageFromFile(EXRImage *exr_image, const EXRHeader *exr_header,
     return TINYEXR_ERROR_INVALID_ARGUMENT;
   }
 
-  FILE *fp = NULL;
-#ifdef _WIN32
-#if defined(_MSC_VER) || (defined(MINGW_HAS_SECURE_API) && MINGW_HAS_SECURE_API) // MSVC, MinGW GCC, or Clang.
-  errno_t errcode =
-      _wfopen_s(&fp, tinyexr::UTF8ToWchar(filename).c_str(), L"rb");
-  if (errcode != 0) {
-    tinyexr::SetErrorMessage("Cannot read file " + std::string(filename), err);
-    // TODO(syoyo): return wfopen_s erro code
-    return TINYEXR_ERROR_CANT_OPEN_FILE;
-  }
-#else
-  // Unknown compiler or MinGW without MINGW_HAS_SECURE_API.
-  fp = fopen(filename, "rb");
-#endif
-#else
-  fp = fopen(filename, "rb");
-#endif
-  if (!fp) {
+  MemoryMappedFile file(filename);
+  if (!file.valid()) {
     tinyexr::SetErrorMessage("Cannot read file " + std::string(filename), err);
     return TINYEXR_ERROR_CANT_OPEN_FILE;
   }
 
-  size_t filesize;
-  // Compute size
-  fseek(fp, 0, SEEK_END);
-  filesize = static_cast<size_t>(ftell(fp));
-  fseek(fp, 0, SEEK_SET);
-
-  if (filesize < 16) {
-    tinyexr::SetErrorMessage("File size too short " + std::string(filename),
+  if (file.size < 16) {
+    tinyexr::SetErrorMessage("File size too short : " + std::string(filename),
                              err);
     return TINYEXR_ERROR_INVALID_FILE;
   }
 
-  std::vector<unsigned char> buf(filesize);  // @todo { use mmap }
-  {
-    size_t ret;
-    ret = fread(&buf[0], 1, filesize, fp);
-    assert(ret == filesize);
-    fclose(fp);
-    (void)ret;
-  }
-
-  return LoadEXRImageFromMemory(exr_image, exr_header, &buf.at(0), filesize,
+  return LoadEXRImageFromMemory(exr_image, exr_header, file.data, file.size,
                                 err);
 }
 
@@ -7587,6 +7709,7 @@ int SaveEXRImageToFile(const EXRImage *exr_image, const EXRHeader *exr_header,
   unsigned char *mem = NULL;
   size_t mem_size = SaveEXRImageToMemory(exr_image, exr_header, &mem, err);
   if (mem_size == 0) {
+    fclose(fp);
     return TINYEXR_ERROR_SERIALIZATION_FAILED;
   }
 
@@ -7656,6 +7779,7 @@ int SaveEXRMultipartImageToFile(const EXRImage* exr_images,
   unsigned char *mem = NULL;
   size_t mem_size = SaveEXRMultipartImageToMemory(exr_images, exr_headers, num_parts, &mem, err);
   if (mem_size == 0) {
+    fclose(fp);
     return TINYEXR_ERROR_SERIALIZATION_FAILED;
   }
 
@@ -7681,58 +7805,20 @@ int LoadDeepEXR(DeepImage *deep_image, const char *filename, const char **err) {
     return TINYEXR_ERROR_INVALID_ARGUMENT;
   }
 
-#ifdef _WIN32
-  FILE *fp = NULL;
-#if defined(_MSC_VER) || (defined(MINGW_HAS_SECURE_API) && MINGW_HAS_SECURE_API) // MSVC, MinGW GCC, or Clang.
-  errno_t errcode =
-      _wfopen_s(&fp, tinyexr::UTF8ToWchar(filename).c_str(), L"rb");
-  if (errcode != 0) {
-    tinyexr::SetErrorMessage("Cannot read a file " + std::string(filename),
-                             err);
+  MemoryMappedFile file(filename);
+  if (!file.valid()) {
+    tinyexr::SetErrorMessage("Cannot read file " + std::string(filename), err);
     return TINYEXR_ERROR_CANT_OPEN_FILE;
   }
-#else
-  // Unknown compiler or MinGW without MINGW_HAS_SECURE_API.
-  fp = fopen(filename, "rb");
-#endif
-  if (!fp) {
-    tinyexr::SetErrorMessage("Cannot read a file " + std::string(filename),
-                             err);
-    return TINYEXR_ERROR_CANT_OPEN_FILE;
-  }
-#else
-  FILE *fp = fopen(filename, "rb");
-  if (!fp) {
-    tinyexr::SetErrorMessage("Cannot read a file " + std::string(filename),
-                             err);
-    return TINYEXR_ERROR_CANT_OPEN_FILE;
-  }
-#endif
 
-  size_t filesize;
-  // Compute size
-  fseek(fp, 0, SEEK_END);
-  filesize = static_cast<size_t>(ftell(fp));
-  fseek(fp, 0, SEEK_SET);
-
-  if (filesize == 0) {
-    fclose(fp);
+  if (file.size == 0) {
     tinyexr::SetErrorMessage("File size is zero : " + std::string(filename),
                              err);
     return TINYEXR_ERROR_INVALID_FILE;
   }
 
-  std::vector<char> buf(filesize);  // @todo { use mmap }
-  {
-    size_t ret;
-    ret = fread(&buf[0], 1, filesize, fp);
-    assert(ret == filesize);
-    (void)ret;
-  }
-  fclose(fp);
-
-  const char *head = &buf[0];
-  const char *marker = &buf[0];
+  const char *head = reinterpret_cast<const char *>(file.data);
+  const char *marker = reinterpret_cast<const char *>(file.data);
 
   // Header check.
   {
@@ -7767,7 +7853,7 @@ int LoadDeepEXR(DeepImage *deep_image, const char *filename, const char **err) {
   std::vector<tinyexr::ChannelInfo> channels;
 
   // Read attributes
-  size_t size = filesize - tinyexr::kEXRVersionSize;
+  size_t size = file.size - tinyexr::kEXRVersionSize;
   for (;;) {
     if (0 == size) {
       return TINYEXR_ERROR_INVALID_DATA;
@@ -8198,48 +8284,13 @@ int ParseEXRHeaderFromFile(EXRHeader *exr_header, const EXRVersion *exr_version,
     return TINYEXR_ERROR_INVALID_ARGUMENT;
   }
 
-  FILE *fp = NULL;
-#ifdef _WIN32
-#if defined(_MSC_VER) || (defined(MINGW_HAS_SECURE_API) && MINGW_HAS_SECURE_API) // MSVC, MinGW GCC, or Clang.
-  errno_t errcode =
-      _wfopen_s(&fp, tinyexr::UTF8ToWchar(filename).c_str(), L"rb");
-  if (errcode != 0) {
-    tinyexr::SetErrorMessage("Cannot read file " + std::string(filename), err);
-    return TINYEXR_ERROR_INVALID_FILE;
-  }
-#else
-  // Unknown compiler or MinGW without MINGW_HAS_SECURE_API.
-  fp = fopen(filename, "rb");
-#endif
-#else
-  fp = fopen(filename, "rb");
-#endif
-  if (!fp) {
+  MemoryMappedFile file(filename);
+  if (!file.valid()) {
     tinyexr::SetErrorMessage("Cannot read file " + std::string(filename), err);
     return TINYEXR_ERROR_CANT_OPEN_FILE;
   }
 
-  size_t filesize;
-  // Compute size
-  fseek(fp, 0, SEEK_END);
-  filesize = static_cast<size_t>(ftell(fp));
-  fseek(fp, 0, SEEK_SET);
-
-  std::vector<unsigned char> buf(filesize);  // @todo { use mmap }
-  {
-    size_t ret;
-    ret = fread(&buf[0], 1, filesize, fp);
-    assert(ret == filesize);
-    fclose(fp);
-
-    if (ret != filesize) {
-      tinyexr::SetErrorMessage("fread() error on " + std::string(filename),
-                               err);
-      return TINYEXR_ERROR_INVALID_FILE;
-    }
-  }
-
-  return ParseEXRHeaderFromMemory(exr_header, exr_version, &buf.at(0), filesize,
+  return ParseEXRHeaderFromMemory(exr_header, exr_version, file.data, file.size,
                                   err);
 }
 
@@ -8365,48 +8416,14 @@ int ParseEXRMultipartHeaderFromFile(EXRHeader ***exr_headers, int *num_headers,
     return TINYEXR_ERROR_INVALID_ARGUMENT;
   }
 
-  FILE *fp = NULL;
-#ifdef _WIN32
-#if defined(_MSC_VER) || (defined(MINGW_HAS_SECURE_API) && MINGW_HAS_SECURE_API) // MSVC, MinGW GCC, or Clang.
-  errno_t errcode =
-      _wfopen_s(&fp, tinyexr::UTF8ToWchar(filename).c_str(), L"rb");
-  if (errcode != 0) {
-    tinyexr::SetErrorMessage("Cannot read file " + std::string(filename), err);
-    return TINYEXR_ERROR_INVALID_FILE;
-  }
-#else
-  // Unknown compiler or MinGW without MINGW_HAS_SECURE_API.
-  fp = fopen(filename, "rb");
-#endif
-#else
-  fp = fopen(filename, "rb");
-#endif
-  if (!fp) {
+  MemoryMappedFile file(filename);
+  if (!file.valid()) {
     tinyexr::SetErrorMessage("Cannot read file " + std::string(filename), err);
     return TINYEXR_ERROR_CANT_OPEN_FILE;
   }
 
-  size_t filesize;
-  // Compute size
-  fseek(fp, 0, SEEK_END);
-  filesize = static_cast<size_t>(ftell(fp));
-  fseek(fp, 0, SEEK_SET);
-
-  std::vector<unsigned char> buf(filesize);  // @todo { use mmap }
-  {
-    size_t ret;
-    ret = fread(&buf[0], 1, filesize, fp);
-    assert(ret == filesize);
-    fclose(fp);
-
-    if (ret != filesize) {
-      tinyexr::SetErrorMessage("`fread' error. file may be corrupted.", err);
-      return TINYEXR_ERROR_INVALID_FILE;
-    }
-  }
-
   return ParseEXRMultipartHeaderFromMemory(
-      exr_headers, num_headers, exr_version, &buf.at(0), filesize, err);
+      exr_headers, num_headers, exr_version, file.data, file.size, err);
 }
 
 int ParseEXRVersionFromMemory(EXRVersion *version, const unsigned char *memory,
@@ -8649,44 +8666,14 @@ int LoadEXRMultipartImageFromFile(EXRImage *exr_images,
     return TINYEXR_ERROR_INVALID_ARGUMENT;
   }
 
-  FILE *fp = NULL;
-#ifdef _WIN32
-#if defined(_MSC_VER) || (defined(MINGW_HAS_SECURE_API) && MINGW_HAS_SECURE_API) // MSVC, MinGW GCC, or Clang.
-  errno_t errcode =
-      _wfopen_s(&fp, tinyexr::UTF8ToWchar(filename).c_str(), L"rb");
-  if (errcode != 0) {
+  MemoryMappedFile file(filename);
+  if (!file.valid()) {
     tinyexr::SetErrorMessage("Cannot read file " + std::string(filename), err);
     return TINYEXR_ERROR_CANT_OPEN_FILE;
-  }
-#else
-  // Unknown compiler or MinGW without MINGW_HAS_SECURE_API.
-  fp = fopen(filename, "rb");
-#endif
-#else
-  fp = fopen(filename, "rb");
-#endif
-  if (!fp) {
-    tinyexr::SetErrorMessage("Cannot read file " + std::string(filename), err);
-    return TINYEXR_ERROR_CANT_OPEN_FILE;
-  }
-
-  size_t filesize;
-  // Compute size
-  fseek(fp, 0, SEEK_END);
-  filesize = static_cast<size_t>(ftell(fp));
-  fseek(fp, 0, SEEK_SET);
-
-  std::vector<unsigned char> buf(filesize);  //  @todo { use mmap }
-  {
-    size_t ret;
-    ret = fread(&buf[0], 1, filesize, fp);
-    assert(ret == filesize);
-    fclose(fp);
-    (void)ret;
   }
 
   return LoadEXRMultipartImageFromMemory(exr_images, exr_headers, num_parts,
-                                         &buf.at(0), filesize, err);
+                                         file.data, file.size, err);
 }
 
 int SaveEXRToMemory(const float *data, int width, int height, int components,
