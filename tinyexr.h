@@ -6527,10 +6527,10 @@ int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
 struct MemoryMappedFile {
   unsigned char *data = nullptr;  // To the start of the file's data.
   size_t size = 0;                // The size of the file in bytes.
-#ifdef _WIN32
+#ifdef TINYEXR_USE_WIN32_MMAP
   HANDLE windows_file = INVALID_HANDLE_VALUE;
   HANDLE windows_file_mapping = NULL;
-#else  // Assuming POSIX API available.
+#elif defined(TINYEXR_USE_POSIX_MMAP)
   int posix_descriptor = -1;
 #endif
 
