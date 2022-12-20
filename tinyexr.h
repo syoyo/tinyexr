@@ -8854,18 +8854,20 @@ int SaveEXR(const float *data, int width, int height, int components,
   image.num_channels = components;
 
   std::vector<float> images[4];
+  const size_t pixel_count =
+      static_cast<size_t>(width) * static_cast<size_t>(height);
 
   if (components == 1) {
-    images[0].resize(static_cast<size_t>(width * height));
-    memcpy(images[0].data(), data, sizeof(float) * size_t(width * height));
+    images[0].resize(pixel_count);
+    memcpy(images[0].data(), data, sizeof(float) * pixel_count);
   } else {
-    images[0].resize(static_cast<size_t>(width * height));
-    images[1].resize(static_cast<size_t>(width * height));
-    images[2].resize(static_cast<size_t>(width * height));
-    images[3].resize(static_cast<size_t>(width * height));
+    images[0].resize(pixel_count);
+    images[1].resize(pixel_count);
+    images[2].resize(pixel_count);
+    images[3].resize(pixel_count);
 
     // Split RGB(A)RGB(A)RGB(A)... into R, G and B(and A) layers
-    for (size_t i = 0; i < static_cast<size_t>(width * height); i++) {
+    for (size_t i = 0; i < pixel_count; i++) {
       images[0][i] = data[static_cast<size_t>(components) * i + 0];
       images[1][i] = data[static_cast<size_t>(components) * i + 1];
       images[2][i] = data[static_cast<size_t>(components) * i + 2];
