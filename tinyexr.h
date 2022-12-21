@@ -1188,7 +1188,7 @@ static bool ReadChannelInfo(std::vector<ChannelInfo> &channels,
     if ((*p) == 0) {
       break;
     }
-    ChannelInfo info = ChannelInfo();
+    ChannelInfo info = {};
 
     tinyexr_int64 data_len = static_cast<tinyexr_int64>(data.size()) -
                              (p - reinterpret_cast<const char *>(data.data()));
@@ -8507,13 +8507,13 @@ int ParseEXRVersionFromFile(EXRVersion *version, const char *filename) {
     return TINYEXR_ERROR_CANT_OPEN_FILE;
   }
 
-  size_t file_size;
   // Compute size
   fseek(fp, 0, SEEK_END);
-  file_size = static_cast<size_t>(ftell(fp));
+  const long ftell_result = ftell(fp);
   fseek(fp, 0, SEEK_SET);
 
-  if (file_size < tinyexr::kEXRVersionSize) {
+  if (ftell_result < tinyexr::kEXRVersionSize) {
+    fclose(fp);
     return TINYEXR_ERROR_INVALID_FILE;
   }
 
