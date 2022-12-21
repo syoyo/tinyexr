@@ -8513,22 +8513,10 @@ int ParseEXRVersionFromFile(EXRVersion *version, const char *filename) {
     return TINYEXR_ERROR_CANT_OPEN_FILE;
   }
 
-  // Compute size
-  if (fseek(fp, 0, SEEK_END) != 0) {
-    fclose(fp);
-    return TINYEXR_ERROR_CANT_OPEN_FILE;
-  }
-  const long ftell_result = ftell(fp);
-  if (fseek(fp, 0, SEEK_SET) != 0) {
-    fclose(fp);
-    return TINYEXR_ERROR_CANT_OPEN_FILE;
-  }
-
-  if (ftell_result < tinyexr::kEXRVersionSize) {
-    fclose(fp);
-    return TINYEXR_ERROR_INVALID_FILE;
-  }
-
+  // Try to read kEXRVersionSize bytes; if the file is shorter than
+  // kEXRVersionSize, this will produce an error. This avoids a call to
+  // fseek(fp, 0, SEEK_END), which is not required to be supported by C
+  // implementations.
   unsigned char buf[tinyexr::kEXRVersionSize];
   size_t ret = fread(&buf[0], 1, tinyexr::kEXRVersionSize, fp);
   fclose(fp);
