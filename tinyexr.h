@@ -6606,15 +6606,21 @@ struct MemoryMappedFile {
     // Calling fseek(fp, 0, SEEK_END) isn't strictly-conforming C code, but
     // since neither the WIN32 nor POSIX APIs are available in this branch, this
     // is a reasonable fallback option.
-    fseek(fp, 0, SEEK_END);
-    long ftell_result = ftell(fp);
+    if (fseek(fp, 0, SEEK_END) != 0) {
+      fclose(fp);
+      return;
+    }
+    const long ftell_result = ftell(fp);
     if (ftell_result < 0) {
       // Error from ftell
       fclose(fp);
       return;
     }
     size = static_cast<size_t>(ftell_result);
-    fseek(fp, 0, SEEK_SET);
+    if (fseek(fp, 0, SEEK_SET) != 0) {
+      fclose(fp);
+      return;
+    }
 
     data = reinterpret_cast<unsigned char*>(malloc(size));
     if (data == nullptr) {
@@ -8508,9 +8514,15 @@ int ParseEXRVersionFromFile(EXRVersion *version, const char *filename) {
   }
 
   // Compute size
-  fseek(fp, 0, SEEK_END);
+  if (fseek(fp, 0, SEEK_END) != 0) {
+    fclose(fp);
+    return TINYEXR_ERROR_CANT_OPEN_FILE;
+  }
   const long ftell_result = ftell(fp);
-  fseek(fp, 0, SEEK_SET);
+  if (fseek(fp, 0, SEEK_SET) != 0) {
+    fclose(fp);
+    return TINYEXR_ERROR_CANT_OPEN_FILE;
+  }
 
   if (ftell_result < tinyexr::kEXRVersionSize) {
     fclose(fp);
