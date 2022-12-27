@@ -6714,17 +6714,17 @@ struct MemoryMappedFile {
   // Only check for this when compiling with C++11 or higher, since deleted
   // function definitions were added then.
 #if TINYEXR_HAS_CXX11
-#ifdef __GNUC__
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wc++98-compat"
-#endif  // #ifdef __GNUC__
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wc++98-compat"
+#endif
   MemoryMappedFile(const MemoryMappedFile &) = delete;
   MemoryMappedFile &operator=(const MemoryMappedFile &) = delete;
   MemoryMappedFile(MemoryMappedFile &&other) noexcept = delete;
   MemoryMappedFile &operator=(MemoryMappedFile &&other) noexcept = delete;
-#ifdef __GNUC__
-#pragma GCC diagnostic pop
-#endif  // #ifdef __GNUC__
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
 #endif
 
   // Returns whether this was successfully opened.
