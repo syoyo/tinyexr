@@ -1191,7 +1191,7 @@ static bool ReadChannelInfo(std::vector<ChannelInfo> &channels,
       break;
     }
     ChannelInfo info;
-    memset(&info, 0, sizeof(info));
+    info.requested_pixel_type = 0;
 
     tinyexr_int64 data_len = static_cast<tinyexr_int64>(data.size()) -
                              (p - reinterpret_cast<const char *>(data.data()));
@@ -2520,7 +2520,7 @@ static bool hufBuildDecTable(const long long *hcode,  // i : encoding table
         unsigned int *p = pl->p;
         pl->p = new unsigned int[pl->lit];
 
-        for (unsigned int i = 0; i < pl->lit - 1; ++i) pl->p[i] = p[i];
+        for (unsigned int i = 0; i < pl->lit - 1u; ++i) pl->p[i] = p[i];
 
         delete[] p;
       } else {
@@ -6620,15 +6620,19 @@ struct MemoryMappedFile {
     // can only fail if a POSIX implementation defines off_t to be a larger
     // type than size_t - for instance, compiling with _FILE_OFFSET_BITS=64
     // on a 32-bit system. On current 64-bit systems, this check can never
-    // fail, so we turn off GCC and clang's Wtautological-type-limit-compare
-    // warning around this code.
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wtautological-type-limit-compare"
+    // fail, so we turn off clang's Wtautological-type-limit-compare warning
+    // around this code.
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wtautological-type-limit-compare"
+#endif
     if (info.st_size < 0 ||
         info.st_size > std::numeric_limits<ssize_t>::max()) {
       return;
     }
-#pragma GCC diagnostic pop
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
     size = static_cast<size_t>(info.st_size);
 
     data = reinterpret_cast<unsigned char *>(
