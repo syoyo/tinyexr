@@ -607,8 +607,15 @@ extern int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
-#include <windows.h>  // for UTF-8
+#include <windows.h>  // for UTF-8 and memory-mapping
+#define TINYEXR_USE_WIN32_MMAP (1)
 
+#elif defined(__linux__) || defined(__unix__)
+#include <fcntl.h>     // for open()
+#include <sys/mman.h>  // for memory-mapping
+#include <sys/stat.h>  // for stat
+#include <unistd.h>    // for close()
+#define TINYEXR_USE_POSIX_MMAP (1)
 #endif
 
 #include <algorithm>
@@ -636,6 +643,8 @@ extern int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
 #include <thread>
 #endif
 
+#else  // __cplusplus > 199711L
+#define TINYEXR_HAS_CXX11 (0)
 #endif  // __cplusplus > 199711L
 
 #if TINYEXR_USE_OPENMP
@@ -1182,6 +1191,7 @@ static bool ReadChannelInfo(std::vector<ChannelInfo> &channels,
       break;
     }
     ChannelInfo info;
+    info.requested_pixel_type = 0;
 
     tinyexr_int64 data_len = static_cast<tinyexr_int64>(data.size()) -
                              (p - reinterpret_cast<const char *>(data.data()));
@@ -2510,7 +2520,7 @@ static bool hufBuildDecTable(const long long *hcode,  // i : encoding table
         unsigned int *p = pl->p;
         pl->p = new unsigned int[pl->lit];
 
-        for (unsigned int i = 0; i < pl->lit - 1; ++i) pl->p[i] = p[i];
+        for (unsigned int i = 0; i < pl->lit - 1u; ++i) pl->p[i] = p[i];
 
         delete[] p;
       } else {
@@ -6103,15 +6113,17 @@ int LoadEXRWithLayer(float **out_rgba, int *width, int *height,
                static_cast<size_t>(exr_image.height)));
 
     if (exr_header.tiled) {
+      const size_t tile_size_x = static_cast<size_t>(exr_header.tile_size_x);
+      const size_t tile_size_y = static_cast<size_t>(exr_header.tile_size_y);
       for (int it = 0; it < exr_image.num_tiles; it++) {
-        for (int j = 0; j < exr_header.tile_size_y; j++) {
-          for (int i = 0; i < exr_header.tile_size_x; i++) {
-            const size_t ii = exr_image.tiles[it].offset_x *
-                                  static_cast<size_t>(exr_header.tile_size_x) +
-                              i;
-            const size_t jj = exr_image.tiles[it].offset_y *
-                                  static_cast<size_t>(exr_header.tile_size_y) +
-                              j;
+        for (size_t j = 0; j < tile_size_y; j++) {
+          for (size_t i = 0; i < tile_size_x; i++) {
+            const size_t ii =
+              static_cast<size_t>(exr_image.tiles[it].offset_x) * tile_size_x +
+              i;
+            const size_t jj =
+              static_cast<size_t>(exr_image.tiles[it].offset_y) * tile_size_y +
+              j;
             const size_t idx = ii + jj * static_cast<size_t>(exr_image.width);
 
             // out of region check.
@@ -6121,7 +6133,7 @@ int LoadEXRWithLayer(float **out_rgba, int *width, int *height,
             if (jj >= static_cast<size_t>(exr_image.height)) {
               continue;
             }
-            const size_t srcIdx = i + j * exr_header.tile_size_x;
+            const size_t srcIdx = i + j * tile_size_x;
             unsigned char **src = exr_image.tiles[it].images;
             (*out_rgba)[4 * idx + 0] =
                 reinterpret_cast<float **>(src)[chIdx][srcIdx];
@@ -6175,14 +6187,20 @@ int LoadEXRWithLayer(float **out_rgba, int *width, int *height,
         malloc(4 * sizeof(float) * static_cast<size_t>(exr_image.width) *
                static_cast<size_t>(exr_image.height)));
     if (exr_header.tiled) {
+      const size_t tile_size_x = static_cast<size_t>(exr_header.tile_size_x);
+      const size_t tile_size_y = static_cast<size_t>(exr_header.tile_size_y);
       for (int it = 0; it < exr_image.num_tiles; it++) {
-        for (int j = 0; j < exr_header.tile_size_y; j++) {
-          for (int i = 0; i < exr_header.tile_size_x; i++) {
+        for (size_t j = 0; j < tile_size_y; j++) {
+          for (size_t i = 0; i < tile_size_x; i++) {
             const size_t ii =
-                exr_image.tiles[it].offset_x * exr_header.tile_size_x + i;
+                static_cast<size_t>(exr_image.tiles[it].offset_x) *
+                    tile_size_x +
+                i;
             const size_t jj =
-                exr_image.tiles[it].offset_y * exr_header.tile_size_y + j;
-            const size_t idx = ii + jj * exr_image.width;
+                static_cast<size_t>(exr_image.tiles[it].offset_y) *
+                    tile_size_y +
+                j;
+            const size_t idx = ii + jj * static_cast<size_t>(exr_image.width);
 
             // out of region check.
             if (ii >= static_cast<size_t>(exr_image.width)) {
@@ -6191,7 +6209,7 @@ int LoadEXRWithLayer(float **out_rgba, int *width, int *height,
             if (jj >= static_cast<size_t>(exr_image.height)) {
               continue;
             }
-            const size_t srcIdx = i + j * exr_header.tile_size_x;
+            const size_t srcIdx = i + j * tile_size_x;
             unsigned char **src = exr_image.tiles[it].images;
             (*out_rgba)[4 * idx + 0] =
                 reinterpret_cast<float **>(src)[idxR][srcIdx];
@@ -6385,14 +6403,20 @@ int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
                static_cast<size_t>(exr_image.height)));
 
     if (exr_header.tiled) {
+      const size_t tile_size_x = static_cast<size_t>(exr_header.tile_size_x);
+      const size_t tile_size_y = static_cast<size_t>(exr_header.tile_size_y);
       for (int it = 0; it < exr_image.num_tiles; it++) {
-        for (int j = 0; j < exr_header.tile_size_y; j++) {
-          for (int i = 0; i < exr_header.tile_size_x; i++) {
+        for (size_t j = 0; j < tile_size_y; j++) {
+          for (size_t i = 0; i < tile_size_x; i++) {
             const size_t ii =
-                exr_image.tiles[it].offset_x * exr_header.tile_size_x + i;
+                static_cast<size_t>(exr_image.tiles[it].offset_x) *
+                    tile_size_x +
+                i;
             const size_t jj =
-                exr_image.tiles[it].offset_y * exr_header.tile_size_y + j;
-            const size_t idx = ii + jj * exr_image.width;
+                static_cast<size_t>(exr_image.tiles[it].offset_y) *
+                    tile_size_y +
+                j;
+            const size_t idx = ii + jj * static_cast<size_t>(exr_image.width);
 
             // out of region check.
             if (ii >= static_cast<size_t>(exr_image.width)) {
@@ -6401,7 +6425,7 @@ int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
             if (jj >= static_cast<size_t>(exr_image.height)) {
               continue;
             }
-            const size_t srcIdx = i + j * exr_header.tile_size_x;
+            const size_t srcIdx = i + j * tile_size_x;
             unsigned char **src = exr_image.tiles[it].images;
             (*out_rgba)[4 * idx + 0] =
                 reinterpret_cast<float **>(src)[0][srcIdx];
@@ -6453,14 +6477,20 @@ int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
                static_cast<size_t>(exr_image.height)));
 
     if (exr_header.tiled) {
+      const size_t tile_size_x = static_cast<size_t>(exr_header.tile_size_x);
+      const size_t tile_size_y = static_cast<size_t>(exr_header.tile_size_y);
       for (int it = 0; it < exr_image.num_tiles; it++) {
-        for (int j = 0; j < exr_header.tile_size_y; j++)
-          for (int i = 0; i < exr_header.tile_size_x; i++) {
+        for (size_t j = 0; j < tile_size_y; j++)
+          for (size_t i = 0; i < tile_size_x; i++) {
             const size_t ii =
-                exr_image.tiles[it].offset_x * exr_header.tile_size_x + i;
+                static_cast<size_t>(exr_image.tiles[it].offset_x) *
+                    tile_size_x +
+                i;
             const size_t jj =
-                exr_image.tiles[it].offset_y * exr_header.tile_size_y + j;
-            const size_t idx = ii + jj * exr_image.width;
+                static_cast<size_t>(exr_image.tiles[it].offset_y) *
+                    tile_size_y +
+                j;
+            const size_t idx = ii + jj * static_cast<size_t>(exr_image.width);
 
             // out of region check.
             if (ii >= static_cast<size_t>(exr_image.width)) {
@@ -6469,7 +6499,7 @@ int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
             if (jj >= static_cast<size_t>(exr_image.height)) {
               continue;
             }
-            const size_t srcIdx = i + j * exr_header.tile_size_x;
+            const size_t srcIdx = i + j * tile_size_x;
             unsigned char **src = exr_image.tiles[it].images;
             (*out_rgba)[4 * idx + 0] =
                 reinterpret_cast<float **>(src)[idxR][srcIdx];
@@ -6514,6 +6544,193 @@ int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
   return TINYEXR_SUCCESS;
 }
 
+// Represents a read-only file mapped to an address space in memory.
+// If no memory-mapping API is available, falls back to allocating a buffer
+// with a copy of the file's data.
+struct MemoryMappedFile {
+  unsigned char *data;  // To the start of the file's data.
+  size_t size;          // The size of the file in bytes.
+#ifdef TINYEXR_USE_WIN32_MMAP
+  HANDLE windows_file;
+  HANDLE windows_file_mapping;
+#elif defined(TINYEXR_USE_POSIX_MMAP)
+  int posix_descriptor;
+#endif
+
+  // MemoryMappedFile's constructor tries to map memory to a file.
+  // If this succeeds, valid() will return true and all fields
+  // are usable; otherwise, valid() will return false.
+  MemoryMappedFile(const char *filename) {
+    data = NULL;
+    size = 0;
+#ifdef TINYEXR_USE_WIN32_MMAP
+    windows_file_mapping = NULL;
+    windows_file =
+        CreateFileW(tinyexr::UTF8ToWchar(filename).c_str(),  // lpFileName
+                    GENERIC_READ,                            // dwDesiredAccess
+                    FILE_SHARE_READ,                         // dwShareMode
+                    NULL,                     // lpSecurityAttributes
+                    OPEN_EXISTING,            // dwCreationDisposition
+                    FILE_ATTRIBUTE_READONLY,  // dwFlagsAndAttributes
+                    NULL);                    // hTemplateFile
+    if (windows_file == INVALID_HANDLE_VALUE) {
+      return;
+    }
+
+    windows_file_mapping = CreateFileMapping(windows_file,  // hFile
+                                             NULL,  // lpFileMappingAttributes
+                                             PAGE_READONLY,  // flProtect
+                                             0,      // dwMaximumSizeHigh
+                                             0,      // dwMaximumSizeLow
+                                             NULL);  // lpName
+    if (windows_file_mapping == NULL) {
+      return;
+    }
+
+    data = reinterpret_cast<unsigned char *>(
+        MapViewOfFile(windows_file_mapping,  // hFileMappingObject
+                      FILE_MAP_READ,         // dwDesiredAccess
+                      0,                     // dwFileOffsetHigh
+                      0,                     // dwFileOffsetLow
+                      0));                   // dwNumberOfBytesToMap
+    if (!data) {
+      return;
+    }
+
+    LARGE_INTEGER windows_file_size = {};
+    if (!GetFileSizeEx(windows_file, &windows_file_size) ||
+        static_cast<ULONGLONG>(windows_file_size.QuadPart) >
+            std::numeric_limits<size_t>::max()) {
+      UnmapViewOfFile(data);
+      data = NULL;
+      return;
+    }
+    size = static_cast<size_t>(windows_file_size.QuadPart);
+#elif defined(TINYEXR_USE_POSIX_MMAP)
+    posix_descriptor = open(filename, O_RDONLY);
+    if (posix_descriptor == -1) {
+      return;
+    }
+
+    struct stat info;
+    if (fstat(posix_descriptor, &info) < 0) {
+      return;
+    }
+    // Make sure st_size is in the valid range for a size_t. The second case
+    // can only fail if a POSIX implementation defines off_t to be a larger
+    // type than size_t - for instance, compiling with _FILE_OFFSET_BITS=64
+    // on a 32-bit system. On current 64-bit systems, this check can never
+    // fail, so we turn off clang's Wtautological-type-limit-compare warning
+    // around this code.
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wtautological-type-limit-compare"
+#endif
+    if (info.st_size < 0 ||
+        info.st_size > std::numeric_limits<ssize_t>::max()) {
+      return;
+    }
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
+    size = static_cast<size_t>(info.st_size);
+
+    data = reinterpret_cast<unsigned char *>(
+        mmap(0, size, PROT_READ, MAP_SHARED, posix_descriptor, 0));
+    if (data == MAP_FAILED) {
+      return;
+    }
+#else
+    FILE *fp = fopen(filename, "rb");
+    if (!fp) {
+      return;
+    }
+
+    // Calling fseek(fp, 0, SEEK_END) isn't strictly-conforming C code, but
+    // since neither the WIN32 nor POSIX APIs are available in this branch, this
+    // is a reasonable fallback option.
+    if (fseek(fp, 0, SEEK_END) != 0) {
+      fclose(fp);
+      return;
+    }
+    const long ftell_result = ftell(fp);
+    if (ftell_result < 0) {
+      // Error from ftell
+      fclose(fp);
+      return;
+    }
+    size = static_cast<size_t>(ftell_result);
+    if (fseek(fp, 0, SEEK_SET) != 0) {
+      fclose(fp);
+      return;
+    }
+
+    data = reinterpret_cast<unsigned char *>(malloc(size));
+    if (!data) {
+      fclose(fp);
+      return;
+    }
+    size_t read_bytes = fread(data, 1, size, fp);
+    assert(read_bytes == size);
+    fclose(fp);
+    (void)read_bytes;
+#endif
+    assert(valid());
+  }
+
+  // MemoryMappedFile's destructor closes all its handles.
+  ~MemoryMappedFile() {
+#ifdef TINYEXR_USE_WIN32_MMAP
+    if (data) {
+      (void)UnmapViewOfFile(data);
+      data = NULL;
+    }
+
+    if (windows_file_mapping != NULL) {
+      (void)CloseHandle(windows_file_mapping);
+    }
+
+    if (windows_file != INVALID_HANDLE_VALUE) {
+      (void)CloseHandle(windows_file);
+    }
+#elif defined(TINYEXR_USE_POSIX_MMAP)
+    if (data) {
+      (void)munmap(data, size);
+      data = NULL;
+    }
+
+    if (posix_descriptor != -1) {
+      (void)close(posix_descriptor);
+    }
+#else
+    if (data) {
+      (void)free(data);
+    }
+    data = NULL;
+#endif
+  }
+
+  // A MemoryMappedFile cannot be copied or moved.
+  // Only check for this when compiling with C++11 or higher, since deleted
+  // function definitions were added then.
+#if TINYEXR_HAS_CXX11
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wc++98-compat"
+#endif
+  MemoryMappedFile(const MemoryMappedFile &) = delete;
+  MemoryMappedFile &operator=(const MemoryMappedFile &) = delete;
+  MemoryMappedFile(MemoryMappedFile &&other) noexcept = delete;
+  MemoryMappedFile &operator=(MemoryMappedFile &&other) noexcept = delete;
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
+#endif
+
+  // Returns whether this was successfully opened.
+  bool valid() const { return data; }
+};
+
 int LoadEXRImageFromFile(EXRImage *exr_image, const EXRHeader *exr_header,
                          const char *filename, const char **err) {
   if (exr_image == NULL) {
@@ -6521,50 +6738,19 @@ int LoadEXRImageFromFile(EXRImage *exr_image, const EXRHeader *exr_header,
     return TINYEXR_ERROR_INVALID_ARGUMENT;
   }
 
-  FILE *fp = NULL;
-#ifdef _WIN32
-#if defined(_MSC_VER) || (defined(MINGW_HAS_SECURE_API) && MINGW_HAS_SECURE_API) // MSVC, MinGW GCC, or Clang.
-  errno_t errcode =
-      _wfopen_s(&fp, tinyexr::UTF8ToWchar(filename).c_str(), L"rb");
-  if (errcode != 0) {
-    tinyexr::SetErrorMessage("Cannot read file " + std::string(filename), err);
-    // TODO(syoyo): return wfopen_s erro code
-    return TINYEXR_ERROR_CANT_OPEN_FILE;
-  }
-#else
-  // Unknown compiler or MinGW without MINGW_HAS_SECURE_API.
-  fp = fopen(filename, "rb");
-#endif
-#else
-  fp = fopen(filename, "rb");
-#endif
-  if (!fp) {
+  MemoryMappedFile file(filename);
+  if (!file.valid()) {
     tinyexr::SetErrorMessage("Cannot read file " + std::string(filename), err);
     return TINYEXR_ERROR_CANT_OPEN_FILE;
   }
 
-  size_t filesize;
-  // Compute size
-  fseek(fp, 0, SEEK_END);
-  filesize = static_cast<size_t>(ftell(fp));
-  fseek(fp, 0, SEEK_SET);
-
-  if (filesize < 16) {
-    tinyexr::SetErrorMessage("File size too short " + std::string(filename),
+  if (file.size < 16) {
+    tinyexr::SetErrorMessage("File size too short : " + std::string(filename),
                              err);
     return TINYEXR_ERROR_INVALID_FILE;
   }
 
-  std::vector<unsigned char> buf(filesize);  // @todo { use mmap }
-  {
-    size_t ret;
-    ret = fread(&buf[0], 1, filesize, fp);
-    assert(ret == filesize);
-    fclose(fp);
-    (void)ret;
-  }
-
-  return LoadEXRImageFromMemory(exr_image, exr_header, &buf.at(0), filesize,
+  return LoadEXRImageFromMemory(exr_image, exr_header, file.data, file.size,
                                 err);
 }
 
@@ -7385,7 +7571,11 @@ static size_t SaveEXRNPartImageToMemory(const EXRImage* exr_images,
         {
           size_t len = 0;
           if ((len = strlen(exr_headers[i]->name)) > 0) {
+#if TINYEXR_HAS_CXX11
             partnames.emplace(exr_headers[i]->name);
+#else
+            partnames.insert(std::string(exr_headers[i]->name));
+#endif
             if (partnames.size() != i + 1) {
               SetErrorMessage("'name' attributes must be unique for a multi-part file", err);
               return 0;
@@ -7587,6 +7777,7 @@ int SaveEXRImageToFile(const EXRImage *exr_image, const EXRHeader *exr_header,
   unsigned char *mem = NULL;
   size_t mem_size = SaveEXRImageToMemory(exr_image, exr_header, &mem, err);
   if (mem_size == 0) {
+    fclose(fp);
     return TINYEXR_ERROR_SERIALIZATION_FAILED;
   }
 
@@ -7656,6 +7847,7 @@ int SaveEXRMultipartImageToFile(const EXRImage* exr_images,
   unsigned char *mem = NULL;
   size_t mem_size = SaveEXRMultipartImageToMemory(exr_images, exr_headers, num_parts, &mem, err);
   if (mem_size == 0) {
+    fclose(fp);
     return TINYEXR_ERROR_SERIALIZATION_FAILED;
   }
 
@@ -7681,58 +7873,20 @@ int LoadDeepEXR(DeepImage *deep_image, const char *filename, const char **err) {
     return TINYEXR_ERROR_INVALID_ARGUMENT;
   }
 
-#ifdef _WIN32
-  FILE *fp = NULL;
-#if defined(_MSC_VER) || (defined(MINGW_HAS_SECURE_API) && MINGW_HAS_SECURE_API) // MSVC, MinGW GCC, or Clang.
-  errno_t errcode =
-      _wfopen_s(&fp, tinyexr::UTF8ToWchar(filename).c_str(), L"rb");
-  if (errcode != 0) {
-    tinyexr::SetErrorMessage("Cannot read a file " + std::string(filename),
-                             err);
+  MemoryMappedFile file(filename);
+  if (!file.valid()) {
+    tinyexr::SetErrorMessage("Cannot read file " + std::string(filename), err);
     return TINYEXR_ERROR_CANT_OPEN_FILE;
   }
-#else
-  // Unknown compiler or MinGW without MINGW_HAS_SECURE_API.
-  fp = fopen(filename, "rb");
-#endif
-  if (!fp) {
-    tinyexr::SetErrorMessage("Cannot read a file " + std::string(filename),
-                             err);
-    return TINYEXR_ERROR_CANT_OPEN_FILE;
-  }
-#else
-  FILE *fp = fopen(filename, "rb");
-  if (!fp) {
-    tinyexr::SetErrorMessage("Cannot read a file " + std::string(filename),
-                             err);
-    return TINYEXR_ERROR_CANT_OPEN_FILE;
-  }
-#endif
 
-  size_t filesize;
-  // Compute size
-  fseek(fp, 0, SEEK_END);
-  filesize = static_cast<size_t>(ftell(fp));
-  fseek(fp, 0, SEEK_SET);
-
-  if (filesize == 0) {
-    fclose(fp);
+  if (file.size == 0) {
     tinyexr::SetErrorMessage("File size is zero : " + std::string(filename),
                              err);
     return TINYEXR_ERROR_INVALID_FILE;
   }
 
-  std::vector<char> buf(filesize);  // @todo { use mmap }
-  {
-    size_t ret;
-    ret = fread(&buf[0], 1, filesize, fp);
-    assert(ret == filesize);
-    (void)ret;
-  }
-  fclose(fp);
-
-  const char *head = &buf[0];
-  const char *marker = &buf[0];
+  const char *head = reinterpret_cast<const char *>(file.data);
+  const char *marker = reinterpret_cast<const char *>(file.data);
 
   // Header check.
   {
@@ -7767,7 +7921,7 @@ int LoadDeepEXR(DeepImage *deep_image, const char *filename, const char **err) {
   std::vector<tinyexr::ChannelInfo> channels;
 
   // Read attributes
-  size_t size = filesize - tinyexr::kEXRVersionSize;
+  size_t size = file.size - tinyexr::kEXRVersionSize;
   for (;;) {
     if (0 == size) {
       return TINYEXR_ERROR_INVALID_DATA;
@@ -8198,48 +8352,13 @@ int ParseEXRHeaderFromFile(EXRHeader *exr_header, const EXRVersion *exr_version,
     return TINYEXR_ERROR_INVALID_ARGUMENT;
   }
 
-  FILE *fp = NULL;
-#ifdef _WIN32
-#if defined(_MSC_VER) || (defined(MINGW_HAS_SECURE_API) && MINGW_HAS_SECURE_API) // MSVC, MinGW GCC, or Clang.
-  errno_t errcode =
-      _wfopen_s(&fp, tinyexr::UTF8ToWchar(filename).c_str(), L"rb");
-  if (errcode != 0) {
-    tinyexr::SetErrorMessage("Cannot read file " + std::string(filename), err);
-    return TINYEXR_ERROR_INVALID_FILE;
-  }
-#else
-  // Unknown compiler or MinGW without MINGW_HAS_SECURE_API.
-  fp = fopen(filename, "rb");
-#endif
-#else
-  fp = fopen(filename, "rb");
-#endif
-  if (!fp) {
+  MemoryMappedFile file(filename);
+  if (!file.valid()) {
     tinyexr::SetErrorMessage("Cannot read file " + std::string(filename), err);
     return TINYEXR_ERROR_CANT_OPEN_FILE;
   }
 
-  size_t filesize;
-  // Compute size
-  fseek(fp, 0, SEEK_END);
-  filesize = static_cast<size_t>(ftell(fp));
-  fseek(fp, 0, SEEK_SET);
-
-  std::vector<unsigned char> buf(filesize);  // @todo { use mmap }
-  {
-    size_t ret;
-    ret = fread(&buf[0], 1, filesize, fp);
-    assert(ret == filesize);
-    fclose(fp);
-
-    if (ret != filesize) {
-      tinyexr::SetErrorMessage("fread() error on " + std::string(filename),
-                               err);
-      return TINYEXR_ERROR_INVALID_FILE;
-    }
-  }
-
-  return ParseEXRHeaderFromMemory(exr_header, exr_version, &buf.at(0), filesize,
+  return ParseEXRHeaderFromMemory(exr_header, exr_version, file.data, file.size,
                                   err);
 }
 
@@ -8365,48 +8484,14 @@ int ParseEXRMultipartHeaderFromFile(EXRHeader ***exr_headers, int *num_headers,
     return TINYEXR_ERROR_INVALID_ARGUMENT;
   }
 
-  FILE *fp = NULL;
-#ifdef _WIN32
-#if defined(_MSC_VER) || (defined(MINGW_HAS_SECURE_API) && MINGW_HAS_SECURE_API) // MSVC, MinGW GCC, or Clang.
-  errno_t errcode =
-      _wfopen_s(&fp, tinyexr::UTF8ToWchar(filename).c_str(), L"rb");
-  if (errcode != 0) {
-    tinyexr::SetErrorMessage("Cannot read file " + std::string(filename), err);
-    return TINYEXR_ERROR_INVALID_FILE;
-  }
-#else
-  // Unknown compiler or MinGW without MINGW_HAS_SECURE_API.
-  fp = fopen(filename, "rb");
-#endif
-#else
-  fp = fopen(filename, "rb");
-#endif
-  if (!fp) {
+  MemoryMappedFile file(filename);
+  if (!file.valid()) {
     tinyexr::SetErrorMessage("Cannot read file " + std::string(filename), err);
     return TINYEXR_ERROR_CANT_OPEN_FILE;
   }
 
-  size_t filesize;
-  // Compute size
-  fseek(fp, 0, SEEK_END);
-  filesize = static_cast<size_t>(ftell(fp));
-  fseek(fp, 0, SEEK_SET);
-
-  std::vector<unsigned char> buf(filesize);  // @todo { use mmap }
-  {
-    size_t ret;
-    ret = fread(&buf[0], 1, filesize, fp);
-    assert(ret == filesize);
-    fclose(fp);
-
-    if (ret != filesize) {
-      tinyexr::SetErrorMessage("`fread' error. file may be corrupted.", err);
-      return TINYEXR_ERROR_INVALID_FILE;
-    }
-  }
-
   return ParseEXRMultipartHeaderFromMemory(
-      exr_headers, num_headers, exr_version, &buf.at(0), filesize, err);
+      exr_headers, num_headers, exr_version, file.data, file.size, err);
 }
 
 int ParseEXRVersionFromMemory(EXRVersion *version, const unsigned char *memory,
@@ -8490,16 +8575,10 @@ int ParseEXRVersionFromFile(EXRVersion *version, const char *filename) {
     return TINYEXR_ERROR_CANT_OPEN_FILE;
   }
 
-  size_t file_size;
-  // Compute size
-  fseek(fp, 0, SEEK_END);
-  file_size = static_cast<size_t>(ftell(fp));
-  fseek(fp, 0, SEEK_SET);
-
-  if (file_size < tinyexr::kEXRVersionSize) {
-    return TINYEXR_ERROR_INVALID_FILE;
-  }
-
+  // Try to read kEXRVersionSize bytes; if the file is shorter than
+  // kEXRVersionSize, this will produce an error. This avoids a call to
+  // fseek(fp, 0, SEEK_END), which is not required to be supported by C
+  // implementations.
   unsigned char buf[tinyexr::kEXRVersionSize];
   size_t ret = fread(&buf[0], 1, tinyexr::kEXRVersionSize, fp);
   fclose(fp);
@@ -8649,44 +8728,14 @@ int LoadEXRMultipartImageFromFile(EXRImage *exr_images,
     return TINYEXR_ERROR_INVALID_ARGUMENT;
   }
 
-  FILE *fp = NULL;
-#ifdef _WIN32
-#if defined(_MSC_VER) || (defined(MINGW_HAS_SECURE_API) && MINGW_HAS_SECURE_API) // MSVC, MinGW GCC, or Clang.
-  errno_t errcode =
-      _wfopen_s(&fp, tinyexr::UTF8ToWchar(filename).c_str(), L"rb");
-  if (errcode != 0) {
+  MemoryMappedFile file(filename);
+  if (!file.valid()) {
     tinyexr::SetErrorMessage("Cannot read file " + std::string(filename), err);
     return TINYEXR_ERROR_CANT_OPEN_FILE;
-  }
-#else
-  // Unknown compiler or MinGW without MINGW_HAS_SECURE_API.
-  fp = fopen(filename, "rb");
-#endif
-#else
-  fp = fopen(filename, "rb");
-#endif
-  if (!fp) {
-    tinyexr::SetErrorMessage("Cannot read file " + std::string(filename), err);
-    return TINYEXR_ERROR_CANT_OPEN_FILE;
-  }
-
-  size_t filesize;
-  // Compute size
-  fseek(fp, 0, SEEK_END);
-  filesize = static_cast<size_t>(ftell(fp));
-  fseek(fp, 0, SEEK_SET);
-
-  std::vector<unsigned char> buf(filesize);  //  @todo { use mmap }
-  {
-    size_t ret;
-    ret = fread(&buf[0], 1, filesize, fp);
-    assert(ret == filesize);
-    fclose(fp);
-    (void)ret;
   }
 
   return LoadEXRMultipartImageFromMemory(exr_images, exr_headers, num_parts,
-                                         &buf.at(0), filesize, err);
+                                         file.data, file.size, err);
 }
 
 int SaveEXRToMemory(const float *data, int width, int height, int components,
@@ -8867,18 +8916,20 @@ int SaveEXR(const float *data, int width, int height, int components,
   image.num_channels = components;
 
   std::vector<float> images[4];
+  const size_t pixel_count =
+      static_cast<size_t>(width) * static_cast<size_t>(height);
 
   if (components == 1) {
-    images[0].resize(static_cast<size_t>(width * height));
-    memcpy(images[0].data(), data, sizeof(float) * size_t(width * height));
+    images[0].resize(pixel_count);
+    memcpy(images[0].data(), data, sizeof(float) * pixel_count);
   } else {
-    images[0].resize(static_cast<size_t>(width * height));
-    images[1].resize(static_cast<size_t>(width * height));
-    images[2].resize(static_cast<size_t>(width * height));
-    images[3].resize(static_cast<size_t>(width * height));
+    images[0].resize(pixel_count);
+    images[1].resize(pixel_count);
+    images[2].resize(pixel_count);
+    images[3].resize(pixel_count);
 
     // Split RGB(A)RGB(A)RGB(A)... into R, G and B(and A) layers
-    for (size_t i = 0; i < static_cast<size_t>(width * height); i++) {
+    for (size_t i = 0; i < pixel_count; i++) {
       images[0][i] = data[static_cast<size_t>(components) * i + 0];
       images[1][i] = data[static_cast<size_t>(components) * i + 1];
       images[2][i] = data[static_cast<size_t>(components) * i + 2];
