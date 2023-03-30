@@ -4,8 +4,6 @@
 
 [![AppVeyor build status](https://ci.appveyor.com/api/projects/status/k07ftfe4ph057qau/branch/release?svg=true)](https://ci.appveyor.com/project/syoyo/tinyexr/branch/release)
 
-[![Travis build Status](https://travis-ci.org/syoyo/tinyexr.svg)](https://travis-ci.org/syoyo/tinyexr)
-
 [![Coverity Scan Build Status](https://scan.coverity.com/projects/5827/badge.svg)](https://scan.coverity.com/projects/5827)
 
 `tinyexr` is a small, single header-only library to load and save OpenEXR (.exr) images.
