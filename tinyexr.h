@@ -5026,10 +5026,10 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
     return TINYEXR_ERROR_INVALID_DATA;
   }
 
-  int64_t data_width =
-      exr_header->data_window.max_x - exr_header->data_window.min_x + 1;
-  int64_t data_height =
-      exr_header->data_window.max_y - exr_header->data_window.min_y + 1;
+  tinyexr_int64 data_width =
+      static_cast<tinyexr_int64>(exr_header->data_window.max_x) - static_cast<tinyexr_int64>(exr_header->data_window.min_x) + static_cast<tinyexr_int64>(1);
+  tinyexr_int64 data_height =
+      static_cast<tinyexr_int64>(exr_header->data_window.max_y) - static_cast<tinyexr_int64>(exr_header->data_window.min_y) + static_cast<tinyexr_int64>(1);
 
   if (data_width <= 0) {
     if (err) {
@@ -5768,8 +5768,8 @@ static int DecodeEXRImage(EXRImage *exr_image, const EXRHeader *exr_header,
     tinyexr::SetErrorMessage("Invalid data width value", err);
     return TINYEXR_ERROR_INVALID_DATA;
   }
-  int64_t data_width =
-      exr_header->data_window.max_x - exr_header->data_window.min_x + 1;
+  tinyexr_int64 data_width =
+      static_cast<tinyexr_int64>(exr_header->data_window.max_x) - static_cast<tinyexr_int64>(exr_header->data_window.min_x) + static_cast<tinyexr_int64>(1);
   if (data_width <= 0) {
     tinyexr::SetErrorMessage("Invalid data window width value", err);
     return TINYEXR_ERROR_INVALID_DATA;
@@ -5781,8 +5781,8 @@ static int DecodeEXRImage(EXRImage *exr_image, const EXRHeader *exr_header,
     tinyexr::SetErrorMessage("Invalid data height value", err);
     return TINYEXR_ERROR_INVALID_DATA;
   }
-  int64_t data_height =
-      exr_header->data_window.max_y - exr_header->data_window.min_y + 1;
+  tinyexr_int64 data_height =
+      static_cast<tinyexr_int64>(exr_header->data_window.max_y) - static_cast<tinyexr_int64>(exr_header->data_window.min_y) + static_cast<tinyexr_int64>(1);
 
   if (data_height <= 0) {
     tinyexr::SetErrorMessage("Invalid data window height value", err);
