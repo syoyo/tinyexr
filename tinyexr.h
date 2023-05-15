@@ -619,7 +619,7 @@ extern int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
 #endif
 
 #include <algorithm>
-#include <cassert>
+//#include <cassert>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -683,6 +683,26 @@ extern "C" unsigned char *stbi_zlib_compress(unsigned char *data, int data_len, 
 #endif
 
 #endif
+
+// cond: conditional expression
+// msg: std::string
+// err: std::string*
+#define TINYEXR_CHECK_AND_RETURN_MSG(cond, msg, err) do { \
+  if (!(cond)) { \
+    if (!err) { \
+      std::ostringstream ss_e; \
+      ss_e << __func__ << "():" << __LINE__ << msg << "\n"; \
+      (*err) += ss_e.str(); \
+    } \
+    return false;\
+  } \
+  } while(0)
+
+#define TINYEXR_CHECK_AND_RETURN_C(cond, retcode) do { \
+  if (!(cond)) { \
+    return retcode; \
+  } \
+  } while(0)
 
 namespace tinyexr {
 
@@ -1558,7 +1578,7 @@ static int rleUncompress(int inLength, int maxLength, const signed char in[],
 
 // End of RLE code from OpenEXR -----------------------------------
 
-static void CompressRle(unsigned char *dst,
+static bool CompressRle(unsigned char *dst,
                         tinyexr::tinyexr_uint64 &compressedSize,
                         const unsigned char *src, unsigned long src_size) {
   std::vector<unsigned char> tmpBuf(src_size);
@@ -1613,7 +1633,7 @@ static void CompressRle(unsigned char *dst,
   int outSize = rleCompress(static_cast<int>(src_size),
                             reinterpret_cast<const char *>(&tmpBuf.at(0)),
                             reinterpret_cast<signed char *>(dst));
-  assert(outSize > 0);
+  TINYEXR_CHECK_AND_RETURN_C(outSize > 0, false);
 
   compressedSize = static_cast<tinyexr::tinyexr_uint64>(outSize);
 
@@ -1623,6 +1643,8 @@ static void CompressRle(unsigned char *dst,
     compressedSize = src_size;
     memcpy(dst, src, src_size);
   }
+
+  return true;
 }
 
 static bool DecompressRle(unsigned char *dst,
@@ -2162,7 +2184,7 @@ struct FHeapCompare {
   bool operator()(long long *a, long long *b) { return *a > *b; }
 };
 
-static void hufBuildEncTable(
+static bool hufBuildEncTable(
     long long *frq,  // io: input frequencies [HUF_ENCSIZE], output table
     int *im,         //  o: min frq index
     int *iM)         //  o: max frq index
@@ -2290,7 +2312,7 @@ static void hufBuildEncTable(
     for (int j = m;; j = hlink[j]) {
       scode[j]++;
 
-      assert(scode[j] <= 58);
+      TINYEXR_CHECK_AND_RETURN_C(scode[j] <= 58, false);
 
       if (hlink[j] == j) {
         //
@@ -2309,7 +2331,7 @@ static void hufBuildEncTable(
     for (int j = mm;; j = hlink[j]) {
       scode[j]++;
 
-      assert(scode[j] <= 58);
+      TINYEXR_CHECK_AND_RETURN_C(scode[j] <= 58, false);
 
       if (hlink[j] == j) break;
     }
@@ -2323,6 +2345,8 @@ static void hufBuildEncTable(
 
   hufCanonicalCodeTable(scode.data());
   memcpy(frq, scode.data(), sizeof(long long) * HUF_ENCSIZE);
+
+  return true;
 }
 
 //
@@ -3034,7 +3058,6 @@ static bool CompressPiz(unsigned char *outPtr, unsigned int *outSize,
 
 #if !TINYEXR_LITTLE_ENDIAN
   // @todo { PIZ compression on BigEndian architecture. }
-  assert(0);
   return false;
 #endif
 
@@ -3160,7 +3183,6 @@ static bool DecompressPiz(unsigned char *outPtr, const unsigned char *inPtr,
 
 #if !TINYEXR_LITTLE_ENDIAN
   // @todo { PIZ compression on BigEndian architecture. }
-  assert(0);
   return false;
 #endif
 
@@ -3396,8 +3418,8 @@ static bool DecompressZfp(float *dst, int dst_width, int dst_num_lines,
   zfp_stream *zfp = NULL;
   zfp_field *field = NULL;
 
-  assert((dst_width % 4) == 0);
-  assert((dst_num_lines % 4) == 0);
+  TINYEXR_CHECK_AND_RETURN_C((dst_width % 4) == 0, false);
+  TINYEXR_CHECK_AND_RETURN_C((dst_num_lines % 4) == 0, false);
 
   if ((size_t(dst_width) & 3U) || (size_t(dst_num_lines) & 3U)) {
     return false;
@@ -3418,7 +3440,7 @@ static bool DecompressZfp(float *dst, int dst_width, int dst_num_lines,
   } else if (param.type == TINYEXR_ZFP_COMPRESSIONTYPE_ACCURACY) {
     zfp_stream_set_accuracy(zfp, param.tolerance);
   } else {
-    assert(0);
+    return false;
   }
 
   size_t buf_size = zfp_stream_maximum_size(zfp, field);
@@ -3462,8 +3484,8 @@ static bool CompressZfp(std::vector<unsigned char> *outBuf,
   zfp_stream *zfp = NULL;
   zfp_field *field = NULL;
 
-  assert((width % 4) == 0);
-  assert((num_lines % 4) == 0);
+  TINYEXR_CHECK_AND_RETURN_C((width % 4) == 0, false);
+  TINYEXR_CHECK_AND_RETURN_C((num_lines % 4) == 0, false);
 
   if ((size_t(width) & 3U) || (size_t(num_lines) & 3U)) {
     return false;
@@ -3483,7 +3505,7 @@ static bool CompressZfp(std::vector<unsigned char> *outBuf,
   } else if (param.type == TINYEXR_ZFP_COMPRESSIONTYPE_ACCURACY) {
     zfp_stream_set_accuracy(zfp, param.tolerance);
   } else {
-    assert(0);
+    return false;
   }
 
   size_t buf_size = zfp_stream_maximum_size(zfp, field);
@@ -3620,7 +3642,7 @@ static bool DecodePixelData(/* out */ unsigned char **out_images,
           }
         }
       } else if (channels[c].pixel_type == TINYEXR_PIXELTYPE_UINT) {
-        assert(requested_pixel_types[c] == TINYEXR_PIXELTYPE_UINT);
+        TINYEXR_CHECK_AND_RETURN_C(requested_pixel_types[c] == TINYEXR_PIXELTYPE_UINT, false);
 
         for (size_t v = 0; v < static_cast<size_t>(num_lines); v++) {
           const unsigned int *line_ptr = reinterpret_cast<unsigned int *>(
@@ -3649,7 +3671,7 @@ static bool DecodePixelData(/* out */ unsigned char **out_images,
           }
         }
       } else if (channels[c].pixel_type == TINYEXR_PIXELTYPE_FLOAT) {
-        assert(requested_pixel_types[c] == TINYEXR_PIXELTYPE_FLOAT);
+        TINYEXR_CHECK_AND_RETURN_C(requested_pixel_types[c] == TINYEXR_PIXELTYPE_FLOAT, false);
         for (size_t v = 0; v < static_cast<size_t>(num_lines); v++) {
           const float *line_ptr = reinterpret_cast<float *>(&outBuf.at(
               v * pixel_data_size * static_cast<size_t>(width) +
@@ -3676,11 +3698,11 @@ static bool DecodePixelData(/* out */ unsigned char **out_images,
           }
         }
       } else {
-        assert(0);
+        return false;
       }
     }
 #else
-    assert(0 && "PIZ is disabled in this build");
+    //assert(0 && "PIZ is disabled in this build");
     return false;
 #endif
 
@@ -6989,9 +7011,14 @@ static bool EncodePixelData(/* out */ std::vector<unsigned char>& out_data,
 
     tinyexr::tinyexr_uint64 outSize = block.size();
 
-    tinyexr::CompressRle(&block.at(0), outSize,
+    if (!tinyexr::CompressRle(&block.at(0), outSize,
                          reinterpret_cast<const unsigned char *>(&buf.at(0)),
-                         static_cast<unsigned long>(buf.size()));
+                         static_cast<unsigned long>(buf.size()))) {
+      if (err) {
+        (*err) += "RLE compresssion failed.\n";
+      }
+      return false;
+    }
 
     // 4 byte: scan line
     // 4 byte: data size
@@ -7008,9 +7035,14 @@ static bool EncodePixelData(/* out */ std::vector<unsigned char>& out_data,
     std::vector<unsigned char> block(bufLen);
     unsigned int outSize = static_cast<unsigned int>(block.size());
 
-    CompressPiz(&block.at(0), &outSize,
+    if (!CompressPiz(&block.at(0), &outSize,
                 reinterpret_cast<const unsigned char *>(&buf.at(0)),
-                buf.size(), channels, width, num_lines);
+                buf.size(), channels, width, num_lines)) {
+      if (err) {
+        (*err) += "PIZ compresssion failed.\n";
+      }
+      return false;
+    }
 
     // 4 byte: scan line
     // 4 byte: data size
