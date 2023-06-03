@@ -3200,7 +3200,13 @@ static bool DecompressPiz(unsigned char *outPtr, const unsigned char *inPtr,
     ptr += maxNonZero - minNonZero + 1;
     readLen += maxNonZero - minNonZero + 1;
   } else {
-    return false;
+    // Issue 194
+    if ((minNonZero == (BITMAP_SIZE - 1)) && (maxNonZero == 0)) {
+      // OK. all pixels are zero. And no need to read `bitmap` data.
+    } else {
+      // invalid minNonZero/maxNonZero combination.
+      return false;
+    }
   }
 
   std::vector<unsigned short> lut(USHORT_RANGE);
@@ -3211,11 +3217,11 @@ static bool DecompressPiz(unsigned char *outPtr, const unsigned char *inPtr,
   // Huffman decoding
   //
 
-  int length;
-
   if ((readLen + 4) > inLen) {
     return false;
   }
+
+  int length=0;
 
   // length = *(reinterpret_cast<const int *>(ptr));
   tinyexr::cpy4(&length, reinterpret_cast<const int *>(ptr));
