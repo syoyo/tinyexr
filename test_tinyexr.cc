@@ -13,8 +13,8 @@
 #include <vector>
 
 // Uncomment if you want to use system provided zlib.
-// #define TINYEXR_USE_MINIZ (0)
-// #include <zlib.h>
+//#define TINYEXR_USE_MINIZ (0)
+//#include <zlib.h>
 
 #define TINYEXR_IMPLEMENTATION
 #include "tinyexr.h"
@@ -216,7 +216,7 @@ int test_main(int argc, char** argv) {
 
   int ret = IsEXR(input_filename);
   if (ret != TINYEXR_SUCCESS) {
-    fprintf(stderr, "Header err. code %d\n", ret);
+    fprintf(stderr, "File not found or given file is not a EXR format. code %d\n", ret);
     exit(-1);
   }
 
@@ -230,6 +230,7 @@ int test_main(int argc, char** argv) {
     FreeEXRErrorMessage(err);
     return ret;
   }
+
   // SaveAsPFM("output.pfm", width, height, image);
   ret = SaveEXR(image, width, height, 4 /* =RGBA*/,
                 1 /* = save as fp16 format */, "output.exr", &err);

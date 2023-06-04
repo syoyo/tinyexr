@@ -6737,6 +6737,7 @@ struct MemoryMappedFile {
     data = reinterpret_cast<unsigned char *>(
         mmap(0, size, PROT_READ, MAP_SHARED, posix_descriptor, 0));
     if (data == MAP_FAILED) {
+      data = nullptr;
       return;
     }
 #else
@@ -6761,11 +6762,13 @@ struct MemoryMappedFile {
     size = static_cast<size_t>(ftell_result);
     if (fseek(fp, 0, SEEK_SET) != 0) {
       fclose(fp);
+      size = 0;
       return;
     }
 
     data = reinterpret_cast<unsigned char *>(malloc(size));
     if (!data) {
+      size = 0;
       fclose(fp);
       return;
     }
