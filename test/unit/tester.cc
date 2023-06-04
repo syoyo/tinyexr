@@ -1718,3 +1718,28 @@ TEST_CASE("Regression: PR150|Read|1x1 1xhalf", "[pr150]") {
   FreeEXRHeader(&header);
   FreeEXRImage(&image);
 }
+
+TEST_CASE("Regression: Issue194|Piz", "[issue194]") {
+  std::string filepath = "./regression/000-issue194.exr";
+
+  EXRVersion exr_version;
+  std::cout << "Loading" << filepath << std::endl;
+  int ret = ParseEXRVersionFromFile(&exr_version, filepath.c_str());
+  REQUIRE(TINYEXR_SUCCESS == ret);
+
+  EXRVersion version;
+  EXRHeader header;
+  EXRImage image;
+  InitEXRHeader(&header);
+  InitEXRImage(&image);
+
+  const char* err;
+  ret = ParseEXRHeaderFromFile(&header, &exr_version, filepath.c_str(), &err);
+  REQUIRE(TINYEXR_SUCCESS == ret);
+
+  ret = LoadEXRImageFromFile(&image, &header, filepath.c_str(), &err);
+  REQUIRE(TINYEXR_SUCCESS == ret);
+
+  FreeEXRHeader(&header);
+  FreeEXRImage(&image);
+}
