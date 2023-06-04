@@ -6784,7 +6784,7 @@ struct MemoryMappedFile {
       fclose(fp);
       size = 0; 
       data = nullptr;
-      return
+      return;
     }
     fclose(fp);
 #endif
