@@ -13,8 +13,11 @@ To use `tinyexr`, simply copy `tinyexr.h`, `miniz.c` and `miniz.h`(for zlib. You
 # Security
 
 TinyEXR does not use C++ exception.
-TinyEXR now not use `assert` from v1.0.4(2023/06/04. except for miniz's assert).
-TinyEXR is fuzz tested and currently no security issues(No seg fault for malcious input EXR data).
+
+TinyEXR now does not use `assert` from v1.0.4(2023/06/04), except for miniz's assert.
+(We plan to use wuff's zlib for better security and performance)
+
+TinyEXR is fuzz tested and **currently no security issues**(No seg fault for any malcious input EXR data).
 
 # Features
 
