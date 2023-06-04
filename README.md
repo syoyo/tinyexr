@@ -10,6 +10,12 @@
 `tinyexr` is written in portable C++ (no library dependency except for STL), thus `tinyexr` is good to embed into your application.
 To use `tinyexr`, simply copy `tinyexr.h`, `miniz.c` and `miniz.h`(for zlib. You can use system-installed zlib instead of miniz, or the zlib implementation included in `stb_image[_write].h`. Controlled with `TINYEXR_USE_MINIZ` and `TINYEXR_USE_STB_ZLIB` compile flags) into your project.
 
+# Security
+
+TinyEXR does not use C++ exception.
+TinyEXR now not use `assert` from v1.0.4(2023/06/04. except for miniz's assert).
+TinyEXR is fuzz tested and currently no security issues(No seg fault for malcious input EXR data).
+
 # Features
 
 Current status of `tinyexr` is:
