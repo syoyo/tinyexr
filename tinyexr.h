@@ -8638,7 +8638,7 @@ int ParseEXRMultipartHeaderFromMemory(EXRHeader ***exr_headers,
     if (!ConvertHeader(exr_header, infos[i], &warn, &_err)) {
 
       // Free malloc-allocated memory here.
-      for (size_t k = 0; k < infos[i].attributes.size(); i++) {
+      for (size_t k = 0; k < infos[i].attributes.size(); k++) {
         if (infos[i].attributes[k].value) {
           free(infos[i].attributes[k].value);
         }
