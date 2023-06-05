@@ -2,8 +2,8 @@
 #CXXFLAGS ?= -fsanitize=address -Werror -Wall -Wextra -g -O0 -DTINYEXR_USE_MINIZ=0 -DTINYEXR_USE_PIZ=0
 #LDFLAGS ?= -lz
 
-# ZFP
-#CXXFLAGS += -DTINYEXR_USE_ZFP=1 -I./deps/ZFP/inc
+# ZFP(experimental)
+#CXXFLAGS += -DTINYEXR_USE_ZFP=1 -I./deps/ZFP/include
 #LDFLAGS += -L./deps/ZFP/lib -lzfp
 
 CFLAGS += -I./deps/miniz
