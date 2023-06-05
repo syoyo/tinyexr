@@ -1,3 +1,6 @@
 [submodule "deps/ZFP"]
 	path = deps/ZFP
 	url = https://github.com/LLNL/ZFP.git
+[submodule "deps/zstd"]
+	path = deps/zstd
+	url = https://github.com/facebook/zstd

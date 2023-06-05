@@ -46,6 +46,7 @@ Current status of `tinyexr` is:
   - [x] ZIPS
   - [x] PIZ
   - [x] ZFP (tinyexr extension)
+  - [ ] ZSTD (WIP. tinyexr extension)
   - [ ] B44?
   - [ ] B44A?
   - [ ] PIX24?
@@ -159,6 +160,7 @@ Include `tinyexr.h` with `TINYEXR_IMPLEMENTATION` flag (do this only for **one**
 * `TINYEXR_USE_STB_ZLIB` Use zlib from `stb_image[_write].h` instead of miniz or the system's zlib (default = 0).
 * `TINYEXR_USE_PIZ` Enable PIZ compression support (default = 1)
 * `TINYEXR_USE_ZFP` Enable ZFP compression supoort (TinyEXR extension, default = 0)
+* `TINYEXR_USE_ZSTD` Enable ZSTD compression supoort (TinyEXR extension, default = 0)
 * `TINYEXR_USE_THREAD` Enable threaded loading using C++11 thread (Requires C++11 compiler, default = 0)
 * `TINYEXR_USE_OPENMP` Enable OpenMP threading support (default = 1 if `_OPENMP` is defined)
   * Use `TINYEXR_USE_OPENMP=0` to force disable OpenMP code path even if OpenMP is available/enabled in the compiler.
@@ -448,6 +450,46 @@ See `example/deepview` for actual usage.
 
 ## TinyEXR extension
 
+### ZSTD
+
+#### NOTE
+
+TinyEXR adds ZSTD compression as an experimemtal support.
+
+#### Setup
+
+Checkout zstd repo as an submodule or grab zstd package in some way.
+
+```
+$ git submodule update --init
+```
+
+#### Build
+
+Then build ZSTD
+
+```
+$ cd deps/zstd
+$ make
+```
+
+Set `1` to `TINYEXT_USE_ZSTD` define in `tinyexr.h`
+
+Build your app by linking `deps/zstd/lib/libzstd.a`
+
+#### ZSTD attribute
+
+For ZSTD EXR image, you can control compression level by setting following custom EXR attribute.
+
+* `zstdCompressionLevel` (uchar).
+  * 1 to 22
+  * 1 = fast, 22 = slow but high compression ratio.
+
+
+If `zstdCompressionLevel` custom EXR attribute does not exists when compressing image with ZSTD, `1`(fast) is used as a default value.
+
+ZSTD can be used for any pixel format(int, fp16, float).
+
 ### ZFP
 
 #### NOTE
@@ -472,7 +514,7 @@ Then build ZFP
 
 Set `1` to `TINYEXT_USE_ZFP` define in `tinyexr.h`
 
-Build your app with linking `deps/ZFP/lib/libzfp.a`
+Build your app by linking `deps/ZFP/lib/libzfp.a`
 
 #### ZFP attribute
 
@@ -567,6 +609,9 @@ Contribution is welcome!
 
 `tinyexr` tools uses stb, which is licensed under public domain: https://github.com/nothings/stb
 `tinyexr` uses some code from OpenEXR, which is licensed under 3-clause BSD license.
+For zstd, `tinyexr` choose BSD license by default.
+(You can choose GPL license for zstd if you use tinyexr + zstd in your derived work)
+
 
 ## Author(s)
 

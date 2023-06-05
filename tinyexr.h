@@ -124,6 +124,12 @@ extern "C" {
 // http://computation.llnl.gov/projects/floating-point-compression
 #endif
 
+#ifndef TINYEXR_USE_ZSTD
+#define TINYEXR_USE_ZSTD (0)  // TinyEXR extension.
+// We'd like to choose BSD license for ZSTD.
+//https://github.com/facebook/zstd
+#endif
+
 #ifndef TINYEXR_USE_THREAD
 #define TINYEXR_USE_THREAD (0)  // No threaded loading.
 // http://computation.llnl.gov/projects/floating-point-compression
@@ -169,10 +175,13 @@ extern "C" {
 #define TINYEXR_COMPRESSIONTYPE_ZIP (3)
 #define TINYEXR_COMPRESSIONTYPE_PIZ (4)
 #define TINYEXR_COMPRESSIONTYPE_ZFP (128)  // TinyEXR extension
+#define TINYEXR_COMPRESSIONTYPE_ZSTD (129)  // TinyEXR extension
 
 #define TINYEXR_ZFP_COMPRESSIONTYPE_RATE (0)
 #define TINYEXR_ZFP_COMPRESSIONTYPE_PRECISION (1)
 #define TINYEXR_ZFP_COMPRESSIONTYPE_ACCURACY (2)
+
+#define TINYEXR_ZSTD_COMPRESSIONTYPE_LEVEL (0) // zstd: compressionLevel tag
 
 #define TINYEXR_TILE_ONE_LEVEL (0)
 #define TINYEXR_TILE_MIPMAP_LEVELS (1)
@@ -3314,6 +3323,53 @@ static bool DecompressPiz(unsigned char *outPtr, const unsigned char *inPtr,
   return true;
 }
 #endif  // TINYEXR_USE_PIZ
+
+#if TINYEXR_USE_ZSTD
+
+struct ZSTDCompressionParam {
+  uint32_t compressionLevel{1};
+};
+
+static bool FindZSTDCompressionParam(ZSTDCompressionParam *param,
+                                    const EXRAttribute *attributes,
+                                    int num_attributes, std::string *err) {
+  for (int i = 0; i < num_attributes; i++) {
+    if ((strcmp(attributes[i].name, "zstdCompressionLevel") == 0)) {
+      if (attributes[i].size == 1) { 
+        param->compressionLevel = static_cast<uint32_t>(attributes[i].value[0]);
+        break;
+      } else {
+        if (err) {
+          (*err) +=
+              "zstdCompressionLevel attribute must be uchar(1 byte) type.\n";
+        }
+        return false;
+      }
+    }
+  }
+
+  // allow `zstdCompressionLevel` does not exist(use default compressionLevel).
+  return true;
+}
+
+// Assume pixel format is FLOAT for all channels.
+static bool DecompressZstd(float *dst, int dst_width, int dst_num_lines,
+                          size_t num_channels, const unsigned char *src,
+                          unsigned long src_size,
+                          const ZSTDCompressionParam &param) {
+  size_t uncompressed_size =
+      size_t(dst_width) * size_t(dst_num_lines) * num_channels;
+
+  if (uncompressed_size == src_size) {
+    // Data is not compresse).
+    memcpy(dst, src, src_size);
+  }
+  
+  // TODO:
+  return false;
+}
+
+#endif // TINYEXR_USE_ZSTD
 
 #if TINYEXR_USE_ZFP
 

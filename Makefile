@@ -6,13 +6,17 @@
 #CXXFLAGS += -DTINYEXR_USE_ZFP=1 -I./deps/ZFP/include
 #LDFLAGS += -L./deps/ZFP/lib -lzfp
 
+# ZSTD(experimental)
+CXXFLAGS += -DTINYEXR_USE_ZSTD=1 -I./deps/zstd/lib
+LDFLAGS += -L./deps/ZSTD/lib -lzstd
+
 CFLAGS += -I./deps/miniz
 CXXFLAGS += -I./deps/miniz
 
 .PHONY: test clean
 
 all: miniz.o
-	$(CXX) $(CXXFLAGS) -o test_tinyexr test_tinyexr.cc miniz.o $(LDFLAGS)
+	$(CXX) -std=c++11 $(CXXFLAGS) -o test_tinyexr test_tinyexr.cc miniz.o $(LDFLAGS)
 
 miniz.o:
 	$(CC) $(CFLAGS) -c ./deps/miniz/miniz.c
