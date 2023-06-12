@@ -668,6 +668,12 @@ extern "C" int stbi_zlib_decode_buffer(char *obuffer, int olen, const char *ibuf
 extern "C" unsigned char *stbi_zlib_compress(unsigned char *data, int data_len, int *out_len, int quality);
 #endif
 
+#if defined(TINYEXR_USE_NANOZDEC)
+#define NANOZDEC_IMPLEMENTATION
+#include "nanozdec.h"
+#endif
+
+
 #if TINYEXR_USE_ZFP
 
 #ifdef __clang__

@@ -6,6 +6,9 @@
 #CXXFLAGS += -DTINYEXR_USE_ZFP=1 -I./deps/ZFP/include
 #LDFLAGS += -L./deps/ZFP/lib -lzfp
 
+# naonzdec(experimental)
+CXXFLAGS += -DTINYEXR_USE_NANOZDEC=1 -I./deps/nanozdec
+
 CFLAGS += -I./deps/miniz
 CXXFLAGS += -I./deps/miniz
 
