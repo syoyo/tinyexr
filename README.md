@@ -17,7 +17,7 @@ TinyEXR does not use C++ exception.
 TinyEXR now does not use `assert` from v1.0.4(2023/06/04), except for miniz's assert.
 (We plan to use wuff's zlib for better security and performance)
 
-TinyEXR is fuzz tested and **currently no security issues**(No seg fault for any malcious input EXR data).
+TinyEXR is fuzz tested and **currently no security issues**(No seg fault for any malcious/corrupted input EXR data) as of v1.0.4.
 
 # Features
 
