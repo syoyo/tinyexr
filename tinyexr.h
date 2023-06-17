@@ -608,7 +608,10 @@ extern int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
 #define NOMINMAX
 #endif
 #include <windows.h>  // for UTF-8 and memory-mapping
+
+#if !defined(WINAPI_FAMILY) || (WINAPI_FAMILY == WINAPI_FAMILY_DESKTOP_APP)
 #define TINYEXR_USE_WIN32_MMAP (1)
+#endif
 
 #elif defined(__linux__) || defined(__unix__)
 #include <fcntl.h>     // for open()
