@@ -6,16 +6,21 @@
 #CXXFLAGS += -DTINYEXR_USE_ZFP=1 -I./deps/ZFP/include
 #LDFLAGS += -L./deps/ZFP/lib -lzfp
 
-# naonzdec(experimental)
-CXXFLAGS += -DTINYEXR_USE_NANOZDEC=1 -I./deps/nanozdec
+# nanozlib(experimental)
+BUILD_NANOZLIB=1
+CXXFLAGS += -DTINYEXR_USE_NANOZLIB=1 -DTINYEXR_USE_MINIZ=0 -I./deps/nanozlib
 
-CFLAGS += -I./deps/miniz
-CXXFLAGS += -I./deps/miniz
+ifeq ($(BUILD_NANOZLIB),1)
+else
+  DEPOBJS = miniz.o
+  CFLAGS += -I./deps/miniz
+  CXXFLAGS += -I./deps/miniz
+endif
 
 .PHONY: test clean
 
-all: miniz.o
-	$(CXX) $(CXXFLAGS) -o test_tinyexr test_tinyexr.cc miniz.o $(LDFLAGS)
+all: $(DEPOBJS)
+	$(CXX) $(CXXFLAGS) -o test_tinyexr test_tinyexr.cc $(DEPOBJS) $(LDFLAGS)
 
 miniz.o:
 	$(CC) $(CFLAGS) -c ./deps/miniz/miniz.c
