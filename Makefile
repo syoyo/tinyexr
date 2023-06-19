@@ -7,8 +7,8 @@
 #LDFLAGS += -L./deps/ZFP/lib -lzfp
 
 # nanozlib(experimental)
-BUILD_NANOZLIB=1
-CXXFLAGS += -DTINYEXR_USE_NANOZLIB=1 -DTINYEXR_USE_MINIZ=0 -I./deps/nanozlib
+#BUILD_NANOZLIB=1
+#CXXFLAGS += -DTINYEXR_USE_NANOZLIB=1 -DTINYEXR_USE_MINIZ=0 -I./deps/nanozlib
 
 ifeq ($(BUILD_NANOZLIB),1)
 else
