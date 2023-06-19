@@ -114,6 +114,11 @@ extern "C" {
 #define TINYEXR_USE_STB_ZLIB (0)
 #endif
 
+// Use nanozlib.
+#ifndef TINYEXR_USE_NANOZLIB
+#define TINYEXR_USE_NANOZLIB (0)
+#endif
+
 // Disable PIZ compression when applying cpplint.
 #ifndef TINYEXR_USE_PIZ
 #define TINYEXR_USE_PIZ (1)
@@ -658,6 +663,11 @@ extern int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
 //#include "zlib.h"
 #endif
 
+#if defined(TINYEXR_USE_NANOZLIB) && (TINYEXR_USE_NANOZLIB==1)
+#define NANOZLIB_IMPLEMENTATION
+#include "nanozlib.h"
+#endif
+
 #if TINYEXR_USE_STB_ZLIB
 // Since we don't know where a project has stb_image.h and stb_image_write.h
 // and whether they are in the include path, we don't include them here, and
@@ -666,11 +676,6 @@ extern int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
 extern "C" int stbi_zlib_decode_buffer(char *obuffer, int olen, const char *ibuffer, int ilen);
 // from stb_image_write.h:
 extern "C" unsigned char *stbi_zlib_compress(unsigned char *data, int data_len, int *out_len, int quality);
-#endif
-
-#if defined(TINYEXR_USE_NANOZDEC)
-#define NANOZDEC_IMPLEMENTATION
-#include "nanozdec.h"
 #endif
 
 
@@ -1373,6 +1378,18 @@ static bool CompressZip(unsigned char *dst,
   free(ret);
 
   compressedSize = outSize;
+#elif defined(TINYEXR_USE_NANOZLIB) && (TINYEXR_USE_NANOZLIB==1)
+  uint64_t dstSize = nanoz_compressBound(static_cast<uint64_t>(src_size));
+  int outSize{0};
+  unsigned char *ret = nanoz_compress(&tmpBuf.at(0), src_size, &outSize, /* quality */8);
+  if (!ret) {
+    return false;
+  }
+
+  memcpy(dst, ret, outSize);
+  free(ret);
+  
+  compressedSize = outSize;
 #else
   uLong outSize = compressBound(static_cast<uLong>(src_size));
   int ret = compress(dst, &outSize, static_cast<const Bytef *>(&tmpBuf.at(0)),
@@ -1414,6 +1431,17 @@ static bool DecompressZip(unsigned char *dst,
   int ret = stbi_zlib_decode_buffer(reinterpret_cast<char*>(&tmpBuf.at(0)),
       *uncompressed_size, reinterpret_cast<const char*>(src), src_size);
   if (ret < 0) {
+    return false;
+  }
+#elif defined(TINYEXR_USE_NANOZLIB) && (TINYEXR_USE_NANOZLIB==1)
+  uint64_t dest_size = (*uncompressed_size);
+  uint64_t uncomp_size{0};
+  nanoz_status_t ret =
+      nanoz_uncompress(src, src_size, dest_size, &tmpBuf.at(0), &uncomp_size);
+  if (NANOZ_SUCCESS != ret) {
+    return false;
+  }
+  if ((*uncompressed_size) != uncomp_size) {
     return false;
   }
 #else
@@ -7056,6 +7084,9 @@ static bool EncodePixelData(/* out */ std::vector<unsigned char>& out_data,
     // there is no compressBound() function, so we use a value that
     // is grossly overestimated, but should always work
     std::vector<unsigned char> block(256 + 2 * buf.size());
+#elif defined(TINYEXR_USE_NANOZLIB) && (TINYEXR_USE_NANOZLIB == 1)
+    std::vector<unsigned char> block(nanoz_compressBound(
+      static_cast<unsigned long>(buf.size())));
 #else
     std::vector<unsigned char> block(
       compressBound(static_cast<uLong>(buf.size())));
