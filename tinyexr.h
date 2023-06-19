@@ -650,7 +650,7 @@ extern int LoadEXRFromMemory(float **out_rgba, int *width, int *height,
 #include <omp.h>
 #endif
 
-#if TINYEXR_USE_MINIZ
+#if defined(TINYEXR_USE_MINIZ) && (TINYEXR_USE_MINIZ==1)
 #include <miniz.h>
 #else
 //  Issue #46. Please include your own zlib-compatible API header before
@@ -1349,7 +1349,7 @@ static bool CompressZip(unsigned char *dst,
     }
   }
 
-#if TINYEXR_USE_MINIZ
+#if defined(TINYEXR_USE_MINIZ) && (TINYEXR_USE_MINIZ==1)
   //
   // Compress the data using miniz
   //
@@ -1363,7 +1363,7 @@ static bool CompressZip(unsigned char *dst,
   }
 
   compressedSize = outSize;
-#elif TINYEXR_USE_STB_ZLIB
+#elif defined(TINYEXR_USE_STB_ZLIB) && (TINYEXR_USE_STB_ZLIB==1)
   int outSize;
   unsigned char* ret = stbi_zlib_compress(const_cast<unsigned char*>(&tmpBuf.at(0)), src_size, &outSize, 8);
   if (!ret) {
@@ -1404,7 +1404,7 @@ static bool DecompressZip(unsigned char *dst,
   }
   std::vector<unsigned char> tmpBuf(*uncompressed_size);
 
-#if TINYEXR_USE_MINIZ
+#if defined(TINYEXR_USE_MINIZ) && (TINYEXR_USE_MINIZ==1)
   int ret =
       mz_uncompress(&tmpBuf.at(0), uncompressed_size, src, src_size);
   if (MZ_OK != ret) {
@@ -7049,7 +7049,7 @@ static bool EncodePixelData(/* out */ std::vector<unsigned char>& out_data,
 
   } else if ((compression_type == TINYEXR_COMPRESSIONTYPE_ZIPS) ||
     (compression_type == TINYEXR_COMPRESSIONTYPE_ZIP)) {
-#if TINYEXR_USE_MINIZ
+#if defined(TINYEXR_USE_MINIZ) && (TINYEXR_USE_MINIZ==1)
     std::vector<unsigned char> block(mz_compressBound(
       static_cast<unsigned long>(buf.size())));
 #elif TINYEXR_USE_STB_ZLIB
