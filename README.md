@@ -567,6 +567,7 @@ Contribution is welcome!
 
 `tinyexr` tools uses stb, which is licensed under public domain: https://github.com/nothings/stb
 `tinyexr` uses some code from OpenEXR, which is licensed under 3-clause BSD license.
+`tinyexr` uses nanozlib and wuffs, whose are licensed unnder Apache 2.0 license.
 
 ## Author(s)
 
