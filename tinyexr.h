@@ -5752,7 +5752,7 @@ static bool isValidTile(const EXRHeader* exr_header,
 
 static bool ReconstructTileOffsets(OffsetData& offset_data,
                                    const EXRHeader* exr_header,
-                                   const unsigned char* head, const unsigned char* marker, const size_t /*size*/,
+                                   const unsigned char* head, const unsigned char* marker, const size_t size,
                                    bool isMultiPartFile,
                                    bool isDeep) {
   int numXLevels = offset_data.num_x_levels;
@@ -5761,9 +5761,18 @@ static bool ReconstructTileOffsets(OffsetData& offset_data,
       for (unsigned int dx = 0; dx < offset_data.offsets[l][dy].size(); ++dx) {
         tinyexr::tinyexr_uint64 tileOffset = tinyexr::tinyexr_uint64(marker - head);
 
+
         if (isMultiPartFile) {
+          if ((marker + sizeof(int)) >= (head + size)) {
+            return false;
+          }
+
           //int partNumber;
           marker += sizeof(int);
+        }
+
+        if ((marker + 4 * sizeof(int)) >= (head + size)) {
+          return false;
         }
 
         int tileX;
@@ -5787,6 +5796,9 @@ static bool ReconstructTileOffsets(OffsetData& offset_data,
         marker += sizeof(int);
 
         if (isDeep) {
+          if ((marker + 2 * sizeof(tinyexr::tinyexr_int64)) >= (head + size)) {
+            return false;
+          }
           tinyexr::tinyexr_int64 packed_offset_table_size;
           memcpy(&packed_offset_table_size, marker, sizeof(tinyexr::tinyexr_int64));
           tinyexr::swap8(reinterpret_cast<tinyexr::tinyexr_uint64*>(&packed_offset_table_size));
@@ -5800,7 +5812,15 @@ static bool ReconstructTileOffsets(OffsetData& offset_data,
           // next Int64 is unpacked sample size - skip that too
           marker += packed_offset_table_size + packed_sample_size + 8;
 
+          if (marker >= (head + size)) {
+            return false;
+          }
+
         } else {
+
+          if ((marker + sizeof(int)) >= (head + size)) {
+            return false;
+          }
 
           int dataSize;
           memcpy(&dataSize, marker, sizeof(int));
@@ -5818,6 +5838,19 @@ static bool ReconstructTileOffsets(OffsetData& offset_data,
         if (level_idx < 0) {
           return false;
         }
+
+        if (size_t(level_idx) >= offset_data.offsets.size()) {
+          return false;
+        }
+
+        if (size_t(tileY) >= offset_data.offsets[size_t(level_idx)].size()) {
+          return false;
+        }
+
+        if (size_t(tileX) >= offset_data.offsets[size_t(level_idx)][size_t(tileY)].size()) {
+          return false;
+        }
+        
         offset_data.offsets[size_t(level_idx)][size_t(tileY)][size_t(tileX)] = tileOffset;
       }
     }
