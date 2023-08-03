@@ -5818,15 +5818,20 @@ static bool ReconstructTileOffsets(OffsetData& offset_data,
 
         } else {
 
-          if ((marker + sizeof(int)) >= (head + size)) {
+          if ((marker + sizeof(uint32_t)) >= (head + size)) {
             return false;
           }
 
-          int dataSize;
-          memcpy(&dataSize, marker, sizeof(int));
+          uint32_t dataSize;
+          memcpy(&dataSize, marker, sizeof(uint32_t));
           tinyexr::swap4(&dataSize);
-          marker += sizeof(int);
+          marker += sizeof(uint32_t);
+
           marker += dataSize;
+
+          if (marker >= (head + size)) {
+            return false;
+          }
         }
 
         if (!isValidTile(exr_header, offset_data,
