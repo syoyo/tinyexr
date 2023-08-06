@@ -780,7 +780,7 @@ static void cpy2(unsigned short *dst_val, const unsigned short *src_val) {
 }
 
 static void swap2(unsigned short *val) {
-#ifdef TINYEXR_LITTLE_ENDIAN
+#if TINYEXR_LITTLE_ENDIAN
   (void)val;
 #else
   unsigned short tmp = *val;
@@ -839,7 +839,7 @@ static void cpy4(float *dst_val, const float *src_val) {
 #endif
 
 static void swap4(unsigned int *val) {
-#ifdef TINYEXR_LITTLE_ENDIAN
+#if TINYEXR_LITTLE_ENDIAN
   (void)val;
 #else
   unsigned int tmp = *val;
@@ -854,7 +854,7 @@ static void swap4(unsigned int *val) {
 }
 
 static void swap4(int *val) {
-#ifdef TINYEXR_LITTLE_ENDIAN
+#if TINYEXR_LITTLE_ENDIAN
   (void)val;
 #else
   int tmp = *val;
@@ -869,7 +869,7 @@ static void swap4(int *val) {
 }
 
 static void swap4(float *val) {
-#ifdef TINYEXR_LITTLE_ENDIAN
+#if TINYEXR_LITTLE_ENDIAN
   (void)val;
 #else
   float tmp = *val;
@@ -900,7 +900,7 @@ static void cpy8(tinyexr::tinyexr_uint64 *dst_val, const tinyexr::tinyexr_uint64
 #endif
 
 static void swap8(tinyexr::tinyexr_uint64 *val) {
-#ifdef TINYEXR_LITTLE_ENDIAN
+#if TINYEXR_LITTLE_ENDIAN
   (void)val;
 #else
   tinyexr::tinyexr_uint64 tmp = (*val);
