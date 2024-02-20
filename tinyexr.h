@@ -386,7 +386,7 @@ extern int IsEXRFromMemory(const unsigned char *memory, size_t size);
 // error
 extern int SaveEXRToMemory(const float *data, const int width, const int height,
                    const int components, const int save_as_fp16,
-                   const unsigned char **buffer, const char **err);
+                   unsigned char **buffer, const char **err);
 
 // @deprecated { Not recommended, but handy to use. }
 // Saves single-frame OpenEXR image to a buffer. Assume EXR image contains RGB(A) channels.
@@ -9008,7 +9008,7 @@ int LoadEXRMultipartImageFromFile(EXRImage *exr_images,
 }
 
 int SaveEXRToMemory(const float *data, int width, int height, int components,
-            const int save_as_fp16, const unsigned char **outbuf, const char **err) {
+            const int save_as_fp16, unsigned char **outbuf, const char **err) {
 
   if ((components == 1) || components == 3 || components == 4) {
     // OK
