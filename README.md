@@ -509,6 +509,8 @@ Contribution is welcome!
   - [ ] B44?
   - [ ] B44A?
   - [ ] PIX24?
+  - [ ] DWAA?
+  - [ ] DWAB?
 - [ ] Custom attributes
   - [x] Normal image (EXR 1.x)
   - [ ] Deep image (EXR 2.x)
