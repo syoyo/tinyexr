@@ -4653,6 +4653,12 @@ static int ParseEXRHeader(HeaderInfo *info, bool *empty_header,
 
     if (!has_line_order) {
       ss_err << "\"lineOrder\" attribute not found in the header." << std::endl;
+    } else {
+      if ((info->line_order != 0) && // increasing Y
+         (info->line_order != 1) && // decreasing Y
+         (info->line_order != 2)) { // random Y
+        ss_err << "Invalid \"lineOrder\" value.\n";
+      }
     }
 
     if (!has_display_window) {
