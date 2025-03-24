@@ -10194,10 +10194,11 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
       // Adjust line_no with data_window.bmin.y
       line_no -= exr_header->data_window[1];
 
+      // Line order is increasing because we read in line offset table order.
       tinyexr::DecodePixelData(
           exr_image->images, exr_header->requested_pixel_types, data_ptr,
           static_cast<size_t>(data_len), exr_header->compression_type,
-          exr_header->line_order, data_width, data_height, data_width, y,
+          /* line order */ 0, data_width, data_height, data_width, y,
           line_no, num_lines, static_cast<size_t>(pixel_data_size),
           static_cast<int>(exr_header->num_custom_attributes),
           exr_header->custom_attributes,
