@@ -9713,7 +9713,7 @@ static void DecodePixelData(/* out */ unsigned char **out_images,
 static void DecodeTiledPixelData(
     unsigned char **out_images, int *width, int *height,
     const int *requested_pixel_types, const unsigned char *data_ptr,
-    size_t data_len, int compression_type, int line_order, int data_width,
+    size_t data_len, int compression_type, int data_width,
     int data_height, int tile_offset_x, int tile_offset_y, int tile_size_x,
     int tile_size_y, size_t pixel_data_size, size_t num_attributes,
     const EXRAttribute *attributes, size_t num_channels,
@@ -9736,8 +9736,9 @@ static void DecodeTiledPixelData(
   }
 
   // Image size = tile size.
+  // Line order within tiles is always increasing.
   DecodePixelData(out_images, requested_pixel_types, data_ptr, data_len,
-                  compression_type, line_order, (*width), tile_size_y,
+                  compression_type, /* line_order */ 0, (*width), tile_size_y,
                   /* stride */ tile_size_x, /* y */ 0, /* line_no */ 0,
                   (*height), pixel_data_size, num_attributes, attributes,
                   num_channels, channels, channel_offset_list);
@@ -10139,7 +10140,7 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
           &(exr_image->tiles[tile_idx].height),
           exr_header->requested_pixel_types, data_ptr,
           static_cast<size_t>(data_len), exr_header->compression_type,
-          exr_header->line_order, data_width, data_height, tile_coordinates[0],
+          data_width, data_height, tile_coordinates[0],
           tile_coordinates[1], exr_header->tile_size_x, exr_header->tile_size_y,
           static_cast<size_t>(pixel_data_size),
           static_cast<int>(exr_header->num_custom_attributes),
@@ -10193,10 +10194,11 @@ static int DecodeChunk(EXRImage *exr_image, const EXRHeader *exr_header,
       // Adjust line_no with data_window.bmin.y
       line_no -= exr_header->data_window[1];
 
+      // Line order is increasing because we read in line offset table order.
       tinyexr::DecodePixelData(
           exr_image->images, exr_header->requested_pixel_types, data_ptr,
           static_cast<size_t>(data_len), exr_header->compression_type,
-          exr_header->line_order, data_width, data_height, data_width, y,
+          /* line order */ 0, data_width, data_height, data_width, y,
           line_no, num_lines, static_cast<size_t>(pixel_data_size),
           static_cast<int>(exr_header->num_custom_attributes),
           exr_header->custom_attributes,
