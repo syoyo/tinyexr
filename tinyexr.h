@@ -6932,13 +6932,32 @@ struct MemoryMappedFile {
       fclose(fp);
       return;
     }
-    size_t read_bytes = fread(data, 1, size, fp);
-    if (read_bytes != size) {
-      // TODO: Try to read data until reading `size` bytes.
-      fclose(fp);
-      size = 0; 
-      data = nullptr;
-      return;
+
+    // fread() may return fewer bytes than requested, especially on Windows
+    // with network drives or large files. Read in a loop until we get all bytes.
+    size_t total_read = 0;
+    while (total_read < size) {
+      size_t bytes_to_read = size - total_read;
+      size_t bytes_read = fread(data + total_read, 1, bytes_to_read, fp);
+
+      if (bytes_read == 0) {
+        // Check if we hit an error or EOF
+        if (feof(fp)) {
+          // Unexpected EOF - file size changed or was reported incorrectly
+          fprintf(stderr, "TinyEXR: Unexpected EOF while reading file. Expected %zu bytes, got %zu bytes.\n",
+                  size, total_read);
+        } else if (ferror(fp)) {
+          // Read error occurred
+          fprintf(stderr, "TinyEXR: Error reading file.\n");
+        }
+        fclose(fp);
+        free(data);
+        size = 0;
+        data = nullptr;
+        return;
+      }
+
+      total_read += bytes_read;
     }
     fclose(fp);
 #endif
