@@ -49,6 +49,8 @@ Current status of `tinyexr` is:
   - [x] ZFP (tinyexr extension)
   - [x] B44/B44A (OpenEXR compatible)
   - [x] PXR24 (OpenEXR compatible)
+  - [ ] HTJ2K
+  - [ ] ZSTD
   - [ ] DWA (not planned, patent encumbered)
 - Spectral EXR (JCGT 2021)
   - [x] Emissive spectra (S{n}.{wavelength}nm)
