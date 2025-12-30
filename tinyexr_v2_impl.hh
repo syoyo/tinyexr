@@ -110,6 +110,9 @@ enum CompressionType {
   COMPRESSION_B44A = 7,
   COMPRESSION_DWAA = 8,
   COMPRESSION_DWAB = 9
+  COMPRESSION_HTJ2K256 = 10
+  COMPRESSION_HTJ2K32 = 11
+  COMPRESSION_ZSTD = 12
 };
 
 // Pixel types
@@ -1060,6 +1063,11 @@ static int GetScanlinesPerBlock(int compression) {
       return 32;
     case COMPRESSION_DWAB:
       return 256;
+    case COMPRESSION_HTJ2K256:
+      return 256;
+    case COMPRESSION_HTJ2K32:
+      return 32;
+    case COMPRESSION_ZSTD:
     default:
       return 1;
   }
