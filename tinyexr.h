@@ -217,6 +217,9 @@ extern "C" {
 #define TINYEXR_COMPRESSIONTYPE_B44A (7)
 #define TINYEXR_COMPRESSIONTYPE_DWAA (8)   // Not yet supported
 #define TINYEXR_COMPRESSIONTYPE_DWAB (9)   // Not yet supported
+#define TINYEXR_COMPRESSIONTYPE_HTJ2K256 (10)   // Not yet supported
+#define TINYEXR_COMPRESSIONTYPE_HTJ2K32 (11)   // Not yet supported
+#define TINYEXR_COMPRESSIONTYPE_ZSTD (12)   // Not yet supported
 #define TINYEXR_COMPRESSIONTYPE_ZFP (128)  // TinyEXR extension
 
 #define TINYEXR_ZFP_COMPRESSIONTYPE_RATE (0)
