@@ -196,6 +196,7 @@ extern "C" {
 #define TINYEXR_ERROR_SERIALIZATION_FAILED (-12)
 #define TINYEXR_ERROR_LAYER_NOT_FOUND (-13)
 #define TINYEXR_ERROR_DATA_TOO_LARGE (-14)
+#define TINYEXR_ERROR_OUT_OF_MEMORY (-15)
 
 // @note { OpenEXR file format: http://www.openexr.com/openexrfilelayout.pdf }
 
@@ -5724,6 +5725,10 @@ static unsigned char **AllocateImage(int num_channels,
   unsigned char **images =
       reinterpret_cast<unsigned char **>(static_cast<float **>(
           malloc(sizeof(float *) * static_cast<size_t>(num_channels))));
+  if (!images) {
+    if (success) *success = false;
+    return NULL;
+  }
 
   for (size_t c = 0; c < static_cast<size_t>(num_channels); c++) {
     images[c] = NULL;
@@ -6230,6 +6235,10 @@ static bool ConvertHeader(EXRHeader *exr_header, const HeaderInfo &info, std::st
 
   exr_header->channels = static_cast<EXRChannelInfo *>(malloc(
       sizeof(EXRChannelInfo) * static_cast<size_t>(exr_header->num_channels)));
+  if (!exr_header->channels) {
+    if (err) (*err) += "Out of memory.\n";
+    return false;
+  }
   for (size_t c = 0; c < static_cast<size_t>(exr_header->num_channels); c++) {
 #ifdef _MSC_VER
     strncpy_s(exr_header->channels[c].name, info.channels[c].name.c_str(), 255);
@@ -6247,6 +6256,11 @@ static bool ConvertHeader(EXRHeader *exr_header, const HeaderInfo &info, std::st
 
   exr_header->pixel_types = static_cast<int *>(
       malloc(sizeof(int) * static_cast<size_t>(exr_header->num_channels)));
+  if (!exr_header->pixel_types) {
+    free(exr_header->channels);
+    if (err) (*err) += "Out of memory.\n";
+    return false;
+  }
   for (size_t c = 0; c < static_cast<size_t>(exr_header->num_channels); c++) {
     exr_header->pixel_types[c] = info.channels[c].pixel_type;
   }
@@ -6254,6 +6268,12 @@ static bool ConvertHeader(EXRHeader *exr_header, const HeaderInfo &info, std::st
   // Initially fill with values of `pixel_types`
   exr_header->requested_pixel_types = static_cast<int *>(
       malloc(sizeof(int) * static_cast<size_t>(exr_header->num_channels)));
+  if (!exr_header->requested_pixel_types) {
+    free(exr_header->channels);
+    free(exr_header->pixel_types);
+    if (err) (*err) += "Out of memory.\n";
+    return false;
+  }
   for (size_t c = 0; c < static_cast<size_t>(exr_header->num_channels); c++) {
     exr_header->requested_pixel_types[c] = info.channels[c].pixel_type;
   }
@@ -6269,6 +6289,13 @@ static bool ConvertHeader(EXRHeader *exr_header, const HeaderInfo &info, std::st
 
     exr_header->custom_attributes = static_cast<EXRAttribute *>(malloc(
         sizeof(EXRAttribute) * size_t(exr_header->num_custom_attributes)));
+    if (!exr_header->custom_attributes) {
+      free(exr_header->channels);
+      free(exr_header->pixel_types);
+      free(exr_header->requested_pixel_types);
+      if (err) (*err) += "Out of memory.\n";
+      return false;
+    }
 
     for (size_t i = 0; i < size_t(exr_header->num_custom_attributes); i++) {
       memcpy(exr_header->custom_attributes[i].name, info.attributes[i].name,
@@ -10219,12 +10246,24 @@ int ParseEXRMultipartHeaderFromMemory(EXRHeader ***exr_headers,
   // allocate memory for EXRHeader and create array of EXRHeader pointers.
   (*exr_headers) =
       static_cast<EXRHeader **>(malloc(sizeof(EXRHeader *) * infos.size()));
-
+  if (!(*exr_headers)) {
+    tinyexr::SetErrorMessage("Out of memory.", err);
+    return TINYEXR_ERROR_OUT_OF_MEMORY;
+  }
 
   int retcode = TINYEXR_SUCCESS;
 
   for (size_t i = 0; i < infos.size(); i++) {
     EXRHeader *exr_header = static_cast<EXRHeader *>(malloc(sizeof(EXRHeader)));
+    if (!exr_header) {
+      for (size_t j = 0; j < i; j++) {
+        FreeEXRHeader((*exr_headers)[j]);
+        free((*exr_headers)[j]);
+      }
+      free(*exr_headers);
+      tinyexr::SetErrorMessage("Out of memory.", err);
+      return TINYEXR_ERROR_OUT_OF_MEMORY;
+    }
     memset(exr_header, 0, sizeof(EXRHeader));
 
     std::string warn;
@@ -10627,6 +10666,10 @@ int SaveEXRToMemory(const float *data, int width, int height, int components,
   header.num_channels = components;
   header.channels = static_cast<EXRChannelInfo *>(malloc(
       sizeof(EXRChannelInfo) * static_cast<size_t>(header.num_channels)));
+  if (!header.channels) {
+    tinyexr::SetErrorMessage("Out of memory.", err);
+    return TINYEXR_ERROR_OUT_OF_MEMORY;
+  }
   // Must be (A)BGR order, since most of EXR viewers expect this channel order.
   if (components == 4) {
 #ifdef _MSC_VER
@@ -10668,8 +10711,19 @@ int SaveEXRToMemory(const float *data, int width, int height, int components,
 
   header.pixel_types = static_cast<int *>(
       malloc(sizeof(int) * static_cast<size_t>(header.num_channels)));
+  if (!header.pixel_types) {
+    free(header.channels);
+    tinyexr::SetErrorMessage("Out of memory.", err);
+    return TINYEXR_ERROR_OUT_OF_MEMORY;
+  }
   header.requested_pixel_types = static_cast<int *>(
       malloc(sizeof(int) * static_cast<size_t>(header.num_channels)));
+  if (!header.requested_pixel_types) {
+    free(header.channels);
+    free(header.pixel_types);
+    tinyexr::SetErrorMessage("Out of memory.", err);
+    return TINYEXR_ERROR_OUT_OF_MEMORY;
+  }
   for (int i = 0; i < header.num_channels; i++) {
     header.pixel_types[i] =
         TINYEXR_PIXELTYPE_FLOAT;  // pixel type of input image
@@ -10689,6 +10743,9 @@ int SaveEXRToMemory(const float *data, int width, int height, int components,
   size_t mem_size = SaveEXRImageToMemory(&image, &header, &mem_buf, err);
 
   if (mem_size == 0) {
+    free(header.channels);
+    free(header.pixel_types);
+    free(header.requested_pixel_types);
     return TINYEXR_ERROR_SERIALIZATION_FAILED;
   }
 
@@ -10784,6 +10841,10 @@ int SaveEXR(const float *data, int width, int height, int components,
   header.num_channels = components;
   header.channels = static_cast<EXRChannelInfo *>(malloc(
       sizeof(EXRChannelInfo) * static_cast<size_t>(header.num_channels)));
+  if (!header.channels) {
+    tinyexr::SetErrorMessage("Out of memory.", err);
+    return TINYEXR_ERROR_OUT_OF_MEMORY;
+  }
   // Must be (A)BGR order, since most of EXR viewers expect this channel order.
   if (components == 4) {
 #ifdef _MSC_VER
@@ -10825,8 +10886,19 @@ int SaveEXR(const float *data, int width, int height, int components,
 
   header.pixel_types = static_cast<int *>(
       malloc(sizeof(int) * static_cast<size_t>(header.num_channels)));
+  if (!header.pixel_types) {
+    free(header.channels);
+    tinyexr::SetErrorMessage("Out of memory.", err);
+    return TINYEXR_ERROR_OUT_OF_MEMORY;
+  }
   header.requested_pixel_types = static_cast<int *>(
       malloc(sizeof(int) * static_cast<size_t>(header.num_channels)));
+  if (!header.requested_pixel_types) {
+    free(header.channels);
+    free(header.pixel_types);
+    tinyexr::SetErrorMessage("Out of memory.", err);
+    return TINYEXR_ERROR_OUT_OF_MEMORY;
+  }
   for (int i = 0; i < header.num_channels; i++) {
     header.pixel_types[i] =
         TINYEXR_PIXELTYPE_FLOAT;  // pixel type of input image
