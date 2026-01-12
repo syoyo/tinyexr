@@ -9447,6 +9447,10 @@ static size_t SaveEXRNPartImageToMemory(const EXRImage* exr_images,
     return TINYEXR_ERROR_INVALID_DATA;
   }
   (*memory_out) = static_cast<unsigned char*>(malloc(size_t(total_size)));
+  if (!(*memory_out)) {
+    tinyexr::SetErrorMessage("Out of memory.", err);
+    return 0;
+  }
 
   // Writing header
   memcpy((*memory_out), &memory[0], memory.size());
