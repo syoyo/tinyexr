@@ -5432,9 +5432,9 @@ static bool DecodePixelData(/* out */ unsigned char **out_images,
     }
 
     // Process decompressed data - B44 returns data organized per channel
+    size_t ch_offset = 0;
     for (size_t c = 0; c < static_cast<size_t>(num_channels); c++) {
-      size_t ch_offset = c * static_cast<size_t>(width) * num_lines *
-                         ((channels[c].pixel_type == TINYEXR_PIXELTYPE_HALF) ? 2 : 4);
+      size_t ch_bytes = (channels[c].pixel_type == TINYEXR_PIXELTYPE_HALF) ? 2 : 4;
 
       if (channels[c].pixel_type == TINYEXR_PIXELTYPE_HALF) {
         for (size_t v = 0; v < static_cast<size_t>(num_lines); v++) {
@@ -5526,6 +5526,8 @@ static bool DecodePixelData(/* out */ unsigned char **out_images,
       } else {
         return false;
       }
+
+      ch_offset += static_cast<size_t>(width) * static_cast<size_t>(num_lines) * ch_bytes;
     }
   } else if (compression_type == TINYEXR_COMPRESSIONTYPE_NONE) {
     for (size_t c = 0; c < num_channels; c++) {
