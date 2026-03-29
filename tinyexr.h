@@ -10097,6 +10097,7 @@ int FreeEXRImage(EXRImage *exr_image) {
   if (exr_image->next_level) {
     FreeEXRImage(exr_image->next_level);
     delete exr_image->next_level;
+    exr_image->next_level = NULL;
   }
 
   for (int i = 0; i < exr_image->num_channels; i++) {
@@ -10107,6 +10108,7 @@ int FreeEXRImage(EXRImage *exr_image) {
 
   if (exr_image->images) {
     free(exr_image->images);
+    exr_image->images = NULL;
   }
 
   if (exr_image->tiles) {
@@ -10121,7 +10123,11 @@ int FreeEXRImage(EXRImage *exr_image) {
       }
     }
     free(exr_image->tiles);
+    exr_image->tiles = NULL;
   }
+
+  exr_image->num_channels = 0;
+  exr_image->num_tiles = 0;
 
   return TINYEXR_SUCCESS;
 }
