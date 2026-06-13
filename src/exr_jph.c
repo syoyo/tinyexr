@@ -677,9 +677,15 @@ static exr_result jph_i64_to_i32(int64_t v, int32_t *out) {
 
 exr_result exr_jph_inverse_rct_i32(int32_t *c0, int32_t *c1, int32_t *c2,
                                    size_t count) {
-    size_t i;
+    size_t i = 0;
     if ((!c0 || !c1 || !c2) && count) return EXR_ERROR_INVALID_ARGUMENT;
-    for (i = 0; i < count; ++i) {
+#if defined(EXR_X86)
+    if (exr_cpu_caps() & EXR_SIMD_AVX2)
+        i = jph_inverse_rct_i32_avx2(c0, c1, c2, count);
+    else if (exr_cpu_caps() & EXR_SIMD_SSE2)
+        i = jph_inverse_rct_i32_sse2(c0, c1, c2, count);
+#endif
+    for (; i < count; ++i) {
         int64_t y = c0[i];
         int64_t db = c1[i];
         int64_t dr = c2[i];
@@ -4938,9 +4944,15 @@ done_fwd32:
 /* Forward RCT: R/G/B → Y/Cb/Cr (inverse of existing inverse_rct). */
 exr_result exr_jph_forward_rct_i32(int32_t *c0, int32_t *c1, int32_t *c2,
                                    size_t count) {
-    size_t i;
+    size_t i = 0;
     if ((!c0 || !c1 || !c2) && count) return EXR_ERROR_INVALID_ARGUMENT;
-    for (i = 0; i < count; ++i) {
+#if defined(EXR_X86)
+    if (exr_cpu_caps() & EXR_SIMD_AVX2)
+        i = jph_forward_rct_i32_avx2(c0, c1, c2, count);
+    else if (exr_cpu_caps() & EXR_SIMD_SSE2)
+        i = jph_forward_rct_i32_sse2(c0, c1, c2, count);
+#endif
+    for (; i < count; ++i) {
         int64_t r = c0[i], g = c1[i], b = c2[i];
         int64_t y  = jph_floor_div_pow2(r + b + 2 * g, 2);
         int64_t db = b - g;
@@ -5861,6 +5873,273 @@ static inline exr_result jph_encode_mag_bits_quad(JphMsEnc *ms,
     return jph_encode_mag_bits_pair(ms, s[2], s[3], rho, 4, 8, Uq, tuple);
 }
 
+#if defined(EXR_X86)
+/* Emit one quad's MagSgn bits from the Stage-C precomputed m_n / masked cwd_s
+ * (sample-major [k*8+q]); the pair assembly + bit-append match the scalar
+ * jph_encode_mag_bits_pair exactly but skip the now-vectorized m_n + masking. */
+static inline exr_result jph_emit_mag_quad_pre(JphMsEnc *ms, const int32_t *m_n,
+                                               const int32_t *cwd_s, int q) {
+    /* The MagSgn writer is a continuous bitstream, so emitting the quad's four
+     * samples [s0|s1|s2|s3] as one codeword produces the exact same bytes as the
+     * per-pair emit but with one ms_encode64 call instead of two. cwd_s is
+     * pre-masked to m_n bits, so zero-magnitude samples contribute nothing. */
+    int m0 = m_n[q], m1 = m_n[8 + q], m2 = m_n[16 + q], m3 = m_n[24 + q];
+    int L;
+    if ((unsigned)m0 >= 64u || (unsigned)m1 >= 64u ||
+        (unsigned)m2 >= 64u || (unsigned)m3 >= 64u)
+        return EXR_ERROR_CORRUPT;       /* also catches negative (wraps high) */
+    L = m0 + m1 + m2 + m3;
+    if (L == 0) return EXR_SUCCESS;
+    if (L < 64) {
+        uint64_t cwd = (uint32_t)cwd_s[q];
+        cwd |= (uint64_t)(uint32_t)cwd_s[8 + q] << m0;
+        cwd |= (uint64_t)(uint32_t)cwd_s[16 + q] << (m0 + m1);
+        cwd |= (uint64_t)(uint32_t)cwd_s[24 + q] << (m0 + m1 + m2);
+        return jph_ms_encode64(ms, cwd, L);
+    }
+    /* Rare L>=64: emit per pair (continuous-bitstream equivalent). */
+    {
+        int pr;
+        for (pr = 0; pr < 2; ++pr) {
+            int k0 = pr * 2;
+            int a0 = m_n[k0 * 8 + q], a1 = m_n[(k0 + 1) * 8 + q];
+            uint64_t d0 = (uint32_t)cwd_s[k0 * 8 + q];
+            uint64_t d1 = (uint32_t)cwd_s[(k0 + 1) * 8 + q];
+            exr_result rc;
+            if ((a0 | a1) == 0) continue;
+            if (a0 == 0) rc = jph_ms_encode64(ms, d1, a1);
+            else if (a1 == 0) rc = jph_ms_encode64(ms, d0, a0);
+            else if (a0 + a1 < 64)
+                rc = jph_ms_encode64(ms, d0 | (d1 << (uint32_t)a0), a0 + a1);
+            else {
+                rc = jph_ms_encode64(ms, d0, a0);
+                if (rc != EXR_SUCCESS) return rc;
+                rc = jph_ms_encode64(ms, d1, a1);
+            }
+            if (rc != EXR_SUCCESS) return rc;
+        }
+    }
+    return EXR_SUCCESS;
+}
+
+/* Build a zero-padded 16x2 int32 tile for the 8-quad AVX2 prepare kernel: tile
+ * columns [0,16) map to codeblock columns [xg, xg+16); out-of-range columns and
+ * (for odd height) the absent bottom row are zeroed, matching the scalar
+ * prepare's treatment of edge samples. tile[0..15]=row y, tile[16..31]=row y+1. */
+static inline void jph_enc_build_tile_i32(int32_t tile[32],
+                                          const int64_t *p64, const int32_t *p32,
+                                          uint32_t stride, uint32_t x0,
+                                          uint32_t y0, uint32_t xg, uint32_t y,
+                                          uint32_t width, uint32_t height) {
+    uint32_t cmax = width - xg;          /* real columns in this group (>=1) */
+    int has_row1 = (y + 1u < height);
+    uint32_t c;
+    if (cmax > 16u) cmax = 16u;
+    memset(tile, 0, 32 * sizeof(int32_t));
+    if (p32) {
+        const int32_t *r0 = p32 + (size_t)(y0 + y) * stride + (x0 + xg);
+        memcpy(tile, r0, cmax * sizeof(int32_t));
+        if (has_row1)
+            memcpy(tile + 16,
+                   p32 + (size_t)(y0 + y + 1u) * stride + (x0 + xg),
+                   cmax * sizeof(int32_t));
+    } else {
+        const int64_t *r0 = p64 + (size_t)(y0 + y) * stride + (x0 + xg);
+        const int64_t *r1 = has_row1
+            ? p64 + (size_t)(y0 + y + 1u) * stride + (x0 + xg) : NULL;
+        for (c = 0; c < cmax; ++c) {
+            tile[c] = (int32_t)r0[c];
+            if (has_row1) tile[16 + c] = (int32_t)r1[c];
+        }
+    }
+}
+
+/* AVX2 i32 codeblock encoder (kmax<=30). Functionally identical to the scalar
+ * jph_encode_block below but processes the cleanup pass in 8-quad (16-column)
+ * batches: one jph_enc_proc_pixel_8q_avx2 call prepares e_q/s/rho/e_qmax for 8
+ * quads, then tinyexr's exact scalar bookkeeping + MEL/VLC/MagSgn emit run per
+ * quad-pair (byte-identical output). The remaining per-quad bookkeeping is the
+ * vectorization target of later stages; here it stays scalar. */
+static exr_result jph_encode_block_i32_avx2(
+    const int64_t *plane64, const int32_t *plane32, uint32_t plane_stride,
+    uint32_t cb_x0, uint32_t cb_y0, uint32_t cb_w, uint32_t cb_h, uint32_t kmax,
+    uint32_t *out_missing_msbs, uint32_t out_lengths[2], uint8_t *out_buf,
+    size_t out_cap, size_t *out_size) {
+    uint8_t ms_buf[65536u];
+    uint8_t mel_vlc_buf[3072];
+    uint8_t *mel_buf = mel_vlc_buf;
+    uint8_t *vlc_buf = mel_vlc_buf + 192;
+    uint32_t ms_cap = (uint32_t)sizeof(ms_buf), mel_cap = 192;
+    uint32_t vlc_cap = 3072u - 192u;
+    uint32_t shift, p, width = cb_w, height = cb_h;
+    uint32_t n_vec = (width + 15u) / 16u;
+    uint64_t max_val = 0;
+    exr_result rc;
+    int32_t geq[32], gsa[32], grho[8], gem[8], tile[32];
+    int32_t cq8[8], eps8[8], uq8[8], Uq8[8];
+    int32_t tuple8[8], m_n[32], cwd_s[32];
+    /* Flat E/CX line-state indexed by quad position; the slack covers the
+     * unaligned neighbour reads (max_e, proc_cq2) one+ vectors past the end.
+     * A 128-wide codeblock yields n_vec<=8 (<=64 quad positions). */
+    int32_t e_line[528] = {0};
+    int32_t cx_line[528] = {0};
+    int prev_cq, prev_e, prev_cx;
+    uint32_t xv, xi, y;
+
+    *out_missing_msbs = kmax - 1u;
+    p = 31u - kmax;          /* use_i32 path (kmax<=30) guaranteed by caller */
+    shift = p;
+
+    JphMelEnc mel; jph_mel_enc_init(&mel, mel_buf, mel_cap);
+    JphVlcEnc vlc; jph_vlc_enc_init(&vlc, vlc_buf, vlc_cap);
+    JphMsEnc ms; jph_ms_init(&ms, ms_buf, ms_cap);
+
+    /* Initial row pair (y=0): tbl0, kappa==1, the min(u_q)>2 MEL, uvlc initial.
+     * The context kernel computes c_q/eps/u_q/U_q + line-state for all 8 quads;
+     * the serial emit then drives MEL/VLC/MagSgn per quad-pair in scalar order. */
+    prev_cq = 0; prev_e = 0; prev_cx = 0;
+    for (xv = 0u; xv < n_vec; ++xv) {
+        uint32_t xg = xv * 16u;
+        jph_enc_build_tile_i32(tile, plane64, plane32, plane_stride, cb_x0,
+                               cb_y0, xg, 0u, width, height);
+        jph_enc_proc_pixel_8q_avx2(tile, shift, p, geq, gsa, grho, gem,
+                                   &max_val);
+        jph_enc_context_8q_avx2(1, geq, grho, gem, e_line, cx_line, xv,
+                                &prev_cq, &prev_e, &prev_cx, cq8, eps8, uq8, Uq8);
+        for (int q = 0; q < 8; ++q)
+            tuple8[q] = g_vlc_enc_tbl0[(cq8[q] << 8) + (grho[q] << 4) + eps8[q]];
+        jph_enc_ms_prep_8q_avx2(grho, Uq8, tuple8, gsa, m_n, cwd_s);
+        for (xi = 0u; xi < 16u && xg + xi < width; xi += 4u) {
+            uint32_t x = xg + xi;
+            int q0 = (int)(xi >> 1), q1 = q0 + 1;
+            int uq0 = uq8[q0], uq1 = 0;
+            uint16_t tuple0 = (uint16_t)tuple8[q0];
+
+            rc = jph_vlc_enc_encode(&vlc, tuple0 >> 8, (tuple0 >> 4) & 7);
+            if (rc != EXR_SUCCESS) return rc;
+            if (cq8[q0] == 0) {
+                rc = jph_mel_enc_encode(&mel, grho[q0] != 0);
+                if (rc != EXR_SUCCESS) return rc;
+            }
+            rc = jph_emit_mag_quad_pre(&ms, m_n, cwd_s, q0);
+            if (rc != EXR_SUCCESS) return rc;
+
+            if (x + 2u < width) {
+                uint16_t tuple1 = (uint16_t)tuple8[q1];
+                uq1 = uq8[q1];
+                rc = jph_vlc_enc_encode(&vlc, tuple1 >> 8, (tuple1 >> 4) & 7);
+                if (rc != EXR_SUCCESS) return rc;
+                if (cq8[q1] == 0) {
+                    rc = jph_mel_enc_encode(&mel, grho[q1] != 0);
+                    if (rc != EXR_SUCCESS) return rc;
+                }
+                rc = jph_emit_mag_quad_pre(&ms, m_n, cwd_s, q1);
+                if (rc != EXR_SUCCESS) return rc;
+            }
+
+            if (uq0 > 0 && uq1 > 0) {
+                int min_uq = uq0 < uq1 ? uq0 : uq1;
+                rc = jph_mel_enc_encode(&mel, min_uq > 2);
+                if (rc != EXR_SUCCESS) return rc;
+            }
+            rc = jph_encode_uvlc_pair(&vlc, uq0, uq1, 1);
+            if (rc != EXR_SUCCESS) return rc;
+        }
+    }
+    /* Emulate the absent xv=n_vec vector's lane-0 line-state write (the carry-out
+     * of the last quad): the last real quad's max_e / proc_cq2 reads position
+     * n_vec*8, which the scalar encoder fills via its final lep[0]=e_q3 /
+     * lcxp[0]=(rho&8)>>3 store after the last lep/lcxp++. */
+    e_line[n_vec * 8] = prev_e;
+    cx_line[n_vec * 8] = (prev_cx & 8) >> 3;
+
+    for (y = 2u; y < height; y += 2u) {
+        /* Reseed c_q for this row from the previous row's first-vector CX
+         * line-state (matches the scalar row-start c_q0 = lcxp[0]+(lcxp[1]<<2));
+         * the E/CX line-state itself carries (not reset) as the previous row. */
+        prev_cq = cx_line[0] + (cx_line[1] << 2);
+        prev_e = 0; prev_cx = 0;
+        for (xv = 0u; xv < n_vec; ++xv) {
+            uint32_t xg = xv * 16u;
+            jph_enc_build_tile_i32(tile, plane64, plane32, plane_stride, cb_x0,
+                                   cb_y0, xg, y, width, height);
+            jph_enc_proc_pixel_8q_avx2(tile, shift, p, geq, gsa, grho, gem,
+                                       &max_val);
+            jph_enc_context_8q_avx2(0, geq, grho, gem, e_line, cx_line, xv,
+                                    &prev_cq, &prev_e, &prev_cx, cq8, eps8, uq8,
+                                    Uq8);
+            for (int q = 0; q < 8; ++q)
+                tuple8[q] = g_vlc_enc_tbl1[(cq8[q] << 8) + (grho[q] << 4) +
+                                          eps8[q]];
+            jph_enc_ms_prep_8q_avx2(grho, Uq8, tuple8, gsa, m_n, cwd_s);
+            for (xi = 0u; xi < 16u && xg + xi < width; xi += 4u) {
+                uint32_t x = xg + xi;
+                int q0 = (int)(xi >> 1), q1 = q0 + 1;
+                int uq0 = uq8[q0], uq1 = 0;
+                uint16_t tuple0 = (uint16_t)tuple8[q0];
+
+                rc = jph_vlc_enc_encode(&vlc, tuple0 >> 8, (tuple0 >> 4) & 7);
+                if (rc != EXR_SUCCESS) return rc;
+                if (cq8[q0] == 0) {
+                    rc = jph_mel_enc_encode(&mel, grho[q0] != 0);
+                    if (rc != EXR_SUCCESS) return rc;
+                }
+                rc = jph_emit_mag_quad_pre(&ms, m_n, cwd_s, q0);
+                if (rc != EXR_SUCCESS) return rc;
+
+                if (x + 2u < width) {
+                    uint16_t tuple1 = (uint16_t)tuple8[q1];
+                    uq1 = uq8[q1];
+                    rc = jph_vlc_enc_encode(&vlc, tuple1 >> 8, (tuple1 >> 4) & 7);
+                    if (rc != EXR_SUCCESS) return rc;
+                    if (cq8[q1] == 0) {
+                        rc = jph_mel_enc_encode(&mel, grho[q1] != 0);
+                        if (rc != EXR_SUCCESS) return rc;
+                    }
+                    rc = jph_emit_mag_quad_pre(&ms, m_n, cwd_s, q1);
+                    if (rc != EXR_SUCCESS) return rc;
+                }
+
+                rc = jph_encode_uvlc_pair(&vlc, uq0, uq1, 0);
+                if (rc != EXR_SUCCESS) return rc;
+            }
+        }
+        e_line[n_vec * 8] = prev_e;          /* carry-out (see initial row) */
+        cx_line[n_vec * 8] = (prev_cx & 8) >> 3;
+    }
+
+    if (max_val == 0) {
+        *out_missing_msbs = kmax;
+        out_lengths[0] = 0u; out_lengths[1] = 0u; *out_size = 0u;
+        return EXR_SUCCESS;
+    }
+    if (max_val >= (UINT64_C(1) << kmax)) return EXR_ERROR_CORRUPT;
+
+    rc = jph_ms_terminate(&ms);
+    if (rc != EXR_SUCCESS) return rc;
+    rc = jph_mel_vlc_terminate(&mel, &vlc);
+    if (rc != EXR_SUCCESS) return rc;
+
+    {
+        int lcup = (int)ms.pos + (int)mel.pos + (int)vlc.pos;
+        int scup = (int)mel.pos + (int)vlc.pos;
+        if (lcup < 2) { lcup = 2; scup = 2; }
+        if (lcup > (int)out_cap) return EXR_ERROR_CORRUPT;
+        if (ms.pos) memcpy(out_buf, ms_buf, ms.pos);
+        if (mel.pos) memcpy(out_buf + ms.pos, mel_buf, mel.pos);
+        if (vlc.pos)
+            memcpy(out_buf + ms.pos + mel.pos, vlc_buf + vlc.cap - vlc.pos,
+                   vlc.pos);
+        out_buf[lcup - 2] = (uint8_t)((out_buf[lcup - 2] & 0xF0) | (scup & 0x0F));
+        out_buf[lcup - 1] = (uint8_t)((scup >> 4) & 0xFF);
+        out_lengths[0] = (uint32_t)lcup;
+        out_lengths[1] = 0;
+        *out_size = (size_t)lcup;
+    }
+    return EXR_SUCCESS;
+}
+#endif /* EXR_X86 */
+
 /* Encode one HT codeblock. When plane32 is non-NULL, read samples from the
  * int32 plane (widening to int64 on the fly via a local per-codeblock buffer). */
 static exr_result JPH_MAYBE_UNUSED jph_encode_block(const int64_t *plane64,
@@ -5903,6 +6182,12 @@ static exr_result JPH_MAYBE_UNUSED jph_encode_block(const int64_t *plane64,
     p = (use_i32 ? 31u : 63u) - kmax;
     shift = p;
 #if defined(EXR_X86)
+    /* AVX2 i32 fast path: 8-quad-batched cleanup pass, byte-identical output. */
+    if (use_i32 && (exr_cpu_caps() & EXR_SIMD_AVX2))
+        return jph_encode_block_i32_avx2(plane64, plane32, plane_stride, cb_x0,
+                                         cb_y0, cb_w, cb_h, kmax,
+                                         out_missing_msbs, out_lengths, out_buf,
+                                         out_cap, out_size);
     int use_sse2 = use_i32 && (exr_cpu_caps() & EXR_SIMD_SSE2);
 #else
     int use_sse2 = 0;
@@ -6288,9 +6573,99 @@ static exr_result jph_write_eoc(uint8_t **p, uint8_t *end) {
     *(*p)++ = (uint8_t)((uint16_t)(v) & 0xFF);                             \
 } while(0)
 
+/* Case-insensitive equality of two NUL-terminated strings. */
+static int jph_ci_streq(const char *a, const char *b) {
+    size_t i = 0;
+    for (;;) {
+        unsigned char ca = (unsigned char)a[i], cb = (unsigned char)b[i];
+        if (ca >= 'A' && ca <= 'Z') ca = (unsigned char)(ca - 'A' + 'a');
+        if (cb >= 'A' && cb <= 'Z') cb = (unsigned char)(cb - 'A' + 'a');
+        if (ca != cb) return 0;
+        if (ca == 0) return 1;
+        ++i;
+    }
+}
+
+typedef struct {
+    const char *rs, *gs, *bs;
+    int ri, gi, bi;
+    const char *prefix;
+    size_t prefix_len;
+} JphRgbParam;
+
+/* Build the codestream->file channel map. Returns 1 and fills cs2f with
+ * [R, G, B, <remaining file channels in file order>] when an RGB triplet is
+ * detected (so the reversible color transform can decorrelate them and shrink
+ * the payload), else returns 0 and fills cs2f with the identity. Mirrors
+ * OpenEXR's make_channel_map heuristic (case-insensitive r/g/b or red/green/blue
+ * suffix after an optional common "prefix." with matching type and sampling) so
+ * the RCT grouping and the chunk channel-map header match OpenEXR/OpenJPH. */
+static int jph_make_channel_map(const exr_codec_ctx *ctx, uint16_t *cs2f) {
+    int nch = ctx->num_channels;
+    JphRgbParam params[2];
+    int pj, i, found = -1, avail;
+    int r_index = -1, g_index = -1, b_index = -1;
+
+    params[0].rs = "r";   params[0].gs = "g";     params[0].bs = "b";
+    params[1].rs = "red"; params[1].gs = "green"; params[1].bs = "blue";
+    for (pj = 0; pj < 2; ++pj) {
+        params[pj].ri = params[pj].gi = params[pj].bi = -1;
+        params[pj].prefix = NULL; params[pj].prefix_len = 0;
+    }
+
+    for (i = 0; i < nch; ++i) {
+        const char *name = ctx->channels[i].name;
+        const char *suffix = name, *prefix = name;
+        size_t prefix_len = 0, k;
+        for (k = 0; name[k]; ++k)
+            if (name[k] == '.') { suffix = name + k + 1; prefix_len = k; }
+        for (pj = 0; pj < 2; ++pj) {
+            JphRgbParam *pp = &params[pj];
+            int match = 0;
+            if (pp->prefix != NULL &&
+                (pp->prefix_len != prefix_len ||
+                 memcmp(pp->prefix, prefix, prefix_len) != 0))
+                continue;
+            if (jph_ci_streq(suffix, pp->rs) && pp->ri < 0) { pp->ri = i; match = 1; }
+            else if (jph_ci_streq(suffix, pp->gs) && pp->gi < 0) { pp->gi = i; match = 1; }
+            else if (jph_ci_streq(suffix, pp->bs) && pp->bi < 0) { pp->bi = i; match = 1; }
+            if (match) { pp->prefix = prefix; pp->prefix_len = prefix_len; break; }
+        }
+    }
+
+    for (pj = 0; pj < 2 && found < 0; ++pj) {
+        JphRgbParam *pp = &params[pj];
+        if (pp->ri >= 0 && pp->gi >= 0 && pp->bi >= 0) {
+            const exr_channel *r = &ctx->channels[pp->ri];
+            const exr_channel *g = &ctx->channels[pp->gi];
+            const exr_channel *b = &ctx->channels[pp->bi];
+            if (r->pixel_type == g->pixel_type && r->pixel_type == b->pixel_type &&
+                r->x_sampling == g->x_sampling && r->x_sampling == b->x_sampling &&
+                r->y_sampling == g->y_sampling && r->y_sampling == b->y_sampling) {
+                r_index = pp->ri; g_index = pp->gi; b_index = pp->bi; found = pj;
+            }
+        }
+    }
+
+    if (found < 0) {
+        for (i = 0; i < nch; ++i) cs2f[i] = (uint16_t)i;
+        return 0;
+    }
+    cs2f[0] = (uint16_t)r_index;
+    cs2f[1] = (uint16_t)g_index;
+    cs2f[2] = (uint16_t)b_index;
+    avail = 3;
+    for (i = 0; i < nch; ++i) {
+        if (i == r_index || i == g_index || i == b_index) continue;
+        cs2f[avail++] = (uint16_t)i;
+    }
+    return 1;
+}
+
 static exr_result jph_write_siz(uint8_t **p, uint8_t *end,
                                 uint32_t w, uint32_t h, uint16_t nch,
-                                const exr_codec_ctx *ctx) {
+                                const exr_codec_ctx *ctx,
+                                const uint16_t *cs2f) {
     size_t sz = 38u + (size_t)nch * 3u;
     uint16_t i;
     if (*p + 2 + 2 + sz > end) return EXR_ERROR_CORRUPT;
@@ -6307,7 +6682,7 @@ static exr_result jph_write_siz(uint8_t **p, uint8_t *end,
     PUT_BE32(0);   /* ytosiz */
     PUT_BE16(nch);
     for (i = 0; i < nch; ++i) {
-        const exr_channel *ch = &ctx->channels[i];
+        const exr_channel *ch = &ctx->channels[cs2f[i]];
         int is_signed = (ch->pixel_type != EXR_PIXEL_UINT) ? 1 : 0;
         int bit_depth = (ch->pixel_type == EXR_PIXEL_HALF) ? 16 : 32;
         uint8_t ssiz = (uint8_t)((is_signed << 7) | ((bit_depth - 1) & 0x7F));
@@ -6394,14 +6769,15 @@ static exr_result jph_write_sot_sod(uint8_t **p, uint8_t *end,
 static exr_result jph_write_codestream(uint8_t **p, uint8_t *end,
                                         const exr_codec_ctx *ctx,
                                         int mc_trans, uint32_t kmax,
-                                        uint8_t **out_psot) {
+                                        uint8_t **out_psot,
+                                        const uint16_t *cs2f) {
     exr_result rc;
     int i;
     rc = jph_write_soc(p, end);
     if (rc != EXR_SUCCESS) return rc;
     rc = jph_write_siz(p, end, (uint32_t)ctx->width,
                        (uint32_t)ctx->num_lines,
-                       (uint16_t)ctx->num_channels, ctx);
+                       (uint16_t)ctx->num_channels, ctx, cs2f);
     if (rc != EXR_SUCCESS) return rc;
     rc = jph_write_cap(p, end);
     if (rc != EXR_SUCCESS) return rc;
@@ -6410,7 +6786,7 @@ static exr_result jph_write_codestream(uint8_t **p, uint8_t *end,
     rc = jph_write_qcd(p, end, kmax);
     if (rc != EXR_SUCCESS) return rc;
     for (i = 0; i < ctx->num_channels; ++i) {
-        const exr_channel *ch = &ctx->channels[i];
+        const exr_channel *ch = &ctx->channels[cs2f[i]];
         int bit_depth = (ch->pixel_type == EXR_PIXEL_HALF) ? 16 : 32;
         int is_signed = (ch->pixel_type != EXR_PIXEL_UINT) ? 1 : 0;
         uint8_t nlt_type = is_signed ? 3u : 0u;
@@ -6424,7 +6800,8 @@ static exr_result jph_write_codestream(uint8_t **p, uint8_t *end,
 }
 
 static exr_result jph_write_ht_header(uint8_t **p, uint8_t *end,
-                                       const exr_codec_ctx *ctx) {
+                                       const exr_codec_ctx *ctx,
+                                       const uint16_t *cs2f) {
     uint16_t i;
     size_t payload_size = 2u + (size_t)ctx->num_channels * 2u;
     if (*p + 8 + payload_size > end) return EXR_ERROR_CORRUPT;
@@ -6432,10 +6809,10 @@ static exr_result jph_write_ht_header(uint8_t **p, uint8_t *end,
     *(*p)++ = 0x48; *(*p)++ = 0x54;
     /* payload length (big endian) */
     PUT_BE32((uint32_t)payload_size);
-    /* channel map */
+    /* channel map: codestream component i -> file channel cs2f[i] */
     PUT_BE16((uint16_t)ctx->num_channels);
     for (i = 0; i < ctx->num_channels; ++i) {
-        PUT_BE16(i);  /* identity map */
+        PUT_BE16(cs2f[i]);
     }
     return EXR_SUCCESS;
 }
@@ -6924,6 +7301,8 @@ exr_result exr_jph_compress(const exr_codec_ctx *ctx, const uint8_t *block,
     exr_result rc;
     int mc_trans = 0;
     uint32_t kmax = 20u;
+    uint16_t *cs2f = NULL;
+    int is_rgb = 0;
 
     if (out_data) *out_data = NULL;
     if (out_size) *out_size = 0;
@@ -6952,15 +7331,23 @@ exr_result exr_jph_compress(const exr_codec_ctx *ctx, const uint8_t *block,
         }
     }
 
+    /* Detect an RGB triplet and build the codestream->file channel map so the
+     * reversible color transform decorrelates R/G/B (codestream comps 0,1,2)
+     * even when other channels (e.g. alpha) are present. */
+    cs2f = (uint16_t *)exr_malloc(a, (size_t)ctx->num_channels * sizeof(uint16_t));
+    if (!cs2f) return EXR_ERROR_OUT_OF_MEMORY;
+    is_rgb = jph_make_channel_map(ctx, cs2f);
+    mc_trans = is_rgb;
+
     jph_ensure_uvlc_enc_tables();
     jph_ensure_vlc_enc_tables();
 
     /* Allocate component planes */
     {
         uint16_t nch = (uint16_t)ctx->num_channels;
-        if (nch == 0) return EXR_ERROR_INVALID_ARGUMENT;
+        if (nch == 0) { rc = EXR_ERROR_INVALID_ARGUMENT; goto done; }
         planes = (JphPlane64 *)exr_calloc(a, nch, sizeof(*planes));
-        if (!planes) return EXR_ERROR_OUT_OF_MEMORY;
+        if (!planes) { rc = EXR_ERROR_OUT_OF_MEMORY; goto done; }
         for (c = 0; c < nch; ++c) {
             const exr_channel *ch = &ctx->channels[c];
             int xs = ch->x_sampling > 0 ? ch->x_sampling : 1;
@@ -6972,8 +7359,14 @@ exr_result exr_jph_compress(const exr_codec_ctx *ctx, const uint8_t *block,
             planes[c].h = (uint32_t)ph;
             if (exr_mul_ovf(pw, ph, &pw)) { rc = EXR_ERROR_CORRUPT; goto done; }
             if (exr_mul_ovf(pw, sizeof(int64_t), &pw)) { rc = EXR_ERROR_CORRUPT; goto done; }
-            planes[c].data = (int64_t *)exr_calloc(a, pw ? pw : 1u, 1);
-            if (!planes[c].data) { rc = EXR_ERROR_OUT_OF_MEMORY; goto done; }
+            /* The all-HALF path (kmax==20) carries coefficients in int32 planes
+             * (i32_planes) and never touches this int64 buffer, so allocating it
+             * here is pure waste (a large calloc+free per chunk). Only the int64
+             * path (FLOAT/UINT, kmax>20) needs planes[c].data. */
+            if (kmax != 20u) {
+                planes[c].data = (int64_t *)exr_calloc(a, pw ? pw : 1u, 1);
+                if (!planes[c].data) { rc = EXR_ERROR_OUT_OF_MEMORY; goto done; }
+            }
         }
     }
 
@@ -7003,6 +7396,9 @@ exr_result exr_jph_compress(const exr_codec_ctx *ctx, const uint8_t *block,
         /* Deinterleave to int32 (HALF pixels: 2 bytes -> sign-extend to int32) */
         {
             size_t off = 0;
+#if defined(EXR_X86)
+            int use_avx2 = (exr_cpu_caps() & EXR_SIMD_AVX2) != 0;
+#endif
             for (uint32_t y = 0; y < (uint32_t)ctx->num_lines; ++y) {
                 int32_t yy = ctx->y + (int32_t)y;
                 for (c = 0; c < nch; ++c) {
@@ -7022,7 +7418,7 @@ exr_result exr_jph_compress(const exr_codec_ctx *ctx, const uint8_t *block,
                         {
                             size_t processed;
                             size_t dst_off = (size_t)row_i * planes[c].w;
-                            if (exr_cpu_caps() & EXR_SIMD_AVX2)
+                            if (use_avx2)
                                 processed = jph_deinterleave_half_avx2(
                                     block + off, i32_planes[c] + dst_off,
                                     (size_t)nx);
@@ -7050,29 +7446,29 @@ exr_result exr_jph_compress(const exr_codec_ctx *ctx, const uint8_t *block,
             if (off != n) { rc = EXR_ERROR_CORRUPT; goto done; }
         }
 
-        /* Forward NLT type-3 int32 */
+        /* Forward NLT type-3 int32. NLT type-3 is an involution, so the forward
+         * pass is the same operation as the inverse apply; reuse the vectorized
+         * apply kernel (~v-biasm1, identical to -v-bias for the 16-bit input and
+         * dispatched to AVX2/SSE2) instead of the scalar per-element loop. */
         for (c = 0; c < nch; ++c) {
             size_t count = (size_t)planes[c].w * planes[c].h;
-            rc = exr_jph_forward_nlt_type3_i32(i32_planes[c], count, 16u);
+            rc = exr_jph_apply_nlt_type3_i32(i32_planes[c], count, 16u);
             if (rc != EXR_SUCCESS) {
                 for (uint32_t j = 0; j < nch; ++j) exr_free(a, i32_planes[j]);
                 exr_free(a, i32_planes); goto done;
             }
         }
 
-        /* Forward RCT int32 (for exactly 3-channel all-HALF parts) */
-        if (nch == 3) {
-            size_t c0 = (size_t)planes[0].w * planes[0].h;
-            size_t c1 = (size_t)planes[1].w * planes[1].h;
-            size_t c2 = (size_t)planes[2].w * planes[2].h;
-            if (c0 == c1 && c0 == c2) {
-                rc = exr_jph_forward_rct_i32(i32_planes[0], i32_planes[1],
-                                             i32_planes[2], c0);
-                if (rc != EXR_SUCCESS) {
-                    for (uint32_t j = 0; j < nch; ++j) exr_free(a, i32_planes[j]);
-                    exr_free(a, i32_planes); goto done;
-                }
-                mc_trans = 1;
+        /* Forward RCT int32 on the detected R/G/B planes (codestream comps
+         * 0,1,2 = file channels cs2f[0..2]). */
+        if (is_rgb) {
+            uint16_t ri = cs2f[0], gi = cs2f[1], bi = cs2f[2];
+            size_t cr = (size_t)planes[ri].w * planes[ri].h;
+            rc = exr_jph_forward_rct_i32(i32_planes[ri], i32_planes[gi],
+                                         i32_planes[bi], cr);
+            if (rc != EXR_SUCCESS) {
+                for (uint32_t j = 0; j < nch; ++j) exr_free(a, i32_planes[j]);
+                exr_free(a, i32_planes); goto done;
             }
         }
 
@@ -7111,21 +7507,15 @@ exr_result exr_jph_compress(const exr_codec_ctx *ctx, const uint8_t *block,
             }
         }
 
-        if (ctx->num_channels == 3) {
-            const exr_channel *ch0 = &ctx->channels[0];
-            const exr_channel *ch1 = &ctx->channels[1];
-            const exr_channel *ch2 = &ctx->channels[2];
-            size_t count0 = (size_t)planes[0].w * planes[0].h;
-            size_t count1 = (size_t)planes[1].w * planes[1].h;
-            size_t count2 = (size_t)planes[2].w * planes[2].h;
-            if (ch0->pixel_type == ch1->pixel_type &&
-                ch0->pixel_type == ch2->pixel_type &&
-                count0 == count1 && count0 == count2) {
-                rc = jph_forward_rct_i64(planes[0].data, planes[1].data,
-                                         planes[2].data, count0);
-                if (rc != EXR_SUCCESS) goto done;
-                mc_trans = 1;
-            }
+        /* Forward RCT int64 on the detected R/G/B planes (codestream comps
+         * 0,1,2 = file channels cs2f[0..2]); matching type/sampling is
+         * guaranteed by the RGB detection. */
+        if (is_rgb) {
+            uint16_t ri = cs2f[0], gi = cs2f[1], bi = cs2f[2];
+            size_t count0 = (size_t)planes[ri].w * planes[ri].h;
+            rc = jph_forward_rct_i64(planes[ri].data, planes[gi].data,
+                                     planes[bi].data, count0);
+            if (rc != EXR_SUCCESS) goto done;
         }
 
         for (c = 0; c < (uint32_t)ctx->num_channels; ++c) {
@@ -7148,15 +7538,15 @@ exr_result exr_jph_compress(const exr_codec_ctx *ctx, const uint8_t *block,
         uint8_t *p = buf, *end = buf + buf_cap;
         uint8_t *psot_ptr = NULL;
 
-        rc = jph_write_ht_header(&p, end, ctx);
+        rc = jph_write_ht_header(&p, end, ctx, cs2f);
         if (rc != EXR_SUCCESS) goto done;
 
-        rc = jph_write_codestream(&p, end, ctx, mc_trans, kmax, &psot_ptr);
+        rc = jph_write_codestream(&p, end, ctx, mc_trans, kmax, &psot_ptr, cs2f);
         if (rc != EXR_SUCCESS) goto done;
 
         for (uint32_t res = 0u; res <= 5u; ++res) {
             for (c = 0; c < (uint32_t)ctx->num_channels; ++c) {
-                JphPlane64 *pl = &planes[c];
+                JphPlane64 *pl = &planes[cs2f[c]];
                 JphSize cs;
                 cs.w = pl->w;
                 cs.h = pl->h;
@@ -7198,6 +7588,7 @@ done:
         *out_size = 0;
     }
     exr_free(a, buf);
+    exr_free(a, cs2f);
     if (planes) {
         for (c = 0; c < (uint32_t)ctx->num_channels; ++c) {
             exr_free(a, planes[c].data);

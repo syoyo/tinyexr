@@ -18,9 +18,10 @@ multi-threaded.
 ## TL;DR
 
 - **Single-thread decode:** TinyEXR wins big on the cheap codecs — **3.4×** on
-  uncompressed and **2.5×** on RLE. On the DEFLATE family / PIZ / HTJ2K, OpenEXR
-  leads (≈1.2× ZIP, ≈1.8× PXR24, ≈2–2.7× ZIPS/PIZ/HTJ2K) because of its
-  **libdeflate** backend and tuned PIZ/JPH.
+  uncompressed and **2.5×** on RLE. On the DEFLATE family / PIZ, OpenEXR leads
+  (≈1.2× ZIP, ≈1.8× PXR24, ≈2–2.7× ZIPS/PIZ) because of its **libdeflate**
+  backend and tuned PIZ. HTJ2K is now closer: TinyEXR is ~77% of the latest
+  same-machine OpenJPH baseline (≈1.30× decode gap).
 - **Single-thread encode:** TinyEXR ties or wins on RLE/PIZ/B44; OpenEXR is
   ≈1.5× on ZIP/ZIPS, ≈1.8× on PXR24, and ≈3× on HTJ2K.
 - **libdeflate (opt-in):** with the same backend, TinyEXR **matches or beats**
@@ -38,9 +39,9 @@ multi-threaded.
 `none` (uncompressed) is off the chart on purpose: **TinyEXR 2699 vs OpenEXR
 789 MP/s** (~3.4×) — no thread-pool or framebuffer-copy overhead. TinyEXR also
 leads **RLE** (230 vs 93, ~2.5×). On the compressed codecs OpenEXR is ahead —
-ZIP ~1.2×, PXR24 ~1.8×, ZIPS ~2.1×, PIZ ~2.7×, HTJ2K ~2–2.4× — dominated by its
-libdeflate inflate (and tuned PIZ/JPH). A TinyEXR ZIP-decode profile is ~95 %
-inflate; the predictor and de-interleave passes are already vectorized.
+ZIP ~1.2×, PXR24 ~1.8×, ZIPS ~2.1×, PIZ ~2.7×, and HTJ2K ~1.30× — dominated by
+its libdeflate inflate (and tuned PIZ/JPH). A TinyEXR ZIP-decode profile is
+~95 % inflate; the predictor and de-interleave passes are already vectorized.
 
 ### Encode
 
@@ -60,15 +61,14 @@ materially (~16% faster all-HALF decode on the dev box). The same
 column-parallel restructuring was then applied to the **forward** 5/3 (encode,
 byte-identical output, ~7% faster htj2k256 encode) and to the **int64** inverse
 5/3 used for float/32-bit channels (AVX2 1D + vertical, ~18% faster float
-decode). The cleanup-pass entropy decoder's MagSgn reconstruction was then
-restructured to a per-quad reader (`JphQuadMs`): one bit-window read per quad
-(lazy upper half) replacing four per-sample stream fetches, ~4% faster all-HALF
-decode. The remaining gap is OpenJPH's fully-SIMD entropy coder (cleanup VLC/MEL
-+ MagSgn + per-sample mag-bit encode), which dominates both profiles; SIMD-ing
-the decode MagSgn step beyond the scalar per-quad reader was tried (1- and
-2-quad AVX2 kernels) and did not pay off on this hardware — the per-quad scalar
-path already minimizes the bit-I/O the SIMD would amortize (see
-`doc/htj2k-entropy-simd-scope.md`).
+decode). The cleanup-pass entropy decoder was then moved to an OpenJPH-style
+rolling forward MagSgn reader, with AVX2 cleanup kernels for the common 16/32-bit
+HT block paths; decode workspace reuse removed repeated scratch allocation; and
+the all-HALF inverse 5/3 postprocess gained a bounded AVX2 vertical pass. On
+this Zen2 machine, current `make bench` reports HTJ2K256 decode at **45.2 MP/s**
+and HTJ2K32 decode at **43.1 MP/s**; the latest available same-machine OpenJPH
+baseline is **58.8 / 56.2 MP/s**, so TinyEXR is ~77% of OpenJPH throughput
+(~1.30× gap). The remaining gap is mostly entropy/block decode latency.
 
 ### Compression size
 
@@ -129,8 +129,13 @@ In-tree default:
 | piz   | 23.6 | 25.4 | 24.6 | 67.5 |
 | pxr24 | 9.2  | 16.4 | 48.0 | 88.0 |
 | b44   | 31.7 | 34.8 | 145  | 178 |
-| htj2k256 | 11.0 | 33.2 | 24.0 | 59.6 |
-| htj2k32  | 11.6 | 31.6 | 27.1 | 55.0 |
+| htj2k256 | 13.9 | 33.2* | 45.2 | 58.8* |
+| htj2k32  | 16.6 | 31.6* | 43.1 | 56.2* |
+
+`*` HTJ2K OpenEXR/OpenJPH values are the latest available same-machine baseline;
+that OpenJPH build has the default x86 SIMD path enabled and selects its AVX2
+codeblock decoder on this CPU. The TinyEXR HTJ2K values above were re-measured
+on 2026-06-13 with `make bench`.
 
 `LIBDEFLATE=1` (deflate family): zip 15.3/14.0/80.8/58.8, zips 16.2/14.8/61.4/46.4,
 pxr24 16.4/15.8/83.6/83.8 (tx enc / exr enc / tx dec / exr dec).

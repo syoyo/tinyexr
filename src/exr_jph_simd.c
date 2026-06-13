@@ -1652,6 +1652,271 @@ void jph_encode_prepare_quad_from32_sse2(const int32_t *plane_data,
 }
 
 /* ---------------------------------------------------------------------------
+ * AVX2 8-quad sample preparation (proc_pixel) for the HT encode block.
+ *
+ * Computes the per-sample bookkeeping for 8 quads (16 columns x 2 rows) at once,
+ * mirroring jph_prep_quad_body_sse2's exact math (shift-based sign-magnitude
+ * build, (t+t)>>p significance, float-CLZ exponent, s = (val-2)+sign) but laid
+ * out 8-wide. The caller passes a zero-padded contiguous tile so out-of-bounds
+ * columns/rows become insignificant (val==0 -> e_q=0, s=0, rho bit clear),
+ * exactly matching the scalar prepare's zeroing of edge samples.
+ *
+ *   tile[ 0..15] = row y    columns 0..15  (codeblock-relative)
+ *   tile[16..31] = row y+1  columns 0..15
+ *
+ * Outputs (sample-major: index [k*8 + q] is sample k of quad q, q=0..7):
+ *   eq[32]     e_q exponents          rho8[8]   per-quad significance bits
+ *   sarr[32]   s (v_n) values         eqmax8[8] per-quad max exponent
+ * and folds the maximum |coefficient| into *max_val. Sample order within a quad
+ * is [s0,s1,s2,s3] = (col,row),(col,row+1),(col+1,row),(col+1,row+1).
+ * ------------------------------------------------------------------------- */
+EXR_TARGET("avx2")
+void jph_enc_proc_pixel_8q_avx2(const int32_t *tile, uint32_t shift, uint32_t p,
+                                int32_t eq[32], int32_t sarr[32],
+                                int32_t rho8[8], int32_t eqmax8[8],
+                                uint64_t *max_val) {
+    const __m256i zero = _mm256_setzero_si256();
+    const __m256i one = _mm256_set1_epi32(1);
+    const __m256i signbit = _mm256_set1_epi32((int)0x80000000u);
+    const __m256i notone = _mm256_set1_epi32((int)~1u);
+    __m256i src[4], _eq[4], _s[4], _rho[4], absmax = zero;
+    int i;
+
+    /* src[0]=row0 cols0-7, src[1]=row1 cols0-7, src[2]=row0 cols8-15,
+     * src[3]=row1 cols8-15 (matches OpenJPH proc_pixel src_vec layout). */
+    src[0] = _mm256_loadu_si256((const __m256i *)(tile + 0));
+    src[2] = _mm256_loadu_si256((const __m256i *)(tile + 8));
+    src[1] = _mm256_loadu_si256((const __m256i *)(tile + 16));
+    src[3] = _mm256_loadu_si256((const __m256i *)(tile + 24));
+
+    for (i = 0; i < 4; ++i) {
+        __m256i sm = _mm256_srai_epi32(src[i], 31);          /* -1 if neg */
+        __m256i av = _mm256_sub_epi32(_mm256_xor_si256(src[i], sm), sm);
+        __m256i s32 = _mm256_and_si256(sm, signbit);
+        __m256i t = _mm256_or_si256(s32, _mm256_sllv_epi32(av,
+                        _mm256_set1_epi32((int)shift)));
+        __m256i val = _mm256_and_si256(
+            _mm256_srlv_epi32(_mm256_add_epi32(t, t),
+                              _mm256_set1_epi32((int)p)), notone);
+        __m256i nz = _mm256_xor_si256(_mm256_cmpeq_epi32(val, zero),
+                                      _mm256_set1_epi32(-1));
+        __m256i vm1 = _mm256_sub_epi32(val, one);
+        /* e_q = exponent(float(val-1)) - 126, zeroed where val==0 */
+        __m256i fb = _mm256_castps_si256(_mm256_cvtepi32_ps(vm1));
+        __m256i e = _mm256_sub_epi32(_mm256_srli_epi32(fb, 23),
+                                     _mm256_set1_epi32(126));
+        _eq[i] = _mm256_and_si256(e, nz);
+        /* s = (val-2) + signbit, zeroed where val==0 */
+        __m256i sv = _mm256_add_epi32(_mm256_sub_epi32(vm1, one),
+                                      _mm256_srli_epi32(s32, 31));
+        _s[i] = _mm256_and_si256(sv, nz);
+        _rho[i] = _mm256_srli_epi32(nz, 31);                 /* 1 where nz */
+        absmax = _mm256_max_epi32(absmax, av);
+    }
+
+    /* Quad-deinterleave: reorder even/odd columns into quad-major lanes so each
+     * output vector holds one sample position across quads 0..7. */
+    {
+        const __m256i idx = _mm256_set_epi32(7, 5, 3, 1, 6, 4, 2, 0);
+        __m256i t1, t2;
+        for (i = 0; i < 2; ++i) {
+            t1 = _mm256_permutevar8x32_epi32(_eq[0 + i], idx);
+            t2 = _mm256_permutevar8x32_epi32(_eq[2 + i], idx);
+            _mm256_storeu_si256((__m256i *)(eq + (0 + i) * 8),
+                                _mm256_permute2x128_si256(t1, t2, 0x20));
+            _mm256_storeu_si256((__m256i *)(eq + (2 + i) * 8),
+                                _mm256_permute2x128_si256(t1, t2, 0x31));
+            t1 = _mm256_permutevar8x32_epi32(_s[0 + i], idx);
+            t2 = _mm256_permutevar8x32_epi32(_s[2 + i], idx);
+            _mm256_storeu_si256((__m256i *)(sarr + (0 + i) * 8),
+                                _mm256_permute2x128_si256(t1, t2, 0x20));
+            _mm256_storeu_si256((__m256i *)(sarr + (2 + i) * 8),
+                                _mm256_permute2x128_si256(t1, t2, 0x31));
+            t1 = _mm256_permutevar8x32_epi32(_rho[0 + i], idx);
+            t2 = _mm256_permutevar8x32_epi32(_rho[2 + i], idx);
+            _rho[0 + i] = _mm256_permute2x128_si256(t1, t2, 0x20);
+            _rho[2 + i] = _mm256_permute2x128_si256(t1, t2, 0x31);
+        }
+    }
+
+    /* rho = bit0 | bit1<<1 | bit2<<2 | bit3<<3 ; e_qmax = max over 4 samples */
+    {
+        __m256i r = _mm256_or_si256(
+            _mm256_or_si256(_rho[0], _mm256_slli_epi32(_rho[1], 1)),
+            _mm256_or_si256(_mm256_slli_epi32(_rho[2], 2),
+                            _mm256_slli_epi32(_rho[3], 3)));
+        __m256i em = _mm256_loadu_si256((const __m256i *)(eq + 0));
+        em = _mm256_max_epi32(em, _mm256_loadu_si256((const __m256i *)(eq + 8)));
+        em = _mm256_max_epi32(em, _mm256_loadu_si256((const __m256i *)(eq + 16)));
+        em = _mm256_max_epi32(em, _mm256_loadu_si256((const __m256i *)(eq + 24)));
+        _mm256_storeu_si256((__m256i *)rho8, r);
+        _mm256_storeu_si256((__m256i *)eqmax8, em);
+    }
+
+    /* Fold horizontal max of |coefficient| into *max_val. */
+    if (max_val) {
+        __m128i m = _mm_max_epi32(_mm256_castsi256_si128(absmax),
+                                  _mm256_extracti128_si256(absmax, 1));
+        m = _mm_max_epi32(m, _mm_shuffle_epi32(m, _MM_SHUFFLE(1, 0, 3, 2)));
+        m = _mm_max_epi32(m, _mm_shuffle_epi32(m, _MM_SHUFFLE(2, 3, 0, 1)));
+        uint64_t mv = (uint64_t)(uint32_t)_mm_cvtsi128_si32(m);
+        if (mv > *max_val) *max_val = mv;
+    }
+}
+
+/* ---------------------------------------------------------------------------
+ * AVX2 8-quad context kernel for the HT encode block (Stage B).
+ *
+ * Vectorizes the per-quad bookkeeping that the scalar encoder threads serially:
+ * the significance context c_q, the eps mask, kappa, U_q and u_q, plus the E
+ * (e_line) and CX (cx_line) line-state updates. Computes all 8 quads of one
+ * 16-column group at once and returns cq8/eps8/uq8/Uq8 for the serial emit.
+ *
+ * Line-state is a FLAT int32 array indexed by quad position (xv*8 + q): the
+ * cross-vector neighbour reads needed by max_e and proc_cq2 are plain unaligned
+ * loads (e_line[xv*8+1], cx_line[xv*8+1/+2]); only the single-element carries
+ * (prev_cq/prev_e/prev_cx) cross the boundary. Read-before-write is preserved:
+ * max_e and the proc_cq2 cx terms read the previous row's line-state before
+ * update_lep / update_lcxp overwrite it.  initial!=0 selects the y=0 row
+ * (proc_cq1, kappa==1); otherwise the main rows (proc_cq2, max_e-derived kappa).
+ * Bit-identical to the scalar bookkeeping. e_line/cx_line must be zero-init at
+ * codeblock start and sized for n_vec*8 + a few slack lanes.
+ * ------------------------------------------------------------------------- */
+EXR_TARGET("avx2")
+void jph_enc_context_8q_avx2(int initial, const int32_t eq[32],
+                             const int32_t rho8[8], const int32_t eqmax8[8],
+                             int32_t *e_line, int32_t *cx_line, uint32_t xv,
+                             int *prev_cq, int *prev_e, int *prev_cx,
+                             int32_t cq8[8], int32_t eps8[8], int32_t uq8[8],
+                             int32_t Uq8[8]) {
+    const __m256i zero = _mm256_setzero_si256();
+    const __m256i one = _mm256_set1_epi32(1);
+    const __m256i left_shift = _mm256_set_epi32(6, 5, 4, 3, 2, 1, 0, 7);
+    __m256i rho = _mm256_loadu_si256((const __m256i *)rho8);
+    __m256i eqmax = _mm256_loadu_si256((const __m256i *)eqmax8);
+    __m256i e1 = _mm256_loadu_si256((const __m256i *)(eq + 8));   /* sample 1 */
+    __m256i e3 = _mm256_loadu_si256((const __m256i *)(eq + 24));  /* sample 3 */
+    __m256i kappa, Uq, uq, tmp;
+
+    /* kappa: 1 in the initial row; else (rho not a single bit) ? max(max_e,1):1,
+     * max_e = max(e_line[P], e_line[P+1]) - 1 read from the previous row. */
+    if (initial) {
+        kappa = one;
+    } else {
+        __m256i v0 = _mm256_loadu_si256((const __m256i *)(e_line + xv * 8));
+        __m256i v1 = _mm256_loadu_si256((const __m256i *)(e_line + xv * 8 + 1));
+        __m256i maxe = _mm256_sub_epi32(_mm256_max_epi32(v0, v1), one);
+        __m256i t = _mm256_and_si256(rho, _mm256_sub_epi32(rho, one));
+        __m256i ispow2 = _mm256_cmpeq_epi32(t, zero);
+        __m256i kelse = _mm256_max_epi32(maxe, one);
+        kappa = _mm256_or_si256(_mm256_and_si256(ispow2, one),
+                                _mm256_andnot_si256(ispow2, kelse));
+    }
+    Uq = _mm256_max_epi32(kappa, eqmax);
+    uq = _mm256_sub_epi32(Uq, kappa);
+
+    /* eps = (u_q>0) ? OR_k (e_q[k]==e_qmax)<<k : 0 */
+    {
+        __m256i uqmask = _mm256_cmpgt_epi32(uq, zero);
+        __m256i e0 = _mm256_loadu_si256((const __m256i *)(eq + 0));
+        __m256i e2 = _mm256_loadu_si256((const __m256i *)(eq + 16));
+        __m256i eps = _mm256_srli_epi32(_mm256_cmpeq_epi32(e0, eqmax), 31);
+        eps = _mm256_or_si256(eps, _mm256_slli_epi32(
+            _mm256_srli_epi32(_mm256_cmpeq_epi32(e1, eqmax), 31), 1));
+        eps = _mm256_or_si256(eps, _mm256_slli_epi32(
+            _mm256_srli_epi32(_mm256_cmpeq_epi32(e2, eqmax), 31), 2));
+        eps = _mm256_or_si256(eps, _mm256_slli_epi32(
+            _mm256_srli_epi32(_mm256_cmpeq_epi32(e3, eqmax), 31), 3));
+        eps = _mm256_and_si256(eps, uqmask);
+        _mm256_storeu_si256((__m256i *)eps8, eps);
+    }
+
+    /* c_q: initial -> (rho>>1)|(rho&1) of the previous quad; main -> proc_cq2.
+     * tmp[q] is the value that becomes c_q for quad q+1; shift right one lane and
+     * insert prev_cq for lane 0. proc_cq2 reads the previous row's cx_line. */
+    if (initial) {
+        tmp = _mm256_or_si256(_mm256_srli_epi32(rho, 1),
+                              _mm256_and_si256(rho, one));
+    } else {
+        __m256i c1 = _mm256_loadu_si256((const __m256i *)(cx_line + xv * 8 + 1));
+        __m256i c2 = _mm256_loadu_si256((const __m256i *)(cx_line + xv * 8 + 2));
+        __m256i base = _mm256_add_epi32(c1, _mm256_slli_epi32(c2, 2));
+        __m256i rt = _mm256_or_si256(
+            _mm256_srli_epi32(_mm256_and_si256(rho, _mm256_set1_epi32(4)), 1),
+            _mm256_srli_epi32(_mm256_and_si256(rho, _mm256_set1_epi32(8)), 2));
+        tmp = _mm256_or_si256(base, rt);
+    }
+    {
+        __m256i cq = _mm256_permutevar8x32_epi32(tmp, left_shift);
+        cq = _mm256_insert_epi32(cq, *prev_cq, 0);
+        *prev_cq = _mm256_extract_epi32(tmp, 7);
+        _mm256_storeu_si256((__m256i *)cq8, cq);
+    }
+
+    /* update_lep: e_line[P] = max(e_q1[q], e_q3[q-1]); carry prev_e = e_q3[7]. */
+    {
+        __m256i e3s = _mm256_permutevar8x32_epi32(e3, left_shift);
+        e3s = _mm256_insert_epi32(e3s, *prev_e, 0);
+        *prev_e = _mm256_extract_epi32(e3, 7);
+        _mm256_storeu_si256((__m256i *)(e_line + xv * 8),
+                            _mm256_max_epi32(e1, e3s));
+    }
+    /* update_lcxp: cx_line[P] = ((rho[q-1]&8)>>3) | ((rho[q]&2)>>1). */
+    {
+        __m256i rs = _mm256_permutevar8x32_epi32(rho, left_shift);
+        rs = _mm256_insert_epi32(rs, *prev_cx, 0);
+        *prev_cx = _mm256_extract_epi32(rho, 7);
+        __m256i a = _mm256_srli_epi32(_mm256_and_si256(rs, _mm256_set1_epi32(8)),
+                                      3);
+        __m256i b = _mm256_srli_epi32(_mm256_and_si256(rho, _mm256_set1_epi32(2)),
+                                      1);
+        _mm256_storeu_si256((__m256i *)(cx_line + xv * 8),
+                            _mm256_or_si256(a, b));
+    }
+
+    _mm256_storeu_si256((__m256i *)uq8, uq);
+    _mm256_storeu_si256((__m256i *)Uq8, Uq);
+}
+
+/* ---------------------------------------------------------------------------
+ * AVX2 8-quad MagSgn-prep kernel (Stage C).
+ *
+ * Vectorizes the magnitude-emit preparation that dominated the scalar encoder
+ * (jph_encode_mag_bits_quad): for all 8 quads computes, per sample k (bit 1<<k),
+ *   m_n = (rho & bit) ? U_q - ((tuple & bit) ? 1 : 0) : 0
+ *   cwd_s = s & ((1u << m_n) - 1)
+ * leaving only the (inherently serial) pair assembly + MagSgn bit-append to the
+ * caller. Sample-major output: index [k*8 + q]. i32 path only (m_n <= kmax <= 30,
+ * so the per-sample mask fits 32 bits). tuple8 holds the raw VLC table entries
+ * (low 4 bits select the magnitude bits). Bit-identical to the scalar prep. */
+EXR_TARGET("avx2")
+void jph_enc_ms_prep_8q_avx2(const int32_t rho8[8], const int32_t Uq8[8],
+                             const int32_t tuple8[8], const int32_t sarr[32],
+                             int32_t m_n[32], int32_t cwd_s[32]) {
+    const __m256i one = _mm256_set1_epi32(1);
+    __m256i rho = _mm256_loadu_si256((const __m256i *)rho8);
+    __m256i Uq = _mm256_loadu_si256((const __m256i *)Uq8);
+    __m256i tuple = _mm256_loadu_si256((const __m256i *)tuple8);
+    int k;
+    for (k = 0; k < 4; ++k) {
+        __m256i bit = _mm256_set1_epi32(1 << k);
+        /* tb = (tuple & bit) ? 1 : 0 ; m = U_q - tb, then masked to 0 where the
+         * rho bit is clear. */
+        __m256i tb = _mm256_srli_epi32(_mm256_and_si256(tuple, bit), k);
+        __m256i m = _mm256_sub_epi32(Uq, tb);
+        __m256i notset = _mm256_cmpeq_epi32(_mm256_and_si256(rho, bit),
+                                            _mm256_setzero_si256());
+        m = _mm256_andnot_si256(notset, m);     /* keep m where rho bit set */
+        _mm256_storeu_si256((__m256i *)(m_n + k * 8), m);
+        /* cwd_s = s & ((1<<m) - 1); m in [0,30] so the shift is well defined. */
+        __m256i mask = _mm256_sub_epi32(_mm256_sllv_epi32(one, m), one);
+        __m256i s = _mm256_loadu_si256((const __m256i *)(sarr + k * 8));
+        _mm256_storeu_si256((__m256i *)(cwd_s + k * 8),
+                            _mm256_and_si256(s, mask));
+    }
+}
+
+/* ---------------------------------------------------------------------------
  * Half-pixel deinterleave: bytes → int32 (SSE2/AVX2).
  * Reads `count` little-endian uint16 half-pixel values from `src` and writes
  * int32 to `dst`. The count is rounded down to the SIMD width.
@@ -1700,6 +1965,119 @@ size_t jph_deinterleave_half_avx2(const uint8_t *src, int32_t *dst,
     for (; i < count; ++i)
         dst[i] = (int32_t)(int16_t)((uint16_t)src[i * 2u] |
                                      ((uint16_t)src[i * 2u + 1u] << 8));
+    return i;
+}
+
+/* ---------------------------------------------------------------------------
+ * Reversible Color Transform (RCT), int32 (all-HALF path).
+ *
+ * Inverse  (Y,Db,Dr) -> (R,G,B): G = Y - ((Db+Dr) >> 2); R = Dr+G; B = Db+G.
+ * Forward  (R,G,B) -> (Y,Db,Dr): Y = (R+B+2G) >> 2; Db = B-G; Dr = R-G.
+ * (>> is the arithmetic floor-shift, matching jph_floor_div_pow2(.,2).)
+ *
+ * The scalar reference carries int64 intermediates and reports CORRUPT if any
+ * output exceeds int32. These kernels process only vectors whose three inputs
+ * are all within +/-2^28: there every intermediate and output fits int32 (so
+ * the int32 SIMD math is exact AND the scalar path would not report CORRUPT),
+ * making the SIMD result byte-identical. On the first out-of-range vector the
+ * kernel stops and returns the count already processed; the caller finishes
+ * (and performs the precise CORRUPT check) with the scalar loop. The arrays are
+ * transformed in place, so the scalar tail reads still-original samples.
+ * ------------------------------------------------------------------------- */
+#define JPH_RCT_SAFE_BITS 28
+
+EXR_TARGET("avx2")
+size_t jph_inverse_rct_i32_avx2(int32_t *c0, int32_t *c1, int32_t *c2,
+                                size_t count) {
+    size_t i = 0, n8 = count & ~(size_t)7;
+    const __m256i lim = _mm256_set1_epi32((1 << JPH_RCT_SAFE_BITS) - 1);
+    for (; i < n8; i += 8) {
+        __m256i y = _mm256_loadu_si256((const __m256i *)(c0 + i));
+        __m256i db = _mm256_loadu_si256((const __m256i *)(c1 + i));
+        __m256i dr = _mm256_loadu_si256((const __m256i *)(c2 + i));
+        __m256i amax = _mm256_max_epi32(_mm256_abs_epi32(y),
+                       _mm256_max_epi32(_mm256_abs_epi32(db),
+                                        _mm256_abs_epi32(dr)));
+        if (_mm256_movemask_epi8(_mm256_cmpgt_epi32(amax, lim))) break;
+        __m256i g = _mm256_sub_epi32(y, _mm256_srai_epi32(
+                                            _mm256_add_epi32(db, dr), 2));
+        _mm256_storeu_si256((__m256i *)(c0 + i), _mm256_add_epi32(dr, g));
+        _mm256_storeu_si256((__m256i *)(c1 + i), g);
+        _mm256_storeu_si256((__m256i *)(c2 + i), _mm256_add_epi32(db, g));
+    }
+    return i;
+}
+
+EXR_TARGET("avx2")
+size_t jph_forward_rct_i32_avx2(int32_t *c0, int32_t *c1, int32_t *c2,
+                                size_t count) {
+    size_t i = 0, n8 = count & ~(size_t)7;
+    const __m256i lim = _mm256_set1_epi32((1 << JPH_RCT_SAFE_BITS) - 1);
+    for (; i < n8; i += 8) {
+        __m256i r = _mm256_loadu_si256((const __m256i *)(c0 + i));
+        __m256i g = _mm256_loadu_si256((const __m256i *)(c1 + i));
+        __m256i b = _mm256_loadu_si256((const __m256i *)(c2 + i));
+        __m256i amax = _mm256_max_epi32(_mm256_abs_epi32(r),
+                       _mm256_max_epi32(_mm256_abs_epi32(g),
+                                        _mm256_abs_epi32(b)));
+        if (_mm256_movemask_epi8(_mm256_cmpgt_epi32(amax, lim))) break;
+        __m256i t = _mm256_add_epi32(_mm256_add_epi32(r, b),
+                                     _mm256_slli_epi32(g, 1));
+        _mm256_storeu_si256((__m256i *)(c0 + i), _mm256_srai_epi32(t, 2));
+        _mm256_storeu_si256((__m256i *)(c1 + i), _mm256_sub_epi32(b, g));
+        _mm256_storeu_si256((__m256i *)(c2 + i), _mm256_sub_epi32(r, g));
+    }
+    return i;
+}
+
+/* SSE2 lacks _mm_abs_epi32; compute abs via (x ^ (x>>31)) - (x>>31). */
+EXR_TARGET("sse2")
+static inline __m128i jph_abs_epi32_sse2(__m128i v) {
+    __m128i m = _mm_srai_epi32(v, 31);
+    return _mm_sub_epi32(_mm_xor_si128(v, m), m);
+}
+
+EXR_TARGET("sse2")
+size_t jph_inverse_rct_i32_sse2(int32_t *c0, int32_t *c1, int32_t *c2,
+                                size_t count) {
+    size_t i = 0, n4 = count & ~(size_t)3;
+    const __m128i lim = _mm_set1_epi32((1 << JPH_RCT_SAFE_BITS) - 1);
+    for (; i < n4; i += 4) {
+        __m128i y = _mm_loadu_si128((const __m128i *)(c0 + i));
+        __m128i db = _mm_loadu_si128((const __m128i *)(c1 + i));
+        __m128i dr = _mm_loadu_si128((const __m128i *)(c2 + i));
+        if (_mm_movemask_epi8(_mm_or_si128(_mm_or_si128(
+                _mm_cmpgt_epi32(jph_abs_epi32_sse2(y), lim),
+                _mm_cmpgt_epi32(jph_abs_epi32_sse2(db), lim)),
+                _mm_cmpgt_epi32(jph_abs_epi32_sse2(dr), lim))))
+            break;
+        __m128i g = _mm_sub_epi32(y, _mm_srai_epi32(_mm_add_epi32(db, dr), 2));
+        _mm_storeu_si128((__m128i *)(c0 + i), _mm_add_epi32(dr, g));
+        _mm_storeu_si128((__m128i *)(c1 + i), g);
+        _mm_storeu_si128((__m128i *)(c2 + i), _mm_add_epi32(db, g));
+    }
+    return i;
+}
+
+EXR_TARGET("sse2")
+size_t jph_forward_rct_i32_sse2(int32_t *c0, int32_t *c1, int32_t *c2,
+                                size_t count) {
+    size_t i = 0, n4 = count & ~(size_t)3;
+    const __m128i lim = _mm_set1_epi32((1 << JPH_RCT_SAFE_BITS) - 1);
+    for (; i < n4; i += 4) {
+        __m128i r = _mm_loadu_si128((const __m128i *)(c0 + i));
+        __m128i g = _mm_loadu_si128((const __m128i *)(c1 + i));
+        __m128i b = _mm_loadu_si128((const __m128i *)(c2 + i));
+        if (_mm_movemask_epi8(_mm_or_si128(_mm_or_si128(
+                _mm_cmpgt_epi32(jph_abs_epi32_sse2(r), lim),
+                _mm_cmpgt_epi32(jph_abs_epi32_sse2(g), lim)),
+                _mm_cmpgt_epi32(jph_abs_epi32_sse2(b), lim))))
+            break;
+        __m128i t = _mm_add_epi32(_mm_add_epi32(r, b), _mm_slli_epi32(g, 1));
+        _mm_storeu_si128((__m128i *)(c0 + i), _mm_srai_epi32(t, 2));
+        _mm_storeu_si128((__m128i *)(c1 + i), _mm_sub_epi32(b, g));
+        _mm_storeu_si128((__m128i *)(c2 + i), _mm_sub_epi32(r, g));
+    }
     return i;
 }
 

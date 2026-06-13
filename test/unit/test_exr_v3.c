@@ -2069,6 +2069,42 @@ static void stream_memory_bound_check(const char *path, exr_compression comp,
     free(buf);
 }
 
+/* Scalar floor-division by 2^s, mirroring jph_floor_div_pow2 exactly (truncating
+ * divide with a floor correction for negatives) — independent of the platform's
+ * signed-shift behaviour, so it is a faithful reference for the RCT kernels. */
+static int64_t rct_fdp2(int64_t v, unsigned s) {
+    int64_t d = (int64_t)1 << s;
+    return v >= 0 ? v / d : -(((-v) + d - 1) / d);
+}
+/* Pure-scalar inverse RCT (Y/Cb/Cr -> R/G/B) mirroring exr_jph_inverse_rct_i32's
+ * tail: transform the in-range prefix, then stop on the first int32 overflow
+ * (leaving the remaining elements untouched) and report failure. */
+static int rct_inv_scalar(int32_t *c0, int32_t *c1, int32_t *c2, size_t n) {
+    size_t i;
+    for (i = 0; i < n; ++i) {
+        int64_t g = (int64_t)c0[i] - rct_fdp2((int64_t)c1[i] + c2[i], 2);
+        int64_t r = (int64_t)c2[i] + g, b = (int64_t)c1[i] + g;
+        if (r < INT32_MIN || r > INT32_MAX || g < INT32_MIN || g > INT32_MAX ||
+            b < INT32_MIN || b > INT32_MAX)
+            return 0;
+        c0[i] = (int32_t)r; c1[i] = (int32_t)g; c2[i] = (int32_t)b;
+    }
+    return 1;
+}
+/* Pure-scalar forward RCT (R/G/B -> Y/Cb/Cr) mirroring exr_jph_forward_rct_i32. */
+static int rct_fwd_scalar(int32_t *c0, int32_t *c1, int32_t *c2, size_t n) {
+    size_t i;
+    for (i = 0; i < n; ++i) {
+        int64_t y = rct_fdp2((int64_t)c0[i] + c2[i] + 2 * (int64_t)c1[i], 2);
+        int64_t db = (int64_t)c2[i] - c1[i], dr = (int64_t)c0[i] - c1[i];
+        if (y < INT32_MIN || y > INT32_MAX || db < INT32_MIN || db > INT32_MAX ||
+            dr < INT32_MIN || dr > INT32_MAX)
+            return 0;
+        c0[i] = (int32_t)y; c1[i] = (int32_t)db; c2[i] = (int32_t)dr;
+    }
+    return 1;
+}
+
 /* JPH SIMD kernels must be bit-identical to their scalar reference. */
 static void jph_simd_check(void) {
 #if defined(EXR_X86)
@@ -2240,6 +2276,92 @@ static void jph_simd_check(void) {
         }
         CHECK(qok, "JPH HT encode prepare quad SIMD == scalar");
         if (qok) printf("  ok: JPH HT encode prepare quad SIMD == scalar\n");
+    }
+
+    /* inverse + forward RCT: the SSE2/AVX2 kernels transform a bounded in-range
+     * prefix and the scalar tail finishes the rest; the full path (kernel prefix
+     * + scalar tail, mirroring the production wiring) must be byte-identical to a
+     * pure-scalar run AND agree on success/failure — including the out-of-range
+     * fallback boundary, where a sparse huge spike forces a mid-array kernel stop
+     * and the tail then hits (or clears) the real int32 overflow. */
+    {
+        const size_t rn = 1031; /* not a multiple of 8 -> exercises SIMD tail */
+        int32_t *src0 = (int32_t *)malloc(rn * sizeof(int32_t));
+        int32_t *src1 = (int32_t *)malloc(rn * sizeof(int32_t));
+        int32_t *src2 = (int32_t *)malloc(rn * sizeof(int32_t));
+        int32_t *e0 = (int32_t *)malloc(rn * sizeof(int32_t)); /* reference */
+        int32_t *e1 = (int32_t *)malloc(rn * sizeof(int32_t));
+        int32_t *e2 = (int32_t *)malloc(rn * sizeof(int32_t));
+        int32_t *g0 = (int32_t *)malloc(rn * sizeof(int32_t)); /* one tier's path */
+        int32_t *g1 = (int32_t *)malloc(rn * sizeof(int32_t));
+        int32_t *g2 = (int32_t *)malloc(rn * sizeof(int32_t));
+        int rok = 1;
+        uint32_t rng = 0x09c7e5a1u;
+        if (src0 && src1 && src2 && e0 && e1 && e2 && g0 && g1 && g2) {
+            long it;
+            for (it = 0; it < 2000 && rok; ++it) {
+                int huge = (it % 7) == 0; /* sometimes inject overflow spikes */
+                int dir, tier;
+                size_t i;
+                for (i = 0; i < rn; ++i) {
+                    int32_t v;
+                    rng = rng * 1664525u + 1013904223u;
+                    v = (int32_t)rng >> (int)(12 + (rng % 14u)); src0[i] = v;
+                    rng = rng * 1664525u + 1013904223u;
+                    v = (int32_t)rng >> (int)(12 + (rng % 14u)); src1[i] = v;
+                    rng = rng * 1664525u + 1013904223u;
+                    v = (int32_t)rng >> (int)(12 + (rng % 14u)); src2[i] = v;
+                    if (huge) { /* ~1/64 full-range spike -> mid-array fallback */
+                        rng = rng * 1664525u + 1013904223u;
+                        if ((rng % 64u) == 0u) {
+                            src0[i] = (int32_t)rng;
+                            rng = rng * 1664525u + 1013904223u;
+                            src1[i] = (int32_t)rng;
+                            rng = rng * 1664525u + 1013904223u;
+                            src2[i] = (int32_t)rng;
+                        }
+                    }
+                }
+                for (dir = 0; dir < 2 && rok; ++dir) {
+                    int rref;
+                    memcpy(e0, src0, rn * sizeof(int32_t));
+                    memcpy(e1, src1, rn * sizeof(int32_t));
+                    memcpy(e2, src2, rn * sizeof(int32_t));
+                    rref = dir ? rct_fwd_scalar(e0, e1, e2, rn)
+                               : rct_inv_scalar(e0, e1, e2, rn);
+                    for (tier = 1; tier <= 2 && rok; ++tier) {
+                        size_t m = 0;
+                        int rgot;
+                        if (tier == 1 && !(caps & EXR_SIMD_SSE2)) continue;
+                        if (tier == 2 && !(caps & EXR_SIMD_AVX2)) continue;
+                        memcpy(g0, src0, rn * sizeof(int32_t));
+                        memcpy(g1, src1, rn * sizeof(int32_t));
+                        memcpy(g2, src2, rn * sizeof(int32_t));
+                        if (dir == 0)
+                            m = (tier == 2)
+                                    ? jph_inverse_rct_i32_avx2(g0, g1, g2, rn)
+                                    : jph_inverse_rct_i32_sse2(g0, g1, g2, rn);
+                        else
+                            m = (tier == 2)
+                                    ? jph_forward_rct_i32_avx2(g0, g1, g2, rn)
+                                    : jph_forward_rct_i32_sse2(g0, g1, g2, rn);
+                        /* scalar tail over [m, rn) mirrors the production wiring */
+                        rgot = dir ? rct_fwd_scalar(g0 + m, g1 + m, g2 + m, rn - m)
+                                   : rct_inv_scalar(g0 + m, g1 + m, g2 + m, rn - m);
+                        if (rgot != rref) rok = 0;
+                        if (memcmp(e0, g0, rn * sizeof(int32_t)) ||
+                            memcmp(e1, g1, rn * sizeof(int32_t)) ||
+                            memcmp(e2, g2, rn * sizeof(int32_t)))
+                            rok = 0;
+                    }
+                }
+            }
+            CHECK(rok, "JPH inverse/forward RCT SIMD == scalar");
+            if (rok) printf("  ok: JPH inverse/forward RCT SIMD == scalar\n");
+        }
+        free(src0); free(src1); free(src2);
+        free(e0); free(e1); free(e2);
+        free(g0); free(g1); free(g2);
     }
 
     /* inverse 5/3 1D wavelet: AVX2 must match scalar (output AND return code,

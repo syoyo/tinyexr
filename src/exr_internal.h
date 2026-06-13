@@ -316,12 +316,49 @@ void jph_encode_prepare_quad_from32_sse2(const int32_t *plane_data,
                                           uint32_t shift, uint32_t p,
                                           int *rho, int *e_qmax, int e_q[4],
                                           uint64_t s[4], uint64_t *max_val);
+/* AVX2 8-quad (16x2) sample preparation: computes e_q/s/rho/e_qmax for 8 quads
+ * from a zero-padded contiguous tile (row0[16] then row1[16]), folding the max
+ * |coefficient| into *max_val. Outputs are sample-major: index [k*8+q] is sample
+ * k (0..3) of quad q (0..7). Bit-identical to jph_prep_quad_body_sse2 per quad. */
+void jph_enc_proc_pixel_8q_avx2(const int32_t *tile, uint32_t shift, uint32_t p,
+                                int32_t eq[32], int32_t sarr[32],
+                                int32_t rho8[8], int32_t eqmax8[8],
+                                uint64_t *max_val);
+/* AVX2 8-quad context kernel: vectorizes the per-quad bookkeeping (c_q, eps,
+ * kappa, U_q, u_q) and the E/CX line-state updates, bit-identical to the scalar
+ * encoder. e_line/cx_line are a flat int32 line-state indexed by quad position
+ * (zero-init at codeblock start, sized n_vec*8 + slack). initial!=0 -> y=0 row
+ * (proc_cq1, kappa==1); else main rows (proc_cq2, max_e-derived kappa). */
+void jph_enc_context_8q_avx2(int initial, const int32_t eq[32],
+                             const int32_t rho8[8], const int32_t eqmax8[8],
+                             int32_t *e_line, int32_t *cx_line, uint32_t xv,
+                             int *prev_cq, int *prev_e, int *prev_cx,
+                             int32_t cq8[8], int32_t eps8[8], int32_t uq8[8],
+                             int32_t Uq8[8]);
+/* AVX2 8-quad MagSgn-prep kernel: computes m_n and the masked magnitude
+ * cwd_s = s & ((1<<m_n)-1) for all 8 quads (sample-major [k*8+q]); the serial
+ * pair assembly + bit-append stay with the caller. i32 path only (m_n<=30). */
+void jph_enc_ms_prep_8q_avx2(const int32_t rho8[8], const int32_t Uq8[8],
+                             const int32_t tuple8[8], const int32_t sarr[32],
+                             int32_t m_n[32], int32_t cwd_s[32]);
 /* Half-pixel deinterleave: bytes → int32 (SSE2/AVX2), sign-extending LE uint16.
  * Returns the number of pixels processed by the SIMD loop. */
 size_t jph_deinterleave_half_sse2(const uint8_t *src, int32_t *dst,
                                    size_t count);
 size_t jph_deinterleave_half_avx2(const uint8_t *src, int32_t *dst,
                                    size_t count);
+/* Reversible Color Transform (int32, all-HALF path). Each processes vectors
+ * whose three inputs are all within +/-2^28 (where the int32 math is exact and
+ * cannot overflow int32), in place; returns the element count processed. The
+ * caller finishes the remainder (and the precise int32 overflow check) scalar. */
+size_t jph_inverse_rct_i32_sse2(int32_t *c0, int32_t *c1, int32_t *c2,
+                                size_t count);
+size_t jph_inverse_rct_i32_avx2(int32_t *c0, int32_t *c1, int32_t *c2,
+                                size_t count);
+size_t jph_forward_rct_i32_sse2(int32_t *c0, int32_t *c1, int32_t *c2,
+                                size_t count);
+size_t jph_forward_rct_i32_avx2(int32_t *c0, int32_t *c1, int32_t *c2,
+                                size_t count);
 #endif
 
 /* Scalar references for the JPH NLT type-3 involution (v<0 -> -v-bias). */

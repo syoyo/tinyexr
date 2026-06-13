@@ -105,20 +105,23 @@ de-interleave; HTJ2K256 the JPH dispatch):
 
 | path                  | scalar | SSE2/SSE4.1 | AVX2 |
 |-----------------------|-------:|------------:|-----:|
-| ZIP decode (MP/s)     | 36.6   | **47.5** (SSE2) | 47.6 |
-| HTJ2K256 encode (MP/s)| 7.5    | 7.5 (SSE4.1)| 7.6  |
-| HTJ2K256 decode (MP/s)| 13.7   | 14.3 (SSE4.1)| **19.6** |
+| ZIP decode (MP/s)     | 37.6   | **48.8** (SSE2) | 49.1 |
+| HTJ2K256 encode (MP/s)| 11.0   | 11.5 (SSE4.1)| 14.0 |
+| HTJ2K256 decode (MP/s)| 19.6   | 20.5 (SSE4.1)| **45.9** |
+
+Current HTJ2K codec throughput from the same Zen2 run: `htj2k256` 13.9 encode /
+45.2 decode MP/s, `htj2k32` 16.6 encode / 43.1 decode MP/s.
 
 SIMD micro-kernels (throughput, speedup vs scalar):
 
 | kernel                  | scalar    | SSE2/SSE4.1     | AVX2            |
 |-------------------------|----------:|----------------:|----------------:|
-| byte de-interleave      | 3.04 GB/s | 7.93 GB/s (2.61×, SSE2) | 6.81 GB/s (2.24×) |
-| half→float              | 3.21 GB/s | —               | 14.70 GB/s (4.57×, F16C) |
-| fpnge PSHUFB lookup     | 0.50 GB/s | 2.71 GB/s (5.44×, SSE4.1) | 3.21 GB/s (6.44×) |
-| JPH `nlt3` (NLT type-3) | 305.6 M/s | 1204.3 M/s (3.94×, SSE2) | 1190.4 M/s (3.89×) |
-| JPH `pack` (i32→half)   | 1617.6 M/s | 2197.6 M/s (1.36×, SSE4.1) | 2415.8 M/s (1.49×) |
-| predictor decode (delta)| 1.35 GB/s | **4.78 GB/s** (3.54×, SSE2) | (SSE2) |
+| byte de-interleave      | 3.05 GB/s | 7.70 GB/s (2.52×, SSE2) | 6.74 GB/s (2.21×) |
+| half→float              | 3.29 GB/s | —               | 12.11 GB/s (3.68×, F16C) |
+| fpnge PSHUFB lookup     | 0.51 GB/s | 2.37 GB/s (4.65×, SSE4.1) | 2.55 GB/s (5.00×) |
+| JPH `nlt3` (NLT type-3) | 303.4 M/s | 916.1 M/s (3.02×, SSE2) | 1008.6 M/s (3.32×) |
+| JPH `pack` (i32→half)   | 1498.1 M/s | 2119.9 M/s (1.42×, SSE4.1) | 2348.8 M/s (1.57×) |
+| predictor decode (delta)| 1.35 GB/s | **4.47 GB/s** (3.31×, SSE2) | (SSE2) |
 
 The predictor (delta) decode is a serial byte prefix-sum; the SSE2 version
 builds the prefix sum with log₂(16) lane shifts and carries the running total
@@ -126,7 +129,8 @@ across chunks (~3.5× over scalar). It runs on every ZIP/ZIPS/PXR24/RLE decode.
 
 De-interleave and `pack` are memory-bandwidth-bound, so AVX2 does not beat SSE
 much. The compute-bound kernels — F16C half→float, PSHUFB Huffman lookup, JPH
-NLT — get the biggest wins, and AVX2 lifts HTJ2K256 decode by ~1.4×.
+NLT — get the biggest wins, and the newer HTJ2K cleanup / inverse-5/3 paths lift
+HTJ2K256 decode by ~2.3× over scalar on this machine.
 
 ### ARM64 / NEON results (`make bench`)
 
