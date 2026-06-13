@@ -7433,11 +7433,11 @@ exr_result exr_jph_compress(const exr_codec_ctx *ctx, const uint8_t *block,
                     if (row_i < 0) { rc = EXR_ERROR_CORRUPT; goto done; }
                     {
                         size_t needed = (size_t)nx * 2u;
+                        size_t dst_off = (size_t)row_i * planes[c].w;
                         if (off + needed > n) { rc = EXR_ERROR_CORRUPT; goto done; }
 #if defined(EXR_X86)
                         {
                             size_t processed;
-                            size_t dst_off = (size_t)row_i * planes[c].w;
                             if (use_avx2)
                                 processed = jph_deinterleave_half_avx2(
                                     block + off, i32_planes[c] + dst_off,
@@ -7452,7 +7452,7 @@ exr_result exr_jph_compress(const exr_codec_ctx *ctx, const uint8_t *block,
 #else
                         {
                             for (uint32_t x = 0; x < (uint32_t)nx; ++x) {
-                                size_t idx = (size_t)row_i * planes[c].w + x;
+                                size_t idx = dst_off + x;
                                 int16_t v = (int16_t)(block[off] |
                                             ((uint16_t)block[off+1] << 8));
                                 i32_planes[c][idx] = (int32_t)v;
@@ -7460,23 +7460,22 @@ exr_result exr_jph_compress(const exr_codec_ctx *ctx, const uint8_t *block,
                             }
                         }
 #endif
+                        /* Fused forward NLT type-3 on the row just written, while
+                         * it is still hot in cache (avoids a separate cold full-
+                         * plane pass). NLT type-3 is an involution, so forward ==
+                         * the vectorized inverse apply (~v-biasm1 == -v-bias for
+                         * 16-bit input). Byte-identical to the prior per-plane
+                         * pass. */
+                        rc = exr_jph_apply_nlt_type3_i32(i32_planes[c] + dst_off,
+                                                         (size_t)nx, 16u);
+                        if (rc != EXR_SUCCESS) {
+                            for (uint32_t j = 0; j < nch; ++j) exr_free(a, i32_planes[j]);
+                            exr_free(a, i32_planes); goto done;
+                        }
                     }
                 }
             }
             if (off != n) { rc = EXR_ERROR_CORRUPT; goto done; }
-        }
-
-        /* Forward NLT type-3 int32. NLT type-3 is an involution, so the forward
-         * pass is the same operation as the inverse apply; reuse the vectorized
-         * apply kernel (~v-biasm1, identical to -v-bias for the 16-bit input and
-         * dispatched to AVX2/SSE2) instead of the scalar per-element loop. */
-        for (c = 0; c < nch; ++c) {
-            size_t count = (size_t)planes[c].w * planes[c].h;
-            rc = exr_jph_apply_nlt_type3_i32(i32_planes[c], count, 16u);
-            if (rc != EXR_SUCCESS) {
-                for (uint32_t j = 0; j < nch; ++j) exr_free(a, i32_planes[j]);
-                exr_free(a, i32_planes); goto done;
-            }
         }
 
         /* Forward RCT int32 on the detected R/G/B planes (codestream comps
