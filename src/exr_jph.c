@@ -5389,52 +5389,64 @@ static void JPH_MAYBE_UNUSED jph_ensure_vlc_enc_tables(void) {
  * HT codeblock encoder (port of OpenJPH ojph_encode_codeblock32).
  * ------------------------------------------------------------------------- */
 
-/* Forward-growing MagSgn bit writer */
+/* Forward-growing MagSgn bit writer with a 64-bit accumulator and bulk byte
+ * flush. Bits accumulate LSB-first in `acc`; bytes are sliced off `max_bits`
+ * wide (8 normally, 7 right after a 0xFF byte — the JPEG2000 bit-stuffing that
+ * keeps the segment free of false marker codes). The byte-exact equivalent of
+ * the previous byte-at-a-time writer; the only change is that runs of
+ * non-0xFF bytes are emitted in one store via a SWAR 0xFF scan. */
 typedef struct {
     uint8_t *buf; uint32_t pos; uint32_t cap;
-    uint32_t tmp; int used_bits; int max_bits;
+    uint64_t acc;     /* pending bits, LSB-first (bits >= nbits are 0) */
+    int nbits;        /* valid bits in acc (< max_bits once flushed) */
+    int max_bits;     /* width of the next byte: 8, or 7 right after a 0xFF */
 } JphMsEnc;
 
 static inline void jph_ms_init(JphMsEnc *m, uint8_t *buf, uint32_t cap) {
     m->buf = buf; m->pos = 0; m->cap = cap;
-    m->tmp = 0; m->used_bits = 0; m->max_bits = 8;
+    m->acc = 0; m->nbits = 0; m->max_bits = 8;
 }
 
-static inline exr_result jph_ms_encode(JphMsEnc *m, uint32_t cwd, int cwd_len) {
-    int avail;
-    if (cwd_len <= 0) return EXR_SUCCESS;
-    if (m->pos >= m->cap) return EXR_ERROR_CORRUPT;
-    avail = m->max_bits - m->used_bits;
-
-    /* Fast path: all bits fit in the current accumulator slot.
-     * This is the overwhelmingly common case for 1-7 bit codewords. */
-    if (cwd_len <= avail) {
-        m->tmp |= (cwd & ((1u << cwd_len) - 1u)) << m->used_bits;
-        m->used_bits += cwd_len;
-        if (m->used_bits >= m->max_bits) {
-            uint32_t tmp = (uint32_t)m->tmp;
-            m->buf[m->pos++] = (uint8_t)tmp;
-            m->max_bits = (tmp == 0xFFu) ? 7 : 8;
-            m->tmp = 0;
-            m->used_bits = 0;
-        }
-        return EXR_SUCCESS;
-    }
-
-    /* Full loop: cwd_len exceeds available bits, split into chunks */
-    while (cwd_len > 0) {
-        if (m->pos >= m->cap) return EXR_ERROR_CORRUPT;
-        int t = (avail < cwd_len) ? avail : cwd_len;
-        m->tmp |= (cwd & ((1U << t) - 1u)) << m->used_bits;
-        m->used_bits += t;
-        cwd >>= t; cwd_len -= t;
-        if (m->used_bits >= m->max_bits) {
-            uint32_t tmp = (uint32_t)m->tmp;
-            m->buf[m->pos++] = (uint8_t)tmp;
-            m->max_bits = (tmp == 0xFFu) ? 7 : 8;
-            m->tmp = 0;
-            m->used_bits = 0;
-            avail = m->max_bits;  /* fresh accumulator */
+/* Emit every complete byte currently in acc. When max_bits==8 (no pending
+ * stuffing) the low bytes of acc ARE the output bytes, so a run with no 0xFF is
+ * stored in bulk; the first 0xFF byte ends the run and forces the next byte to
+ * 7-bit (which can never be 0xFF, re-aligning the accumulator to 8-bit). */
+static inline exr_result jph_ms_flush(JphMsEnc *m) {
+    while (m->nbits >= m->max_bits) {
+        if (m->max_bits == 8) {
+            int avail = m->nbits >> 3;            /* complete bytes available */
+            uint64_t t = m->acc ^ ~UINT64_C(0);   /* 0xFF bytes -> 0x00 */
+            uint64_t hasff;
+            int run;
+            if (avail < 8)
+                t |= ~((UINT64_C(1) << (avail * 8)) - 1u); /* ignore high bytes */
+            hasff = (t - 0x0101010101010101ULL) & ~t & 0x8080808080808080ULL;
+            if (hasff == 0) {
+                run = avail;                       /* no 0xFF in the run */
+            } else {
+                run = 1;                           /* find first 0xFF byte */
+                while (((m->acc >> ((run - 1) * 8)) & 0xFFu) != 0xFFu) ++run;
+            }
+            if (m->pos + (uint32_t)run > m->cap) return EXR_ERROR_CORRUPT;
+            if (m->pos + 8u <= m->cap) {
+                uint64_t le = m->acc;              /* little-endian == stream order */
+                memcpy(m->buf + m->pos, &le, 8);   /* slack bytes get overwritten */
+            } else {
+                int i;
+                for (i = 0; i < run; ++i)
+                    m->buf[m->pos + i] = (uint8_t)(m->acc >> (i * 8));
+            }
+            m->pos += (uint32_t)run;
+            m->acc = (run >= 8) ? 0 : (m->acc >> (run * 8)); /* >>64 is UB */
+            m->nbits -= run * 8;
+            if (hasff != 0) m->max_bits = 7;       /* last emitted byte was 0xFF */
+        } else {
+            uint8_t byte;                          /* max_bits == 7 */
+            if (m->pos >= m->cap) return EXR_ERROR_CORRUPT;
+            byte = (uint8_t)(m->acc & 0x7Fu);
+            m->buf[m->pos++] = byte;
+            m->acc >>= 7; m->nbits -= 7;
+            m->max_bits = 8;                       /* a 7-bit byte is never 0xFF */
         }
     }
     return EXR_SUCCESS;
@@ -5442,24 +5454,32 @@ static inline exr_result jph_ms_encode(JphMsEnc *m, uint32_t cwd, int cwd_len) {
 
 static inline exr_result jph_ms_encode64(JphMsEnc *m, uint64_t cwd, int cwd_len) {
     while (cwd_len > 0) {
-        int chunk = cwd_len > 31 ? 31 : cwd_len;
-        exr_result rc =
-            jph_ms_encode(m, (uint32_t)(cwd & ((UINT64_C(1) << chunk) - 1u)),
-                          chunk);
+        int take = 64 - m->nbits;
+        exr_result rc;
+        if (take > cwd_len) take = cwd_len;
+        m->acc |= (cwd & (take < 64 ? ((UINT64_C(1) << take) - 1u) : ~UINT64_C(0)))
+                  << m->nbits;
+        m->nbits += take;
+        cwd >>= take; cwd_len -= take;
+        rc = jph_ms_flush(m);
         if (rc != EXR_SUCCESS) return rc;
-        cwd >>= chunk;
-        cwd_len -= chunk;
     }
     return EXR_SUCCESS;
 }
 
+static inline exr_result jph_ms_encode(JphMsEnc *m, uint32_t cwd, int cwd_len) {
+    if (cwd_len <= 0) return EXR_SUCCESS;
+    return jph_ms_encode64(m, cwd, cwd_len);
+}
+
 static inline exr_result jph_ms_terminate(JphMsEnc *m) {
-    if (m->used_bits) {
-        int t = m->max_bits - m->used_bits;
-        m->tmp |= (0xFF & ((1U << t) - 1)) << m->used_bits;
-        if (m->tmp != 0xFFu) {
+    if (m->nbits) {
+        int t = m->max_bits - m->nbits;
+        uint32_t tmp = (uint32_t)(m->acc & 0xFFu);
+        tmp |= (0xFFu & ((1U << t) - 1u)) << m->nbits;
+        if (tmp != 0xFFu) {
             if (m->pos >= m->cap) return EXR_ERROR_CORRUPT;
-            m->buf[m->pos++] = (uint8_t)m->tmp;
+            m->buf[m->pos++] = (uint8_t)tmp;
         }
     } else if (m->max_bits == 7 && m->pos > 0u) {
         m->pos--;
