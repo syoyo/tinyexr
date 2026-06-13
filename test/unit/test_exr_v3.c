@@ -2176,6 +2176,72 @@ static void jph_simd_check(void) {
         free(ref); free(got); free(src);
     }
 
+    /* HT encode quad prepare: the SSE2 int64- and int32-plane kernels must
+     * compute rho / e_q / e_qmax / s / max_val identically to the scalar
+     * reference for every quad (full int32 range, incl. zero/insignificant
+     * lanes and the float-CLZ boundaries). This guards the prepare against the
+     * horizontal-max and sample-order regressions found during development. */
+    {
+        uint32_t rng = 0x5eed1234u;
+        int qok = 1;
+        long it;
+        for (it = 0; it < 100000 && qok; ++it) {
+            int32_t q[4]; /* [s0,s1,s2,s3] = (x,y),(x,y+1),(x+1,y),(x+1,y+1) */
+            int kk;
+            uint32_t shift, p;
+            int rrho = 0, reqmax = 0, req[4] = {0,0,0,0};
+            uint64_t rs[4] = {0,0,0,0}, rmax = 0;
+            for (kk = 0; kk < 4; ++kk) {
+                int32_t v;
+                rng = rng * 1664525u + 1013904223u;
+                v = (int32_t)((rng >> 9) & 0x3ffffu); /* HALF coeff range */
+                rng = rng * 1664525u + 1013904223u;
+                if (rng & 0x10000u) v = -v;
+                if ((rng & 0xe0000u) == 0u) v = 0; /* exercise insignificant */
+                q[kk] = v;
+            }
+            shift = 11u; p = 11u; /* kmax=20 (all-HALF) */
+            /* scalar reference (mirrors jph_encode_block_prepare_sample32) */
+            for (kk = 0; kk < 4; ++kk) {
+                int bit = 1 << kk;
+                int32_t sv = q[kk];
+                uint32_t mag = (uint32_t)(sv < 0 ? -(int64_t)sv : sv);
+                uint32_t t, val;
+                if ((uint64_t)mag > rmax) rmax = mag;
+                t = (sv < 0 ? 0x80000000u : 0u) | (mag << shift);
+                val = t + t; val >>= p; val &= ~1u;
+                if (val) {
+                    int eq = 32 - (val - 1 ? __builtin_clz(val - 1) : 32);
+                    rrho |= bit; req[kk] = eq;
+                    if (eq > reqmax) reqmax = eq;
+                    rs[kk] = (uint64_t)((val - 2) + (t >> 31));
+                } else { req[kk] = 0; rs[kk] = 0; }
+            }
+            /* int32-plane (from32) kernel: plane[y*2+x] = (0,0)=s0,(1,0)=s2,
+             * (0,1)=s1,(1,1)=s3. */
+            if (caps & EXR_SIMD_SSE2) {
+                int32_t pl32[4] = { q[0], q[2], q[1], q[3] };
+                int64_t pl64[4] = { q[0], q[2], q[1], q[3] };
+                int e0 = 0, em0 = 0, eq0[4] = {0,0,0,0};
+                uint64_t s0[4] = {0,0,0,0}, mx0 = 0;
+                int e1 = 0, em1 = 0, eq1[4] = {0,0,0,0};
+                uint64_t s1[4] = {0,0,0,0}, mx1 = 0;
+                jph_encode_prepare_quad_from32_sse2(pl32, 2,0,0,0,0, shift, p,
+                                                    &e0, &em0, eq0, s0, &mx0);
+                jph_encode_prepare_quad_i32_sse2(pl64, 2,0,0,0,0, shift, p,
+                                                 &e1, &em1, eq1, s1, &mx1);
+                if (e0 != rrho || em0 != reqmax || mx0 != rmax) qok = 0;
+                if (e1 != rrho || em1 != reqmax) qok = 0;
+                for (kk = 0; kk < 4; ++kk) {
+                    if (eq0[kk] != req[kk] || s0[kk] != rs[kk]) qok = 0;
+                    if (eq1[kk] != req[kk] || s1[kk] != rs[kk]) qok = 0;
+                }
+            }
+        }
+        CHECK(qok, "JPH HT encode prepare quad SIMD == scalar");
+        if (qok) printf("  ok: JPH HT encode prepare quad SIMD == scalar\n");
+    }
+
     /* inverse 5/3 1D wavelet: AVX2 must match scalar (output AND return code,
      * incl. CORRUPT on out-of-int32 reconstruction) over many sizes/magnitudes. */
     if (caps & EXR_SIMD_AVX2) {

@@ -212,6 +212,14 @@ exr_result jph_inverse_53_i32_avx2(const int32_t *low, size_t low_count,
                                    const int32_t *high, size_t high_count,
                                    int32_t *out, size_t out_count,
                                    int64_t *ev, int64_t *od);
+/* Internal bounded all-HALF decode variants: same math as the checked kernels,
+ * but omit int32 overflow tests when the JPH profile's component precision keeps
+ * reconstructed coefficients safely inside int32. */
+exr_result jph_inverse_53_i32_bounded_avx2(const int32_t *low, size_t low_count,
+                                           const int32_t *high,
+                                           size_t high_count, int32_t *out,
+                                           size_t out_count, int64_t *ev,
+                                           int64_t *od);
 /* Forward reversible 5/3 1D lifting (int64), bit-identical to the scalar
  * jph_forward_53_i64; ev/od are caller scratch of >= ceil(n/2) int64 each. */
 exr_result jph_forward_53_i64_avx2(const int64_t *src, size_t n, int64_t *low,
@@ -223,6 +231,9 @@ exr_result jph_forward_53_i64_avx2(const int64_t *src, size_t n, int64_t *low,
 exr_result jph_inverse_53_vert_i32_avx2(const int32_t *temp, size_t rw,
                                         size_t lh, size_t hh,
                                         int32_t *data, size_t width);
+exr_result jph_inverse_53_vert_i32_bounded_avx2(const int32_t *temp, size_t rw,
+                                               size_t lh, size_t hh,
+                                               int32_t *data, size_t width);
 /* AVX2 inverse reversible 5/3 1D (int64, float/32-bit decode path); bit-identical
  * to jph_inverse_53_i64. ev/od are caller scratch (>= low/high counts). */
 exr_result jph_inverse_53_i64_avx2(const int64_t *low, size_t low_count,
@@ -242,12 +253,75 @@ void jph_extract_signmag_i32_to_i64_avx2(int64_t *out, const uint32_t *buf,
  * coefficients directly, avoiding an int64 codeblock round trip. */
 void jph_extract_signmag_i32_to_i32_avx2(int32_t *out, const uint32_t *buf,
                                          size_t n, unsigned shift);
+/* AVX2 cleanup-pass MagSgn reconstruction for the <=15-bit path. Decodes four
+ * HT quads (8 columns x 2 rows) from interleaved scratch inf/u words and writes
+ * OpenJPH sign-magnitude codeblock words. bottom_vn receives left/right bottom
+ * v_n values for each quad: L0,R0,L1,R1,L2,R2,L3,R3. */
+void jph_decode_four_quad16_avx2(uint32_t *row0, uint32_t *row1,
+                                 uint16_t bottom_vn[8],
+                                 const uint16_t *inf_uq,
+                                 const uint32_t u_q[4],
+                                 const uint64_t *bits, uint64_t real_bits,
+                                 uint64_t *cursor, unsigned p16);
+typedef struct {
+    const uint8_t *data;
+    uint8_t tmp[48];
+    uint32_t bits;
+    uint32_t unstuff;
+    int size;
+} JphFrwdAvx2;
+void jph_frwd_init_ff_avx2(JphFrwdAvx2 *msp, const uint8_t *data, int size);
+void jph_decode_four_quad16_frwd_avx2(uint32_t *row0, uint32_t *row1,
+                                      uint16_t bottom_vn[8],
+                                      const uint16_t *inf_uq,
+                                      const uint32_t u_q[4],
+                                      JphFrwdAvx2 *magsgn,
+                                      unsigned p16);
+void jph_decode_two_quad32_frwd_avx2(uint32_t *row0, uint32_t *row1,
+                                     uint32_t bottom_vn[4],
+                                     const uint16_t *inf_uq,
+                                     const uint32_t u_q[2],
+                                     JphFrwdAvx2 *magsgn, unsigned p);
 /* AVX2 vertical (column) forward reversible 5/3 (int64), row-wise across all
  * columns; bit-identical to jph_forward_53_vert_i64. data's interleaved rows
  * (stride width) -> subband layout in temp (stride rw): lh low-rows, hh high. */
 exr_result jph_forward_53_vert_i64_avx2(const int64_t *data, size_t width,
                                         size_t rw, size_t lh, size_t hh,
                                         int64_t *temp);
+/* AVX2 forward reversible 5/3 1D lifting (int32, int64 intermediates, 8 lanes).
+ * Bit-identical to jph_forward_53_i32; deinterleaves int32 src -> int64 ev/od
+ * scratch, then predict (high) and update (low) with floor-div-by-2^s. Outputs
+ * int32 low/high arrays. ev/od are caller scratch of >= ceil(n/2) int64 each. */
+exr_result jph_forward_53_i32_avx2(const int32_t *src, size_t n, int32_t *low,
+                                    size_t low_count, int32_t *high,
+                                    size_t high_count, int64_t *ev, int64_t *od);
+/* AVX2 vertical (column) forward reversible 5/3 (int32), row-wise across all
+ * columns; bit-identical to jph_forward_53_vert_i32. data's interleaved rows
+ * (stride width) -> subband layout in temp (stride rw): lh low-rows, hh high. */
+exr_result jph_forward_53_vert_i32_avx2(const int32_t *data, size_t width,
+                                        size_t rw, size_t lh, size_t hh,
+                                        int32_t *temp);
+/* SSE2 int32 quad sample preparation for the HT encode block.
+ * Processes 4 samples of a 2x2 quad at once via SSE2 load/shuffle/compute.
+ * Updates rho (|=), e_qmax (max), e_q[4], s[4], and max_val in one pass. */
+void jph_encode_prepare_quad_i32_sse2(const int64_t *plane_data,
+                                       uint32_t stride, uint32_t x0,
+                                       uint32_t y0, uint32_t x, uint32_t y,
+                                       uint32_t shift, uint32_t p,
+                                       int *rho, int *e_qmax, int e_q[4],
+                                       uint64_t s[4], uint64_t *max_val);
+void jph_encode_prepare_quad_from32_sse2(const int32_t *plane_data,
+                                          uint32_t stride, uint32_t x0,
+                                          uint32_t y0, uint32_t x, uint32_t y,
+                                          uint32_t shift, uint32_t p,
+                                          int *rho, int *e_qmax, int e_q[4],
+                                          uint64_t s[4], uint64_t *max_val);
+/* Half-pixel deinterleave: bytes → int32 (SSE2/AVX2), sign-extending LE uint16.
+ * Returns the number of pixels processed by the SIMD loop. */
+size_t jph_deinterleave_half_sse2(const uint8_t *src, int32_t *dst,
+                                   size_t count);
+size_t jph_deinterleave_half_avx2(const uint8_t *src, int32_t *dst,
+                                   size_t count);
 #endif
 
 /* Scalar references for the JPH NLT type-3 involution (v<0 -> -v-bias). */
