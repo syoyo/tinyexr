@@ -5385,6 +5385,11 @@ static void JPH_MAYBE_UNUSED jph_ensure_vlc_enc_tables(void) {
     }
 }
 
+void exr_jph_warmup_encode_tables(void) {
+    jph_ensure_uvlc_enc_tables();
+    jph_ensure_vlc_enc_tables();
+}
+
 /* ----------------------------------------------------------------------------
  * HT codeblock encoder (port of OpenJPH ojph_encode_codeblock32).
  * ------------------------------------------------------------------------- */

@@ -479,6 +479,7 @@ typedef struct {
     uint8_t **payloads;
     size_t *sizes;
     exr_result *rc;
+    int job_base; /* chunk index of job 0 (1 = chunk 0 done inline; 0 = all parallel) */
 } sl_enc_ctx;
 
 static exr_result encode_scanline_one(sl_enc_ctx *c, uint32_t ci) {
@@ -510,7 +511,7 @@ static exr_result encode_scanline_one(sl_enc_ctx *c, uint32_t ci) {
 
 static void encode_scanline_job(void *vc, int job) {
     sl_enc_ctx *c = (sl_enc_ctx *)vc;
-    uint32_t ci = (uint32_t)job + 1u; /* chunk 0 compressed inline first */
+    uint32_t ci = (uint32_t)job + (uint32_t)c->job_base;
     c->rc[ci] = encode_scanline_one(c, ci);
 }
 
@@ -526,6 +527,7 @@ typedef struct {
     uint8_t **payloads;
     size_t *sizes;
     exr_result *rc;
+    int job_base; /* tile index of job 0 (1 = tile 0 done inline; 0 = all parallel) */
 } tl_enc_ctx;
 
 static exr_result encode_tile_one(tl_enc_ctx *c, uint32_t idx) {
@@ -563,8 +565,26 @@ static exr_result encode_tile_one(tl_enc_ctx *c, uint32_t idx) {
 
 static void encode_tile_job(void *vc, int job) {
     tl_enc_ctx *c = (tl_enc_ctx *)vc;
-    uint32_t idx = (uint32_t)job + 1u; /* tile 0 compressed inline first */
+    uint32_t idx = (uint32_t)job + (uint32_t)c->job_base;
     c->rc[idx] = encode_tile_one(c, idx);
+}
+
+/* Codecs whose first-use lazy global init is not thread-safe must have it warmed
+ * on one thread before the workers run; then all chunks/tiles can be compressed
+ * in parallel (no serial chunk 0). Currently only HTJ2K (the VLC/UVLC encode
+ * tables). Returns 1 if warmed (=> caller may parallelize all jobs). */
+static int encode_warmup_for_parallel(exr_compression comp) {
+    if (comp == EXR_COMPRESSION_HTJ2K256 || comp == EXR_COMPRESSION_HTJ2K32) {
+        /* Warm every process-global lazy init the workers could touch, on this
+         * one thread, so the parallel encode only reads them (no data race):
+         * the SIMD-tier cache, the SIMD function-pointer table, and the HTJ2K
+         * VLC/UVLC encode tables. */
+        exr_cpu_caps();
+        exr_simd_init();
+        exr_jph_warmup_encode_tables();
+        return 1;
+    }
+    return 0;
 }
 
 /* Two-phase scanline encode: compress all chunks in parallel into per-chunk
@@ -594,10 +614,21 @@ static exr_result encode_parallel_scanline(
         ec.images = (void *const *)pt->images; ec.xmin = xmin; ec.ymin = ymin;
         ec.ymax = ymax; ec.width = pt->width; ec.lpb = lpb; ec.comp = comp;
         ec.payloads = payloads; ec.sizes = sizes; ec.rc = rcs;
-        rcs[0] = encode_scanline_one(&ec, 0); /* warm lazy inits */
-        if (EXR_OK(rcs[0]))
-            exr_parallel_for(exr_get_num_threads(), (int)(n - 1),
+        if (encode_warmup_for_parallel(comp)) {
+            /* Lazy inits warmed on this thread: compress every chunk in parallel
+             * (no serial chunk 0), so scaling is not capped by one serial chunk. */
+            ec.job_base = 0;
+            exr_parallel_for(exr_get_num_threads(), (int)n,
                              encode_scanline_job, &ec);
+        } else {
+            /* Compress chunk 0 inline first to warm any lazy init the codec does,
+             * then run the rest in parallel. */
+            ec.job_base = 1;
+            rcs[0] = encode_scanline_one(&ec, 0);
+            if (EXR_OK(rcs[0]))
+                exr_parallel_for(exr_get_num_threads(), (int)(n - 1),
+                                 encode_scanline_job, &ec);
+        }
     }
     for (ci = 0; ci < n; ++ci)
         if (!EXR_OK(rcs[ci])) { rc = rcs[ci]; break; }
@@ -645,10 +676,17 @@ static exr_result encode_parallel_tiled(
         ec.width = pt->width; ec.height = pt->height; ec.tx = tx; ec.ty = ty;
         ec.nxt = nxt; ec.comp = comp;
         ec.payloads = payloads; ec.sizes = sizes; ec.rc = rcs;
-        rcs[0] = encode_tile_one(&ec, 0); /* warm lazy inits */
-        if (EXR_OK(rcs[0]))
-            exr_parallel_for(exr_get_num_threads(), (int)(n - 1),
+        if (encode_warmup_for_parallel(comp)) {
+            ec.job_base = 0;
+            exr_parallel_for(exr_get_num_threads(), (int)n,
                              encode_tile_job, &ec);
+        } else {
+            ec.job_base = 1;
+            rcs[0] = encode_tile_one(&ec, 0); /* warm lazy inits */
+            if (EXR_OK(rcs[0]))
+                exr_parallel_for(exr_get_num_threads(), (int)(n - 1),
+                                 encode_tile_job, &ec);
+        }
     }
     for (idx = 0; idx < n; ++idx)
         if (!EXR_OK(rcs[idx])) { rc = rcs[idx]; break; }

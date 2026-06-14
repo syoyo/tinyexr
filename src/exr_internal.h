@@ -940,6 +940,12 @@ exr_result exr_jph_forward_nlt_type3_i32(int32_t *data, size_t count,
 exr_result exr_jph_compress(const exr_codec_ctx *ctx, const uint8_t *block,
                             size_t n, uint8_t **out_data, size_t *out_size);
 
+/* Build the HTJ2K encode VLC/UVLC tables up front. Call once on a single thread
+ * before compressing chunks concurrently: the lazy table init in exr_jph_compress
+ * is not thread-safe (sets its ready flag before the table is built), so the
+ * parallel encode path warms it here instead of racing in the workers. */
+void exr_jph_warmup_encode_tables(void);
+
 /* Encode dispatch: compress one canonical block per ctx->compression. */
 exr_result exr_compress_block(const exr_codec_ctx *ctx, const uint8_t *block,
                               size_t n, uint8_t **out_data, size_t *out_size);
