@@ -3109,6 +3109,12 @@ static bool hufUncompress(const char compressed[], int nCompressed,
     return false;
   }
 
+  // The Huffman header written by hufCompress() is 20 bytes: im, iM,
+  // tableLength, nBits (readUInt at +0/+4/+8/+12) plus 4 reserved bytes at +16.
+  // Reject inputs too short to contain it; otherwise readUInt(compressed + 12)
+  // reads past the end of the input buffer (heap out-of-bounds read).
+  if (nCompressed < 20) return false;
+
   int im = readUInt(compressed);
   int iM = readUInt(compressed + 4);
   // int tableLength = readUInt (compressed + 8);
