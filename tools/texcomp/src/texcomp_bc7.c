@@ -17,6 +17,13 @@ const uint32_t tc_bc7_weights4[16] = {0,  4,  9,  13, 17, 21, 26, 30,
                                              34, 38, 43, 47, 51, 55, 60, 64};
 static const uint32_t tc_bc7_weights3[8] = {0, 9, 18, 27, 37, 46, 55, 64};
 static const uint32_t tc_bc7_weights2[4] = {0, 21, 43, 64};
+static const uint8_t tc_bc7_index_from_t[65] = {
+    0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 3,
+    4, 4, 4, 4, 5, 5, 5, 5, 6, 6, 6, 6, 6, 7, 7, 7,
+    7, 8, 8, 8, 8, 9, 9, 9, 9, 10, 10, 10, 10, 10, 11, 11,
+    11, 11, 12, 12, 12, 13, 13, 13, 13, 13, 14, 14, 14, 14,
+    15, 15, 15
+};
 
 static const uint8_t tc_bc7_num_subsets[8] = {3, 2, 3, 2, 1, 1, 1, 2};
 static const uint8_t tc_bc7_partition_bits[8] = {4, 6, 6, 6, 0, 0, 0, 6};
@@ -432,7 +439,8 @@ static void tc_bc7_luma_extremes(const uint8_t pix[16][4], const uint8_t *part,
 
 static uint64_t tc_build_candidate_seed(uint32_t mode, uint32_t partition,
                                         const uint8_t pix[16][4],
-                                        tc_bc7_candidate *cand, int use_pca) {
+                                        tc_bc7_candidate *cand, int use_pca,
+                                        int fast_select) {
     const uint8_t *part = tc_partition_for(mode, partition);
     uint32_t subsets = tc_bc7_num_subsets[mode];
     uint32_t subset, i, c;
@@ -481,22 +489,112 @@ static uint64_t tc_build_candidate_seed(uint32_t mode, uint32_t partition,
         uint32_t abits = tc_bc7_alpha_index_bits[mode] - cand->index_selector;
         uint32_t nc = 1u << cbits;
         uint32_t na = abits ? (1u << abits) : nc;
-        tc_fill_palette(cand, mode, pal);
+        int32_t fast_lo[4] = {0, 0, 0, 0}, fast_hi[4] = {0, 0, 0, 0},
+                fast_d[4] = {0, 0, 0, 0};
+        int32_t fast_den = 0;
+        uint64_t fast_inv = 0;
+        uint32_t fast_ncomp = 3u;
+        int32_t fast_scalar_lo = 0, fast_scalar_d = 0;
+        uint64_t fast_scalar_inv = 0;
+        uint32_t fast_scalar_channel = 0;
+        if (fast_select && mode == 6u) {
+            for (i = 0; i < 16u; ++i)
+                if (pix[i][3] != 255u) { fast_ncomp = 4u; break; }
+            for (c = 0; c < fast_ncomp; ++c) {
+                fast_lo[c] = (int32_t)tc_decode_endpoint(cand->lo[0][c],
+                                                          cand->pbits[0][0], 7u, 1u);
+                fast_hi[c] = (int32_t)tc_decode_endpoint(cand->hi[0][c],
+                                                          cand->pbits[0][1], 7u, 1u);
+                fast_d[c] = fast_hi[c] - fast_lo[c];
+                fast_den += fast_d[c] * fast_d[c];
+            }
+            if (fast_den > 0)
+                fast_inv = (((uint64_t)64u << 32) + (uint32_t)fast_den / 2u) /
+                           (uint32_t)fast_den;
+            if (fast_ncomp == 3u) {
+                int32_t largest = -1;
+                for (c = 0; c < 3u; ++c) {
+                    int32_t magnitude = fast_d[c] < 0 ? -fast_d[c] : fast_d[c];
+                    if (magnitude > largest) {
+                        largest = magnitude;
+                        fast_scalar_channel = c;
+                    }
+                }
+                fast_scalar_lo = fast_lo[fast_scalar_channel];
+                fast_scalar_d = fast_d[fast_scalar_channel];
+                {
+                    uint32_t scalar_den = (uint32_t)(fast_scalar_d * fast_scalar_d);
+                    if (scalar_den > 0)
+                        fast_scalar_inv = (((uint64_t)64u << 32) + scalar_den / 2u) /
+                                          scalar_den;
+                }
+            }
+        }
+        if (!(fast_select && mode == 6u)) tc_fill_palette(cand, mode, pal);
         for (i = 0; i < 16u; ++i) {
             uint32_t subset = part[i], s, best_s = 0, best_a = 0;
             uint32_t best = UINT_MAX;
             uint32_t best_color_err = 0;
             uint32_t best_alpha_err = 0;
-            for (s = 0; s < nc; ++s) {
-                const uint8_t *r = pal[subset][s];
-                uint32_t e;
-                if (tc_bc7_sep_alpha[mode] || mode < 4u)
-                    e = tc_err3(pix[i], r[0], r[1], r[2]);
-                else
-                    e = tc_err4(pix[i], r[0], r[1], r[2], r[3], 1);
-                if (e < best) {
-                    best = e;
-                    best_s = s;
+            if (fast_select && mode == 6u) {
+                int32_t num;
+                uint32_t t;
+                if (fast_ncomp == 3u && fast_scalar_d != 0) {
+                    num = ((int32_t)pix[i][fast_scalar_channel] - fast_scalar_lo) *
+                          fast_scalar_d;
+                    {
+                        int64_t scaled = (int64_t)num * (int64_t)fast_scalar_inv;
+                        int64_t projected;
+                        if (scaled >= 0)
+                            projected = (scaled + (1ll << 31)) >> 32;
+                        else
+                            projected = -((-scaled + (1ll << 31)) >> 32);
+                        if (projected < 0) projected = 0;
+                        if (projected > 64) projected = 64;
+                        t = (uint32_t)projected;
+                    }
+                } else {
+                    num = 0;
+                    for (s = 0; s < fast_ncomp; ++s)
+                        num += ((int32_t)pix[i][s] - fast_lo[s]) * fast_d[s];
+                    if (fast_den > 0) {
+                        int64_t scaled = (int64_t)num * (int64_t)fast_inv;
+                        int64_t projected;
+                        if (scaled >= 0)
+                            projected = (scaled + (1ll << 31)) >> 32;
+                        else
+                            projected = -((-scaled + (1ll << 31)) >> 32);
+                        if (projected < 0) projected = 0;
+                        if (projected > 64) projected = 64;
+                        t = (uint32_t)projected;
+                    } else {
+                        t = 0;
+                    }
+                }
+                if (fast_ncomp == 3u || fast_den > 0) {
+                    best_s = tc_bc7_index_from_t[t];
+                    {
+                        /* Speed mode has one candidate only, so its SSE is
+                         * never used for a comparison. Avoid reconstructing
+                         * the selected color just to accumulate a discarded
+                         * error value. */
+                        best = 0;
+                    }
+                } else {
+                    best = 0;
+                }
+            } else {
+                for (s = 0; s < nc; ++s) {
+                    const uint8_t *r = pal[subset][s];
+                    uint32_t e;
+                    if (tc_bc7_sep_alpha[mode] || mode < 4u)
+                        e = tc_err3(pix[i], r[0], r[1], r[2]);
+                    else
+                        e = tc_err4(pix[i], r[0], r[1], r[2], r[3], 1);
+                    if (e < best) {
+                        best = e;
+                        best_s = s;
+                    }
                 }
             }
             best_color_err = best;
@@ -531,16 +629,102 @@ static uint64_t tc_build_candidate_seed(uint32_t mode, uint32_t partition,
 static uint64_t tc_build_candidate(uint32_t mode, uint32_t partition,
                                    const uint8_t pix[16][4],
                                    tc_bc7_candidate *cand, int try_pca) {
-    uint64_t e0 = tc_build_candidate_seed(mode, partition, pix, cand, 0);
+    uint64_t e0 = tc_build_candidate_seed(mode, partition, pix, cand, 0, 0);
     tc_bc7_candidate alt;
     uint64_t e1;
     if (!try_pca) return e0;
-    e1 = tc_build_candidate_seed(mode, partition, pix, &alt, 1);
+    e1 = tc_build_candidate_seed(mode, partition, pix, &alt, 1, 0);
     if (e1 < e0) {
         *cand = alt;
         return e1;
     }
     return e0;
+}
+
+/* Basis Universal's BC7 encoders refine the endpoints after choosing the
+ * selectors.  Mode 6 is a particularly good fit for this: all four channels
+ * share the same 4-bit indices and the endpoint precision is high enough that
+ * the least-squares solution usually survives quantization.  Keep this local
+ * and bounded (one pass) so the normal all-mode search stays much cheaper than
+ * importing the C++ encoder wholesale. */
+static uint64_t tc_bc7_refine_mode6(const uint8_t pix[16][4],
+                                    tc_bc7_candidate *cand,
+                                    uint64_t best_err) {
+    uint32_t i, c, p0, p1;
+    uint32_t aa = 0, ab = 0, bb = 0;
+    int32_t sx0[4] = {0, 0, 0, 0}, sx1[4] = {0, 0, 0, 0};
+    tc_bc7_candidate best = *cand;
+
+    for (i = 0; i < 16u; ++i) {
+        uint32_t w = tc_bc7_weights4[cand->selectors[i]];
+        uint32_t u = 64u - w;
+        aa += u * u;
+        ab += u * w;
+        bb += w * w;
+        for (c = 0; c < 4u; ++c) {
+            sx0[c] += (int32_t)pix[i][c] * (int32_t)u;
+            sx1[c] += (int32_t)pix[i][c] * (int32_t)w;
+        }
+    }
+
+    {
+        int64_t det = (int64_t)aa * (int64_t)bb - (int64_t)ab * (int64_t)ab;
+        uint8_t ideal_lo[4], ideal_hi[4];
+        if (det <= 0) return best_err;
+        for (c = 0; c < 4u; ++c) {
+            int64_t lo = (int64_t)bb * sx0[c] - (int64_t)ab * sx1[c];
+            int64_t hi = (int64_t)aa * sx1[c] - (int64_t)ab * sx0[c];
+            lo = (lo + det / 2) / det;
+            hi = (hi + det / 2) / det;
+            if (lo < 0) lo = 0;
+            if (hi < 0) hi = 0;
+            if (lo > 255) lo = 255;
+            if (hi > 255) hi = 255;
+            ideal_lo[c] = (uint8_t)lo;
+            ideal_hi[c] = (uint8_t)hi;
+        }
+
+        for (p0 = 0; p0 < 2u; ++p0) {
+            for (p1 = 0; p1 < 2u; ++p1) {
+                tc_bc7_candidate trial = *cand;
+                uint64_t err;
+                trial.pbits[0][0] = (uint8_t)p0;
+                trial.pbits[0][1] = (uint8_t)p1;
+                for (c = 0; c < 4u; ++c) {
+                    uint32_t q0 = ((uint32_t)ideal_lo[c] + 1u - p0) >> 1u;
+                    uint32_t q1 = ((uint32_t)ideal_hi[c] + 1u - p1) >> 1u;
+                    if (q0 > 127u) q0 = 127u;
+                    if (q1 > 127u) q1 = 127u;
+                    trial.lo[0][c] = (uint8_t)q0;
+                    trial.hi[0][c] = (uint8_t)q1;
+                }
+                {
+                    uint8_t pal[3][16][4];
+                    uint32_t s;
+                    uint64_t total = 0;
+                    tc_fill_palette(&trial, 6u, pal);
+                    for (i = 0; i < 16u; ++i) {
+                        uint32_t pick = 0, pick_err = UINT_MAX;
+                        for (s = 0; s < 16u; ++s) {
+                            uint32_t e = tc_err4(pix[i], pal[0][s][0], pal[0][s][1],
+                                                 pal[0][s][2], pal[0][s][3], 1);
+                            if (e < pick_err) { pick_err = e; pick = s; }
+                        }
+                        trial.selectors[i] = (uint8_t)pick;
+                        trial.alpha_selectors[i] = (uint8_t)pick;
+                        total += pick_err;
+                    }
+                    err = total;
+                }
+                if (err < best_err) {
+                    best_err = err;
+                    best = trial;
+                }
+            }
+        }
+    }
+    *cand = best;
+    return best_err;
 }
 
 static uint8_t tc_lookup_index_from_mask(uint32_t mask) {
@@ -658,6 +842,14 @@ static void tc_encode_bc7_all_modes_block(const uint8_t pix[16][4],
     uint8_t best_block[16];
     uint32_t mask = opt && opt->mode_mask ? opt->mode_mask : 0xffu;
     uint32_t is_quick = opt ? (uint32_t)opt->quick : 0u;
+    if (opt && (opt->quality == TC_BC7_QUALITY_FAST ||
+                opt->quality == TC_BC7_QUALITY_SPEED)) {
+        /* Basis Universal's bc7f fastest profile is deliberately mode-6
+         * centered. Keep this path deterministic and cheap: mode 6 has no
+         * partition, rotation, or selector split to search. */
+        mask = 1u << 6;
+        is_quick = 1u;
+    }
     if (is_quick == 1u) {
         mask = tc_block_quick_mask(pix, mask);
     } else {
@@ -675,12 +867,25 @@ static void tc_encode_bc7_all_modes_block(const uint8_t pix[16][4],
         tc_bc7_candidate cand;
         uint64_t err;
         if ((mask & (1u << mode)) == 0u) continue;
-        err = tc_build_candidate(mode,
-                                 (mode == 1u || mode == 7u)
-                                     ? tc_select_partition2(pix, mode,
-                                                            is_quick != 0u)
-                                     : 0u,
-                                 pix, &cand, opt && opt->pca_endpoints);
+        if (opt && (opt->quality == TC_BC7_QUALITY_FAST ||
+                    opt->quality == TC_BC7_QUALITY_SPEED)) {
+            err = tc_build_candidate_seed(6u, 0u, pix, &cand, 0, 1);
+        } else {
+            err = tc_build_candidate(mode,
+                                     (mode == 1u || mode == 7u)
+                                         ? tc_select_partition2(pix, mode,
+                                                                is_quick != 0u)
+                                         : 0u,
+                                     pix, &cand, opt && opt->pca_endpoints);
+        }
+        /* Refining a mode that is already worse than the current winner cannot
+         * change the result.  Avoid paying the Basis-style least-squares cost
+         * in that common case; an explicit mode-6 mask still gets the full
+         * refinement even when its seed is not competitive. */
+        if (mode == 6u && opt && opt->quality != TC_BC7_QUALITY_FAST &&
+            opt->quality != TC_BC7_QUALITY_SPEED &&
+            (err < best_err || mask == (1u << 6)))
+            err = tc_bc7_refine_mode6(pix, &cand, err);
         if (err < best_err) {
             best_err = err;
             tc_pack_candidate(&cand, best_block);
@@ -1132,7 +1337,8 @@ tc_result tc_bc7_compress_rgba8(const uint8_t *rgba, uint32_t width,
         }
     }
 
-    if (opt->rdo > 0)
+    if (opt->quality != TC_BC7_QUALITY_FAST &&
+        opt->quality != TC_BC7_QUALITY_SPEED && opt->rdo > 0)
         tc_bc7_rdo_pass(rgba, width, height, stride, opt->rdo, out_bc7);
 
     return TC_SUCCESS;

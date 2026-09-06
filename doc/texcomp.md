@@ -108,6 +108,11 @@ tc_bc7_compress_rgba8(rgba, w, h, w * 4, &opt, blocks, n);
 tc_bc7_decompress_rgba8(blocks, w, h, w * 4, out_rgba, w * h * 4);
 ```
 
+For real-time encoding, use `TC_BC7_QUALITY_SPEED` (or
+`--bc7-quality speed` in the CLI). This selects a mode-6-only projection path,
+skips endpoint refinement and RDO, and is intended to favor throughput over
+the higher quality of the default mode search.
+
 The full pipeline (resize → mips → compress → container) is one call:
 
 ```c

@@ -986,7 +986,7 @@ static void usage(void) {
             "usage: texcomp -i in.{png,exr} -o out [--format bc1|bc3|bc7|bc5|bc6h|etc2|etc2_rgb|eac_r11|eac_rg11|astc|astc_hdr|uastc_ldr|xbc7|uni] "
             "[--raw out.bin] [--raw-bc7 out.bc7] [--part N] [--srgb] "
             "[--signed] [--astc-block WxH] [--quality fast|medium|normal] [--encoder tc|arm] [--threads N] "
-            "[--quick on|off] [--mode-mask HEX] [--rdo N] "
+            "[--quick on|off] [--bc7-quality speed|medium] [--mode-mask HEX] [--rdo N] "
             "[--channel-weights R,G,B,A] "
             "[--linear|--perceptual]\n"
             "  --channel-weights: per-channel error weights for BC7 (pure-C) and\n"
@@ -1079,6 +1079,14 @@ int main(int argc, char **argv) {
             else if (strcmp(qv, "on") == 0) opts.bc7.quick = 1;
             else if (strcmp(qv, "medium") == 0) opts.bc7.quick = 2;
             else opts.bc7.quick = (int)strtol(qv, NULL, 10);
+        }
+        else if (strcmp(argv[i], "--bc7-quality") == 0 && i + 1 < argc) {
+            const char *qv = argv[++i];
+            if (strcmp(qv, "speed") == 0) opts.bc7.quality = TC_BC7_QUALITY_SPEED;
+            else if (strcmp(qv, "fast") == 0) opts.bc7.quality = TC_BC7_QUALITY_FAST;
+            else if (strcmp(qv, "quick") == 0) opts.bc7.quality = TC_BC7_QUALITY_QUICKBC7;
+            else if (strcmp(qv, "medium") == 0) opts.bc7.quality = TC_BC7_QUALITY_MEDIUM;
+            else { usage(); return 2; }
         }
         else if (strcmp(argv[i], "--mode-mask") == 0 && i + 1 < argc)
             opts.bc7.mode_mask = (uint32_t)strtoul(argv[++i], NULL, 0);

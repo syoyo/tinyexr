@@ -115,6 +115,21 @@ int main(int argc, char **argv) {
     tc_etc2_options_init(&etc2_opt);
     tc_astc_options_init(&astc_opt);
     printf("texcomp backend: %s\n", tc_backend_name());
+    bc7_opt.quality = TC_BC7_QUALITY_SPEED;
+    bc7_opt.quick = 1;
+    iters = 5;
+    t0 = now_sec();
+    for (i = 0; i < (size_t)iters; ++i) {
+        if (tc_bc7_compress_rgba8(rgba, w, h, (size_t)w * 4u, &bc7_opt, bc,
+                                  bc_size) != TC_SUCCESS) {
+            return 1;
+        }
+    }
+    t1 = now_sec();
+    mpix = ((double)n * (double)iters) / ((t1 - t0) * 1000000.0);
+    printf("texcomp bc7 speed mode6: %.2f MPix/s (%ux%u x %d)\n", mpix, w, h,
+           iters);
+    bc7_opt.quality = TC_BC7_QUALITY_MEDIUM;
     bc7_opt.quick = 1;
     t0 = now_sec();
     for (i = 0; i < (size_t)iters; ++i) {
@@ -356,8 +371,12 @@ int main(int argc, char **argv) {
         /* Quality comparison: quick vs medium vs exhaustive.
          * Uses the asakusa EXR image loaded as uint8 via the CLI path, or a
          * smooth diagonal gradient for a meaningful PSNR comparison. */
-        static const int qlevels[3] = {1, 2, 0};
-        static const char *const qnames[3] = {"quick", "medium", "exhaustive"};
+        static const int qlevels[4] = {1, 2, 0, 1};
+        static const tc_bc7_quality qquality[4] = {
+            TC_BC7_QUALITY_MEDIUM, TC_BC7_QUALITY_MEDIUM,
+            TC_BC7_QUALITY_MEDIUM, TC_BC7_QUALITY_SPEED
+        };
+        static const char *const qnames[4] = {"quick", "medium", "exhaustive", "speed"};
         uint8_t *qimg = (uint8_t *)malloc(n * 4u);
         uint8_t *dec = (uint8_t *)malloc(n * 4u);
         int qi;
@@ -374,10 +393,11 @@ int main(int argc, char **argv) {
                     qimg[j * 4u + 2u] = b;
                     qimg[j * 4u + 3u] = 255u;
                 }
-            for (qi = 0; qi < 3; ++qi) {
+            for (qi = 0; qi < 4; ++qi) {
                 double sse = 0.0, psnr_val;
                 uint32_t pi;
                 bc7_opt.quick = qlevels[qi];
+                bc7_opt.quality = qquality[qi];
                 if (tc_bc7_compress_rgba8(qimg, w, h, (size_t)w * 4u,
                                           &bc7_opt, bc, bc_size) != TC_SUCCESS)
                     continue;
