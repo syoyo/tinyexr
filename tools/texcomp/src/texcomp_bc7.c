@@ -539,7 +539,10 @@ static uint64_t tc_build_candidate_seed(uint32_t mode, uint32_t partition,
             if (fast_select && mode == 6u) {
                 int32_t num;
                 uint32_t t;
-                if (fast_ncomp == 3u && fast_scalar_d != 0) {
+                if (fast_select >= 2 && fast_ncomp == 3u) {
+                    best_s = (uint32_t)pix[i][fast_scalar_channel] >> 4u;
+                    best = 0;
+                } else if (fast_ncomp == 3u && fast_scalar_d != 0) {
                     num = ((int32_t)pix[i][fast_scalar_channel] - fast_scalar_lo) *
                           fast_scalar_d;
                     {
@@ -571,7 +574,9 @@ static uint64_t tc_build_candidate_seed(uint32_t mode, uint32_t partition,
                         t = 0;
                     }
                 }
-                if (fast_ncomp == 3u || fast_den > 0) {
+                if (fast_select >= 2 && fast_ncomp == 3u) {
+                    /* already selected from the normalized channel */
+                } else if (fast_ncomp == 3u || fast_den > 0) {
                     best_s = tc_bc7_index_from_t[t];
                     {
                         /* Speed mode has one candidate only, so its SSE is
@@ -843,7 +848,8 @@ static void tc_encode_bc7_all_modes_block(const uint8_t pix[16][4],
     uint32_t mask = opt && opt->mode_mask ? opt->mode_mask : 0xffu;
     uint32_t is_quick = opt ? (uint32_t)opt->quick : 0u;
     if (opt && (opt->quality == TC_BC7_QUALITY_FAST ||
-                opt->quality == TC_BC7_QUALITY_SPEED)) {
+                opt->quality == TC_BC7_QUALITY_SPEED ||
+                opt->quality == TC_BC7_QUALITY_FASTEST)) {
         /* Basis Universal's bc7f fastest profile is deliberately mode-6
          * centered. Keep this path deterministic and cheap: mode 6 has no
          * partition, rotation, or selector split to search. */
@@ -868,8 +874,10 @@ static void tc_encode_bc7_all_modes_block(const uint8_t pix[16][4],
         uint64_t err;
         if ((mask & (1u << mode)) == 0u) continue;
         if (opt && (opt->quality == TC_BC7_QUALITY_FAST ||
-                    opt->quality == TC_BC7_QUALITY_SPEED)) {
-            err = tc_build_candidate_seed(6u, 0u, pix, &cand, 0, 1);
+                    opt->quality == TC_BC7_QUALITY_SPEED ||
+                    opt->quality == TC_BC7_QUALITY_FASTEST)) {
+            err = tc_build_candidate_seed(6u, 0u, pix, &cand, 0,
+                                          opt->quality == TC_BC7_QUALITY_FASTEST ? 2 : 1);
         } else {
             err = tc_build_candidate(mode,
                                      (mode == 1u || mode == 7u)
@@ -884,6 +892,7 @@ static void tc_encode_bc7_all_modes_block(const uint8_t pix[16][4],
          * refinement even when its seed is not competitive. */
         if (mode == 6u && opt && opt->quality != TC_BC7_QUALITY_FAST &&
             opt->quality != TC_BC7_QUALITY_SPEED &&
+            opt->quality != TC_BC7_QUALITY_FASTEST &&
             (err < best_err || mask == (1u << 6)))
             err = tc_bc7_refine_mode6(pix, &cand, err);
         if (err < best_err) {
@@ -1338,7 +1347,8 @@ tc_result tc_bc7_compress_rgba8(const uint8_t *rgba, uint32_t width,
     }
 
     if (opt->quality != TC_BC7_QUALITY_FAST &&
-        opt->quality != TC_BC7_QUALITY_SPEED && opt->rdo > 0)
+        opt->quality != TC_BC7_QUALITY_SPEED &&
+        opt->quality != TC_BC7_QUALITY_FASTEST && opt->rdo > 0)
         tc_bc7_rdo_pass(rgba, width, height, stride, opt->rdo, out_bc7);
 
     return TC_SUCCESS;

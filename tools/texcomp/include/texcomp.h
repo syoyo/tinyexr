@@ -29,7 +29,9 @@ typedef enum tc_bc7_quality {
     TC_BC7_QUALITY_QUICKBC7 = 1,
     TC_BC7_QUALITY_MEDIUM = 2,
     /* Real-time path: mode-6 only, no endpoint refinement or RDO pass. */
-    TC_BC7_QUALITY_SPEED = 3
+    TC_BC7_QUALITY_SPEED = 3,
+    /* More aggressive real-time path; trades selector precision for speed. */
+    TC_BC7_QUALITY_FASTEST = 4
 } tc_bc7_quality;
 
 typedef struct tc_bc7_options {

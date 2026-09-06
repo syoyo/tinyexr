@@ -113,6 +113,9 @@ For real-time encoding, use `TC_BC7_QUALITY_SPEED` (or
 skips endpoint refinement and RDO, and is intended to favor throughput over
 the higher quality of the default mode search.
 
+For maximum throughput, `TC_BC7_QUALITY_FASTEST` / `--bc7-quality fastest`
+uses a cheaper normalized selector estimate on opaque blocks.
+
 The full pipeline (resize → mips → compress → container) is one call:
 
 ```c
