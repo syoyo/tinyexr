@@ -1,0 +1,16 @@
+<!--
+  Copyright (c) 2026 Syoyo Fujita and TinyEXR authors
+  SPDX-License-Identifier: BSD-3-Clause
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="520" viewBox="0 0 960 520" role="img" aria-labelledby="title desc">
+  <title id="title">TinyEXR texcomp BC-family encode throughput</title>
+  <desc id="desc">Single-thread megapixels per second on a 512 by 512 RGBA8 synthetic image.</desc>
+  <rect width="960" height="520" fill="#fff"/>
+  <text x="480" y="32" text-anchor="middle" font-family="sans-serif" font-size="22" font-weight="bold" fill="#202124">BC-family encode throughput</text>
+  <text x="480" y="54" text-anchor="middle" font-family="sans-serif" font-size="13" fill="#5f6368">512×512 RGBA8 · single thread · MPix/s · higher is faster</text>
+  <g font-family="sans-serif" font-size="12" fill="#5f6368"><text x="90" y="478" text-anchor="middle">0</text><text x="240" y="478" text-anchor="middle">25</text><text x="390" y="478" text-anchor="middle">50</text><text x="540" y="478" text-anchor="middle">75</text><text x="690" y="478" text-anchor="middle">100</text><text x="840" y="478" text-anchor="middle">125</text></g>
+  <g stroke="#dfe1e5" stroke-width="1"><path d="M90 82V460M240 82V460M390 82V460M540 82V460M690 82V460M840 82V460"/></g>
+  <g font-family="sans-serif" font-size="13" fill="#202124"><text x="80" y="108" text-anchor="end">BC1</text><text x="80" y="153" text-anchor="end">BC3</text><text x="80" y="198" text-anchor="end">BC5</text><text x="80" y="243" text-anchor="end">BC6H AVX2</text><text x="80" y="288" text-anchor="end">BC7 QuickBC7</text><text x="80" y="333" text-anchor="end">BC7 medium</text><text x="80" y="378" text-anchor="end">BC7 speed</text><text x="80" y="423" text-anchor="end">BC7 fastest</text></g>
+  <g font-family="sans-serif" font-size="12" fill="#202124"><rect x="90" y="92" width="279" height="24" rx="3" fill="#4e79a7"/><text x="377" y="109">46.46</text><rect x="90" y="137" width="225" height="24" rx="3" fill="#4e79a7"/><text x="323" y="154">37.49</text><rect x="90" y="182" width="712" height="24" rx="3" fill="#4e79a7"/><text x="810" y="199">118.70</text><rect x="90" y="227" width="97" height="24" rx="3" fill="#4e79a7"/><text x="195" y="244">16.15</text><rect x="90" y="272" width="26" height="24" rx="3" fill="#f28e2b"/><text x="124" y="289">4.37</text><rect x="90" y="317" width="17" height="24" rx="3" fill="#59a14f"/><text x="115" y="334">2.76</text><rect x="90" y="362" width="332" height="24" rx="3" fill="#e15759"/><text x="430" y="379">55.34</text><rect x="90" y="407" width="398" height="24" rx="3" fill="#e15759"/><text x="496" y="424">66.29</text></g>
+  <path d="M362 72V450" stroke="#9467bd" stroke-width="2" stroke-dasharray="6 4"/><text x="370" y="68" font-family="sans-serif" font-size="12" fill="#6f42c1">Basis bc7f 45.33</text><path d="M90 460H860" stroke="#202124"/><text x="475" y="505" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#5f6368">Throughput (MPix/s)</text>
+</svg>

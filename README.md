@@ -388,6 +388,21 @@ alpha coverage, seam-free cube LOD, normal/roughness coherence, **KTX2 + DDS**
 read *and* write) and **envmap** (`tools/envmap/`: equirect ⇄ cubemap ⇄
 octahedral, SH, spherical gaussians).
 
+### texcomp BC benchmark
+
+On the benchmark host, texcomp's real-time BC7 mode-6 profiles reach **55.34
+MPix/s (`speed`)** and **66.29 MPix/s (`fastest`)**, versus **45.33 MPix/s** for
+Basis Universal's analytical `bc7f` reference. The broader BC-family snapshot
+is **BC1 46.46**, **BC3 37.49**, **BC5 118.70**, and **BC6H AVX2 16.15 MPix/s**.
+The QuickBC7-derived texcomp profile measures **4.37 MPix/s at 53.62 dB**;
+`speed` measures **51.43 dB** and `fastest` **48.94 dB** on the benchmark's
+gradient quality check.
+
+[![BC-family encode throughput](doc/texcomp-bench.svg)](doc/texcomp-bench.md)
+
+See the [full texcomp benchmark notes](doc/texcomp-bench.md) for methodology,
+quality caveats, and the exact command to reproduce the snapshot.
+
 ```c
 #include "texpipe.h"          /* resize -> mips -> compress -> container */
 tp_options opt;
