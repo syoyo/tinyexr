@@ -398,7 +398,7 @@ The QuickBC7-derived texcomp profile measures **4.37 MPix/s at 53.62 dB**;
 `speed` measures **51.43 dB** and `fastest` **48.94 dB** on the benchmark's
 gradient quality check.
 
-[![BC-family encode throughput](doc/texcomp-bench.svg)](doc/texcomp-bench.md)
+[![BC-family encode throughput](doc/texcomp-bench.png)](doc/texcomp-bench.md)
 
 See the [full texcomp benchmark notes](doc/texcomp-bench.md) for methodology,
 quality caveats, and the exact command to reproduce the snapshot.
