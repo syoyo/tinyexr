@@ -80,13 +80,18 @@ void toc_arena_init(toc_arena *ar, const toc_allocator *a) {
 
 void *toc_arena_alloc(toc_arena *ar, size_t size) {
     toc_arena_block *b = ar->head;
-    size_t aligned = (size + 15u) & ~(size_t)15u;
+    size_t aligned;
+    if (size > SIZE_MAX - 15u) return NULL;
+    aligned = (size + 15u) & ~(size_t)15u;
+    if (aligned < size) return NULL;
     if (!b || b->used + aligned > b->cap) {
         size_t cap = aligned > TOC_ARENA_MIN ? aligned : TOC_ARENA_MIN;
-        size_t total;
+        size_t total, total2;
+        if (cap < aligned) return NULL;
         if (toc_mul_ovf(1, cap, &total)) return NULL;
-        b = (toc_arena_block *)toc_malloc(&ar->alloc,
-                                          sizeof(toc_arena_block) + cap);
+        if (cap > SIZE_MAX - sizeof(toc_arena_block)) return NULL;
+        total2 = sizeof(toc_arena_block) + cap;
+        b = (toc_arena_block *)toc_malloc(&ar->alloc, total2);
         if (!b) return NULL;
         b->next = ar->head;
         b->used = 0;
@@ -123,8 +128,10 @@ void toc_arena_free(toc_arena *ar) {
  * ========================================================================== */
 toc_op *toc_op_list_push(toc_op_list *list, toc_op_kind kind) {
     if (list->count == list->cap) {
-        size_t ncap = list->cap ? list->cap * 2 : 8;
+        size_t ncap;
         size_t bytes;
+        if (list->cap > SIZE_MAX / 2) return NULL;
+        ncap = list->cap ? list->cap * 2 : 8;
         toc_op *n;
         if (toc_mul_ovf(ncap, sizeof(toc_op), &bytes)) return NULL;
         n = (toc_op *)toc_malloc(&list->alloc, bytes);

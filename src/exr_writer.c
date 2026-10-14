@@ -1379,7 +1379,10 @@ exr_result exr_writer_add_part(exr_writer *w, const exr_header *hdr,
     if (!EXR_OK(exr_header_validate(hdr, 0, &width, &height, NULL)))
         return EXR_ERROR_INVALID_ARGUMENT;
     if (w->num_parts == w->cap) {
-        int ncap = w->cap ? w->cap * 2 : 2;
+        int ncap;
+        if (w->cap >= EXR_MAX_PARTS) return EXR_ERROR_CORRUPT;
+        ncap = w->cap ? w->cap * 2 : 2;
+        if (ncap <= w->cap || ncap > EXR_MAX_PARTS) return EXR_ERROR_CORRUPT;
         exr_part *np = (exr_part *)exr_calloc(&w->alloc, (size_t)ncap, sizeof(exr_part));
         if (!np) return EXR_ERROR_OUT_OF_MEMORY;
         if (w->parts) {

@@ -158,10 +158,12 @@ static toc_result load_spi1d(toc_op_list *list, cur *c) {
             break; /* unknown header word */
         }
     }
-    if (length < 2 || comps < 1 || comps > 3) return TOC_ERROR_PARSE;
+    if (length < 2 || length > 1 << 18 || comps < 1 || comps > 3) return TOC_ERROR_PARSE;
     skip_ws(c);
     if (c->p < c->end && *c->p == '{') ++c->p;
+    if ((size_t)length > SIZE_MAX / (size_t)comps) return TOC_ERROR_PARSE;
     want = (size_t)length * (size_t)comps;
+    if (want > (SIZE_MAX / sizeof(float))) return TOC_ERROR_PARSE;
     arr = (float *)toc_malloc(&list->alloc, want * sizeof(float));
     if (!arr) return TOC_ERROR_OUT_OF_MEMORY;
     while (got < want) {

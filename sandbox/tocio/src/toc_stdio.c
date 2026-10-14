@@ -41,6 +41,12 @@ static toc_result default_reader(void *user, const char *name,
     const char *dir = (const char *)user;
     char path[1024];
     size_t dl = dir ? strlen(dir) : 0, nl = strlen(name), p = 0;
+    /* Basic path-containment hardening: no absolute paths, no NUL, no
+     * traversal via ".." components, no backslashes. */
+    if (!name || name[0] == '\0' || name[0] == '/' || strchr(name, '\\') ||
+        strstr(name, "..") == name || strstr(name, "/..") ||
+        strstr(name, "../"))
+        return TOC_ERROR_INVALID_ARGUMENT;
     if (name[0] == '/' || dl == 0) {
         if (nl + 1 > sizeof(path)) return TOC_ERROR_IO;
         memcpy(path, name, nl + 1);

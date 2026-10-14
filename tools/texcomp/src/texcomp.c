@@ -317,12 +317,19 @@ static tc_result tc_dds_write_bc_memory(const uint8_t *bc, uint32_t width,
                                         uint32_t block_bytes, uint8_t *out_dds,
                                         size_t out_size) {
     size_t bc_size, need, pitch;
+    uint64_t bx, by;
     if (!bc || !out_dds || !width || !height) return TC_ERROR_INVALID_ARGUMENT;
-    bc_size = (size_t)(((size_t)width + 3u) >> 2) *
-              (((size_t)height + 3u) >> 2) * block_bytes;
+    bx = ((uint64_t)width + 3u) >> 2;
+    by = ((uint64_t)height + 3u) >> 2;
+    if (bx == 0 || by == 0) return TC_ERROR_INVALID_ARGUMENT;
+    if (bx > (uint64_t)SIZE_MAX / block_bytes || by > (uint64_t)SIZE_MAX / (bx * block_bytes))
+        return TC_ERROR_INVALID_ARGUMENT;
+    bc_size = (size_t)(bx * by * block_bytes);
+    if (bc_size > SIZE_MAX - 148u) return TC_ERROR_INVALID_ARGUMENT;
     need = 148u + bc_size;
-    if (!need || out_size < need) return TC_ERROR_INVALID_ARGUMENT;
-    pitch = (((size_t)width + 3u) >> 2) * block_bytes;
+    if (out_size < need) return TC_ERROR_INVALID_ARGUMENT;
+    pitch = (size_t)bx * block_bytes;
+    if (pitch > UINT32_MAX) return TC_ERROR_INVALID_ARGUMENT;
 
     memset(out_dds, 0, 148);
     memcpy(out_dds, "DDS ", 4);

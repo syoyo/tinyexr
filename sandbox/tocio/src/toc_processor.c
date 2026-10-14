@@ -219,7 +219,7 @@ toc_result toc_lower_transform(const toc_config *cfg, toc_op_list *list,
              * Forward: slope*in+offset -> power -> saturation.
              * Inverse: inv_saturation -> inv_power -> inv_slope+offset. */
             float luma[3] = {0.2126f, 0.7152f, 0.0593f};
-            float ny = 1.0f / sat;
+            float ny = (sat != 0.0f) ? 1.0f / sat : 1.0f;
             /* 1. Inverse saturation as a matrix:
              *    c' = c/s - ((1-s)/s)*broadcast(luma·c)
              *  => M[i][j] = delta(i,j)/s + (1-1/s)*luma[j]   (col-major). */

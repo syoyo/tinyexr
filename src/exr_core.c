@@ -284,7 +284,7 @@ exr_result exr_header_validate(const exr_header *h, int enforce_short_names,
         return EXR_ERROR_CORRUPT;
     if (h->tiled &&
         (h->tile_x_size == 0 || h->tile_y_size == 0 ||
-         h->tile_x_size > INT32_MAX || h->tile_y_size > INT32_MAX ||
+         h->tile_x_size > EXR_MAX_DIMENSION || h->tile_y_size > EXR_MAX_DIMENSION ||
          h->level_mode < EXR_TILE_ONE_LEVEL ||
          h->level_mode > EXR_TILE_RIPMAP_LEVELS ||
          h->rounding_mode < EXR_TILE_ROUND_DOWN ||

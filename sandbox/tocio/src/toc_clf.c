@@ -445,7 +445,11 @@ static toc_result clf_lut3d(toc_op_list *list, xr *r) {
             data = (float *)toc_malloc(&list->alloc,
                                        (size_t)size * size * size * 3 * sizeof(float));
             if (!data) return TOC_ERROR_OUT_OF_MEMORY;
-            xfloats(r, data, size * size * size * 3);
+            {
+                int need = size * size * size * 3;
+                int got = xfloats(r, data, need);
+                if (got != need) { toc_free(&list->alloc, data); return TOC_ERROR_PARSE; }
+            }
             if (xat(r)) { ++r->p; if (r->p < r->end && *r->p == '/')
                 xskip_close(r); }
         } else {

@@ -57,7 +57,10 @@ exr_result exr_parse_chlist(const exr_allocator *a, const uint8_t *data,
 
         if (count >= EXR_MAX_CHANNELS) goto corrupt;
         if (count == cap) {
-            int32_t ncap = cap ? cap * 2 : 4;
+            int32_t ncap;
+            if (cap >= EXR_MAX_CHANNELS) goto corrupt;
+            ncap = cap ? cap * 2 : 4;
+            if (ncap <= cap || ncap > EXR_MAX_CHANNELS) goto corrupt;
             exr_channel *nc = (exr_channel *)exr_calloc(a, (size_t)ncap,
                                                         sizeof(exr_channel));
             if (!nc) {

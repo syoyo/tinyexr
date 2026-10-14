@@ -583,7 +583,9 @@ int tc_astc_decode_image_rgba8(const uint8_t *blocks, uint32_t width,
     uint32_t i, j, x, y;
     for (j = 0; j < bh; ++j) {
         for (i = 0; i < bw; ++i) {
-            const uint8_t *blk = blocks + ((size_t)j * bw + i) * 16u;
+            size_t blk_i = (size_t)j * (size_t)bw + i;
+            if (blk_i > SIZE_MAX / 16u) return 0;
+            const uint8_t *blk = blocks + blk_i * 16u;
             if (!tc_astc_decode_block_rgba8(blk, bx, by, tmp)) return 0;
             for (y = 0; y < by; ++y) {
                 uint32_t py = j * by + y;

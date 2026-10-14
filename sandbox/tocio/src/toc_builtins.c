@@ -1219,7 +1219,7 @@ static float gc_apply(float val, float ach, float thr, float scale,
  * degenerate lim <= 1 there is nothing outside the gamut to compress. */
 static float gc_scale(float lim, float thr, float power) {
     float ip, t, d;
-    if (lim <= 1.0f || thr >= 1.0f) return 1.0f;
+    if (lim <= 1.0f || thr >= 1.0f || power == 0.0f || power != power) return 1.0f;
     ip = 1.0f / power;
     t = (lim - thr) / (1.0f - thr); /* > 1, so t^power - 1 > 0 */
     d = toc_powf(toc_powf(t, power) - 1.0f, ip);

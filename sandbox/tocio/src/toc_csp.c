@@ -201,8 +201,10 @@ toc_result toc_load_csp(toc_op_list *list, const char *data, size_t len) {
         }
     }
 
-    if (mesh < 2 || !lut3d)
-        return TOC_ERROR_PARSE; /* CSP requires a 3D mesh + data */
+    if (mesh < 2 || !lut3d) {
+        rc = TOC_ERROR_PARSE;
+        goto fail;
+    } /* CSP requires a 3D mesh + data */
 
     rc = TOC_SUCCESS;
 

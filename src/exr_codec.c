@@ -68,6 +68,11 @@ const char *exr_zlib_backend_name(void) {
  */
 exr_result exr_decompress_block(const exr_codec_ctx *ctx, const uint8_t *src,
                                 size_t src_size, uint8_t *dst, size_t dst_size) {
+    if (!ctx || !src || !dst) return EXR_ERROR_INVALID_ARGUMENT;
+    if (src_size == 0 || dst_size == 0) {
+        if (src_size != dst_size) return EXR_ERROR_CORRUPT;
+        return EXR_SUCCESS;
+    }
     if (src_size == dst_size) {
         memcpy(dst, src, dst_size);
         return EXR_SUCCESS;

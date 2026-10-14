@@ -21,7 +21,9 @@ exr_result exr_zip_decompress(const exr_allocator *a, const uint8_t *src,
     uint8_t *tmp;
     size_t tmp_size;
     exr_result rc;
-
+    if (!a || !src || !dst) return EXR_ERROR_INVALID_ARGUMENT;
+    if (!exr_allocator_valid((exr_allocator *)a)) return EXR_ERROR_INVALID_ARGUMENT;
+    if (dst_size == 0) return EXR_ERROR_INVALID_ARGUMENT;
     if (exr_add_ovf(dst_size, 8, &tmp_size)) return EXR_ERROR_OUT_OF_MEMORY;
     tmp = (uint8_t *)exr_malloc(a, tmp_size ? tmp_size : 1);
     if (!tmp) return EXR_ERROR_OUT_OF_MEMORY;

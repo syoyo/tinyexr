@@ -9,6 +9,7 @@
  */
 
 #include "toc_internal.h"
+#include <limits.h>
 
 toc_result toc_config_parse(const char *yaml, size_t len, const toc_allocator *a,
                             toc_config **out) {
@@ -106,7 +107,9 @@ int toc_cfg_cs_in_display_section(const toc_config *cfg, const char *name) {
 /* ---- look introspection (public API) ------------------------------------- */
 int toc_config_num_looks(const toc_config *cfg) {
     const toc_node *s = cfg ? cs_seq(cfg, "looks") : NULL;
-    return (s && s->kind == TOC_NODE_SEQ) ? (int)s->n_items : 0;
+    if (s && s->kind == TOC_NODE_SEQ)
+        return s->n_items > (size_t)INT_MAX ? INT_MAX : (int)s->n_items;
+    return 0;
 }
 const char *toc_config_look_name(const toc_config *cfg, int index) {
     const toc_node *s = cfg ? cs_seq(cfg, "looks") : NULL;
@@ -117,7 +120,9 @@ const char *toc_config_look_name(const toc_config *cfg, int index) {
 }
 int toc_config_num_view_transforms(const toc_config *cfg) {
     const toc_node *s = cfg ? vt_seq(cfg) : NULL;
-    return (s && s->kind == TOC_NODE_SEQ) ? (int)s->n_items : 0;
+    if (s && s->kind == TOC_NODE_SEQ)
+        return s->n_items > (size_t)INT_MAX ? INT_MAX : (int)s->n_items;
+    return 0;
 }
 const char *toc_config_view_transform_name(const toc_config *cfg, int index) {
     const toc_node *s = cfg ? vt_seq(cfg) : NULL;
@@ -172,7 +177,9 @@ const toc_node *toc_cfg_cs_transform(const toc_node *cs, int want_to_ref,
 /* ---- introspection ------------------------------------------------------- */
 int toc_config_num_colorspaces(const toc_config *cfg) {
     const toc_node *s = cfg ? cs_seq(cfg, "colorspaces") : NULL;
-    return (s && s->kind == TOC_NODE_SEQ) ? (int)s->n_items : 0;
+    if (s && s->kind == TOC_NODE_SEQ)
+        return s->n_items > (size_t)INT_MAX ? INT_MAX : (int)s->n_items;
+    return 0;
 }
 const char *toc_config_colorspace_name(const toc_config *cfg, int index) {
     const toc_node *s = cfg ? cs_seq(cfg, "colorspaces") : NULL;

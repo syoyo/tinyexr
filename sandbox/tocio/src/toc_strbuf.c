@@ -21,12 +21,17 @@ void toc_sb_init(toc_sb *sb, const toc_allocator *a) {
 static int sb_reserve(toc_sb *sb, size_t extra) {
     size_t need;
     if (sb->oom) return 0;
+    if (extra > SIZE_MAX - sb->len - 1) { sb->oom = 1; return 0; }
     need = sb->len + extra + 1;
     if (need <= sb->cap) return 1;
     {
-        size_t ncap = sb->cap ? sb->cap * 2 : 256;
+        size_t ncap = sb->cap ? sb->cap : 256;
         char *n;
-        while (ncap < need) ncap *= 2;
+        while (ncap < need) {
+            if (ncap > SIZE_MAX / 2) { sb->oom = 1; return 0; }
+            ncap *= 2;
+        }
+        if (ncap < need) { sb->oom = 1; return 0; }
         n = (char *)toc_malloc(&sb->alloc, ncap);
         if (!n) { sb->oom = 1; return 0; }
         if (sb->buf) {

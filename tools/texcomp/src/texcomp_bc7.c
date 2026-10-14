@@ -1203,10 +1203,15 @@ tc_result tc_bc7_decompress_rgbaf(const uint8_t *bc7, uint32_t width,
     tc_result ret;
 
     if (!bc7 || !out_rgba || !width || !height) return TC_ERROR_INVALID_ARGUMENT;
-    if (out_size < (size_t)height * (size_t)width * 4u * sizeof(float))
-        return TC_ERROR_INVALID_ARGUMENT;
-    need = (size_t)height * (size_t)width * 4u;
-    u8 = (uint8_t *)malloc(need);
+    {
+        unsigned long long px = (unsigned long long)width * (unsigned long long)height;
+        if (px > (unsigned long long)SIZE_MAX / (4u * sizeof(float)))
+            return TC_ERROR_INVALID_ARGUMENT;
+        if (out_size < (size_t)(px * 4u * sizeof(float))) return TC_ERROR_INVALID_ARGUMENT;
+        if (px > (unsigned long long)SIZE_MAX / 4u) return TC_ERROR_INVALID_ARGUMENT;
+        need = (size_t)(px * 4u);
+    }
+    u8 = (uint8_t *)malloc(need ? need : 1);
     if (!u8) return TC_ERROR_OUT_OF_MEMORY;
     row_bytes = (size_t)width * 4u;
     ret = tc_bc7_decompress_rgba8(bc7, width, height, row_bytes, u8, need);
@@ -1364,11 +1369,16 @@ tc_result tc_bc7_compress_rgbaf(const float *rgba, uint32_t width,
     tc_result ret;
 
     if (!rgba || !out_bc7 || !width || !height) return TC_ERROR_INVALID_ARGUMENT;
-    if (stride_bytes < (size_t)width * 4u * sizeof(float))
-        return TC_ERROR_INVALID_ARGUMENT;
-
-    need = (size_t)height * (size_t)width * 4u;
-    u8 = (uint8_t *)malloc(need);
+    {
+        unsigned long long px = (unsigned long long)width * (unsigned long long)height;
+        if (px > (unsigned long long)SIZE_MAX / (4u * sizeof(float)))
+            return TC_ERROR_INVALID_ARGUMENT;
+        if (stride_bytes < (size_t)width * 4u * sizeof(float))
+            return TC_ERROR_INVALID_ARGUMENT;
+        if (px > (unsigned long long)SIZE_MAX / 4u) return TC_ERROR_INVALID_ARGUMENT;
+        need = (size_t)(px * 4u);
+    }
+    u8 = (uint8_t *)malloc(need ? need : 1);
     if (!u8) return TC_ERROR_OUT_OF_MEMORY;
 
     row_bytes = (size_t)width * 4u;

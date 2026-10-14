@@ -12,6 +12,7 @@
  */
 
 #include "toc_internal.h"
+#include <limits.h>
 
 typedef struct {
     const char *p;
@@ -448,7 +449,9 @@ toc_result toc_yaml_parse(const char *text, size_t len, toc_arena *ar,
             continue; /* tolerate a single doc start */
         if (l >= 3 && bol[0] == '.' && bol[1] == '.' && bol[2] == '.') break;
         if (count == cap) {
-            int ncap = cap * 2;
+            int ncap;
+            if (cap > INT_MAX / 2) return TOC_ERROR_PARSE;
+            ncap = cap * 2;
             yline *nl = (yline *)toc_arena_alloc(ar, (size_t)ncap * sizeof(yline));
             if (!nl) return TOC_ERROR_OUT_OF_MEMORY;
             memcpy(nl, lines, (size_t)count * sizeof(yline));

@@ -6548,7 +6548,11 @@ static tc_result tc_astc_compress_band(tc_astc_encode_context *astc_ctx,
     uint8_t block[144][4];
     uint32_t bx, by, xx, yy, x, y, brow;
     uint32_t blocks_x = (width + opt->block_x - 1u) / opt->block_x;
-    size_t off = (size_t)brow_begin * blocks_x * 16u;
+    size_t off;
+    if (blocks_x > 0 && (uint64_t)brow_begin >
+        (uint64_t)(SIZE_MAX / ((size_t)blocks_x * 16u)))
+        return TC_ERROR_INVALID_ARGUMENT;
+    off = (size_t)brow_begin * blocks_x * 16u;
 
     for (brow = brow_begin; brow < brow_end; ++brow) {
         by = brow * opt->block_y;

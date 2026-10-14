@@ -78,6 +78,11 @@ void exr_parallel_for(int nthreads, int njobs, exr_par_fn fn, void *ctx) {
      * for the whole worker lifetime, so capturing &st is safe. */
     q = dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0);
     grp = dispatch_group_create();
+    if (!grp || !q) {
+        if (grp) dispatch_release(grp);
+        for (i = 0; i < njobs; ++i) fn(ctx, i);
+        return;
+    }
     for (i = 0; i < nthreads - 1; ++i)
         dispatch_group_async_f(grp, q, &st, par_worker);
 

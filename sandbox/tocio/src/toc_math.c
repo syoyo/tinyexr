@@ -32,6 +32,7 @@ float toc_log2f(float x) {
     union { float f; uint32_t u; } v;
     int e;
     float m, t, t2, ln;
+    if (!(x == x)) return x;                      /* NaN */
     if (!(x > 0.0f)) return x < 0.0f ? TOC_NANF : TOC_INF_NEG;
     v.f = x;
     e = (int)((v.u >> 23) & 0xffu) - 127;
@@ -76,7 +77,8 @@ float toc_powf(float x, float y) {
 }
 
 float toc_sqrtf(float x) {
-    if (!(x > 0.0f)) return 0.0f;
+    if (!(x == x)) return x;                 /* NaN */
+    if (!(x > 0.0f)) return x < 0.0f ? TOC_NANF : 0.0f;
     return toc_exp2f(0.5f * toc_log2f(x));
 }
 

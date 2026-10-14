@@ -167,7 +167,9 @@ exr_result exr_reader_fetch(exr_reader *r, uint64_t offset, size_t size,
                             void *scratch, const uint8_t **out_ptr) {
     /* Both paths read from `mem`; the callback path has buffered `filled`
      * bytes (== mem_size once exr_reader_ensure_buffered has succeeded). */
-    size_t avail = (r->kind == EXR_SRC_MEMORY) ? r->mem_size : r->filled;
+    size_t avail;
+    if (!r || !out_ptr) return EXR_ERROR_INVALID_ARGUMENT;
+    avail = (r->kind == EXR_SRC_MEMORY) ? r->mem_size : r->filled;
     (void)scratch;
     if (offset > (uint64_t)avail) return EXR_ERROR_CORRUPT;
     if (size > avail - (size_t)offset) return EXR_ERROR_CORRUPT;
@@ -207,7 +209,11 @@ exr_result exr_attr_list_append(const exr_allocator *a, exr_attr_list *list,
     exr_attr *slot;
     if (list->count >= EXR_MAX_ATTRIBUTES) return EXR_ERROR_CORRUPT;
     if (list->count == list->capacity) {
-        uint32_t ncap = list->capacity ? list->capacity * 2 : 8;
+        uint32_t ncap;
+        if (list->capacity >= EXR_MAX_ATTRIBUTES) return EXR_ERROR_CORRUPT;
+        ncap = list->capacity ? list->capacity * 2 : 8;
+        if (ncap <= list->capacity || ncap > EXR_MAX_ATTRIBUTES)
+            return EXR_ERROR_CORRUPT;
         exr_attr *ni =
             (exr_attr *)exr_calloc(a, ncap, sizeof(exr_attr));
         if (!ni) return EXR_ERROR_OUT_OF_MEMORY;
@@ -646,7 +652,16 @@ exr_result exr_reader_parse_header(exr_reader *r) {
             goto fail;
         }
         if (r->num_parts == r->parts_cap) {
-            int32_t ncap = r->parts_cap ? r->parts_cap * 2 : 1;
+            int32_t ncap;
+            if (r->parts_cap >= (EXR_MAX_PARTS > 0 ? EXR_MAX_PARTS : 1024)) {
+                rc = EXR_ERROR_CORRUPT;
+                goto fail;
+            }
+            ncap = r->parts_cap ? r->parts_cap * 2 : 1;
+            if (ncap <= r->parts_cap || ncap > EXR_MAX_PARTS) {
+                rc = EXR_ERROR_CORRUPT;
+                goto fail;
+            }
             exr_int_part *npb = (exr_int_part *)exr_calloc(
                 &r->alloc, (size_t)ncap, sizeof(exr_int_part));
             if (!npb) {
@@ -1500,33 +1515,40 @@ fail:
 
 /* Offset-table index of a tile (tx,ty) at level (lx,ly). */
 static uint32_t tile_index(const exr_int_part *p, int tx, int ty, int lx, int ly) {
-    uint32_t index = 0;
+    uint64_t index = 0;
     int l, nxt, nyt, mode = p->header.level_mode;
     if (mode == EXR_TILE_MIPMAP_LEVELS) {
         for (l = 0; l < lx; ++l) {
-            tiled_level_size(p, l, l, NULL, NULL, &nxt, &nyt);
-            index += (uint32_t)(nxt * nyt);
+            if (!EXR_OK(tiled_level_size(p, l, l, NULL, NULL, &nxt, &nyt)))
+                return (uint32_t)p->num_chunks;
+            index += (uint64_t)nxt * (uint64_t)nyt;
         }
-        tiled_level_size(p, lx, ly, NULL, NULL, &nxt, NULL);
-        return index + (uint32_t)(ty * nxt + tx);
-    }
-    if (mode == EXR_TILE_RIPMAP_LEVELS) {
+        if (!EXR_OK(tiled_level_size(p, lx, ly, NULL, NULL, &nxt, NULL)))
+            return (uint32_t)p->num_chunks;
+        index += (uint64_t)ty * (uint64_t)nxt + (uint64_t)tx;
+    } else if (mode == EXR_TILE_RIPMAP_LEVELS) {
         int yy, xx;
         for (yy = 0; yy < ly; ++yy)
             for (xx = 0; xx < p->num_x_levels; ++xx) {
-                tiled_level_size(p, xx, yy, NULL, NULL, &nxt, &nyt);
-                index += (uint32_t)(nxt * nyt);
+                if (!EXR_OK(tiled_level_size(p, xx, yy, NULL, NULL, &nxt, &nyt)))
+                    return (uint32_t)p->num_chunks;
+                index += (uint64_t)nxt * (uint64_t)nyt;
             }
         for (xx = 0; xx < lx; ++xx) {
-            tiled_level_size(p, xx, ly, NULL, NULL, &nxt, &nyt);
-            index += (uint32_t)(nxt * nyt);
+            if (!EXR_OK(tiled_level_size(p, xx, ly, NULL, NULL, &nxt, &nyt)))
+                return (uint32_t)p->num_chunks;
+            index += (uint64_t)nxt * (uint64_t)nyt;
         }
-        tiled_level_size(p, lx, ly, NULL, NULL, &nxt, NULL);
-        return index + (uint32_t)(ty * nxt + tx);
+        if (!EXR_OK(tiled_level_size(p, lx, ly, NULL, NULL, &nxt, NULL)))
+            return (uint32_t)p->num_chunks;
+        index += (uint64_t)ty * (uint64_t)nxt + (uint64_t)tx;
+    } else {
+        if (!EXR_OK(tiled_level_size(p, 0, 0, NULL, NULL, &nxt, NULL)))
+            return (uint32_t)p->num_chunks;
+        index = (uint64_t)ty * (uint64_t)nxt + (uint64_t)tx;
     }
-    /* ONE_LEVEL */
-    tiled_level_size(p, 0, 0, NULL, NULL, &nxt, NULL);
-    return (uint32_t)(ty * nxt + tx);
+    if (index >= (uint64_t)p->num_chunks) return (uint32_t)p->num_chunks;
+    return (uint32_t)index;
 }
 
 exr_result exr_reader_read_tile(exr_reader *r, int32_t part, int32_t tile_x,
