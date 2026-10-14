@@ -432,6 +432,93 @@ exr_result exr_header_set_string_attribute(const exr_allocator *alloc,
                                     (uint32_t)n);
 }
 
+exr_result exr_header_set_int_attribute(const exr_allocator *alloc,
+                                        exr_header *hdr, const char *name,
+                                        int32_t value) {
+    if (!name || !hdr) return EXR_ERROR_INVALID_ARGUMENT;
+    return exr_header_set_attribute(alloc, hdr, name, "int", &value,
+                                    sizeof(value));
+}
+
+exr_result exr_header_set_float_attribute(const exr_allocator *alloc,
+                                          exr_header *hdr, const char *name,
+                                          float value) {
+    if (!name || !hdr) return EXR_ERROR_INVALID_ARGUMENT;
+    return exr_header_set_attribute(alloc, hdr, name, "float", &value,
+                                    sizeof(value));
+}
+
+exr_result exr_header_get_int_attribute(const exr_header *hdr,
+                                        const char *name, int32_t *out) {
+    exr_attribute a;
+    if (!hdr || !name || !out) return EXR_ERROR_INVALID_ARGUMENT;
+    if (!EXR_OK(exr_header_find_attribute(hdr, name, &a))) return EXR_ERROR_INVALID_ARGUMENT;
+    if (strcmp(a.type_name, "int") != 0 || a.size != sizeof(int32_t))
+        return EXR_ERROR_INVALID_ARGUMENT;
+    memcpy(out, a.data, sizeof(int32_t));
+    return EXR_SUCCESS;
+}
+
+exr_result exr_header_get_float_attribute(const exr_header *hdr,
+                                          const char *name, float *out) {
+    exr_attribute a;
+    if (!hdr || !name || !out) return EXR_ERROR_INVALID_ARGUMENT;
+    if (!EXR_OK(exr_header_find_attribute(hdr, name, &a))) return EXR_ERROR_INVALID_ARGUMENT;
+    if (strcmp(a.type_name, "float") != 0 || a.size != sizeof(float))
+        return EXR_ERROR_INVALID_ARGUMENT;
+    memcpy(out, a.data, sizeof(float));
+    return EXR_SUCCESS;
+}
+
+exr_result exr_header_set_preview_image(const exr_allocator *alloc,
+                                        exr_header *hdr,
+                                        const exr_preview_image *preview) {
+    const exr_allocator *a = alloc ? alloc : exr_default_allocator();
+    uint8_t *buf;
+    size_t wh, total, pixel_bytes;
+    if (!hdr || !preview) return EXR_ERROR_INVALID_ARGUMENT;
+    if (preview->width == 0 || preview->height == 0 || !preview->pixels)
+        return EXR_ERROR_INVALID_ARGUMENT;
+    if ((uint64_t)preview->width * (uint64_t)preview->height > (1u << 24))
+        return EXR_ERROR_INVALID_ARGUMENT;
+    wh = (size_t)preview->width * (size_t)preview->height;
+    pixel_bytes = wh * 4u;
+    if (wh > (SIZE_MAX - 8) / 4u) return EXR_ERROR_INVALID_ARGUMENT;
+    total = 8u + pixel_bytes;
+    buf = (uint8_t *)exr_malloc(a, total);
+    if (!buf) return EXR_ERROR_OUT_OF_MEMORY;
+    /* XDR: little? OpenEXR writes high-byte-first for integers. */
+    exr_wr_u32(buf, preview->width);
+    exr_wr_u32(buf + 4, preview->height);
+    memcpy(buf + 8, preview->pixels, pixel_bytes);
+    exr_result rc = exr_header_set_attribute(alloc, hdr, "preview", "preview",
+                                            buf, (uint32_t)total);
+    exr_free(a, buf);
+    return rc;
+}
+
+exr_result exr_header_get_preview_image(const exr_header *hdr,
+                                        exr_preview_image *out) {
+    exr_attribute a;
+    uint32_t w, h;
+    size_t needed;
+    if (!hdr || !out) return EXR_ERROR_INVALID_ARGUMENT;
+    if (!EXR_OK(exr_header_find_attribute(hdr, "preview", &a))) return EXR_ERROR_INVALID_ARGUMENT;
+    if (strcmp(a.type_name, "preview") != 0 || a.size < 8u)
+        return EXR_ERROR_INVALID_ARGUMENT;
+    w = exr_rd_u32(a.data);
+    h = exr_rd_u32((const uint8_t *)a.data + 4);
+    if (w == 0 || h == 0 || (uint64_t)w * h > (1u << 24))
+        return EXR_ERROR_CORRUPT;
+    needed = 8u + (size_t)w * h * 4u;
+    if ((size_t)a.size != needed) return EXR_ERROR_CORRUPT;
+    memset(out, 0, sizeof(*out));
+    out->width = w;
+    out->height = h;
+    out->pixels = (const uint8_t *)a.data + 8;
+    return EXR_SUCCESS;
+}
+
 /* ============================================================================
  * Image lifetime
  * ========================================================================== */

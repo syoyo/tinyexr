@@ -136,7 +136,7 @@ static int is_reserved_attr_name(const char *name) {
     static const char *const reserved[] = {
         "channels",         "compression",      "dataWindow",
         "displayWindow",    "lineOrder",        "pixelAspectRatio",
-        "screenWindowCenter", "screenWindowWidth", "tiles",
+        "chromaticities",    "screenWindowCenter", "screenWindowWidth", "tiles",
         "name",             "type",             "chunkCount",
         "version",          "maxSamplesPerPixel"};
     size_t i;
@@ -189,6 +189,12 @@ static void write_header(obuf *b, const exr_header *h, const int *order,
         uint8_t t[4];
         exr_wr_f32(t, h->pixel_aspect_ratio != 0 ? h->pixel_aspect_ratio : 1.0f);
         ob_attr(b, "pixelAspectRatio", "float", t, 4);
+    }
+    if (h->has_chromaticities) {
+        uint8_t t[32];
+        int i;
+        for (i = 0; i < 8; ++i) exr_wr_f32(t + (size_t)i * 4, h->chromaticities[i]);
+        ob_attr(b, "chromaticities", "chromaticities", t, 32);
     }
     {
         uint8_t t[8];

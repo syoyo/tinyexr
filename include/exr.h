@@ -242,6 +242,20 @@ void exr_image_free(exr_image *img);
 void exr_part_free(const exr_allocator *a, exr_part *part);
 
 /* ============================================================================
+ * Preview image (OpenEXR "preview" standard attribute)
+ *
+ * A small RGBA image (4 bytes/pixel) stored on a header. The pixel pointer
+ * returned by the getter is borrowed from header storage and is valid for the
+ * header's lifetime. Set copies the caller's pixel data.
+ * ========================================================================== */
+
+typedef struct exr_preview_image {
+    uint32_t width;
+    uint32_t height;
+    const uint8_t *pixels; /* width*height*4 RGBA, caller-owned on set */
+} exr_preview_image;
+
+/* ============================================================================
  * Custom header attributes (exr_header.attrs is otherwise opaque)
  *
  * Read access lets callers inspect any parsed attribute (standard or custom);
@@ -297,6 +311,25 @@ exr_result exr_header_set_attribute(const exr_allocator *alloc, exr_header *hdr,
 exr_result exr_header_set_string_attribute(const exr_allocator *alloc,
                                            exr_header *hdr, const char *name,
                                            const char *value);
+
+/* Standard preview-image attribute helpers (OpenEXR "preview" type). */
+exr_result exr_header_set_preview_image(const exr_allocator *alloc,
+                                        exr_header *hdr,
+                                        const exr_preview_image *preview);
+exr_result exr_header_get_preview_image(const exr_header *hdr,
+                                        exr_preview_image *out);
+
+/* Convenience for scalar "int" / "float" typed attributes. */
+exr_result exr_header_set_int_attribute(const exr_allocator *alloc,
+                                        exr_header *hdr, const char *name,
+                                        int32_t value);
+exr_result exr_header_get_int_attribute(const exr_header *hdr,
+                                        const char *name, int32_t *out);
+exr_result exr_header_set_float_attribute(const exr_allocator *alloc,
+                                          exr_header *hdr, const char *name,
+                                          float value);
+exr_result exr_header_get_float_attribute(const exr_header *hdr,
+                                          const char *name, float *out);
 
 /* ============================================================================
  * High-level load / save

@@ -4142,6 +4142,43 @@ static void luminance_chroma_tests(void) {
     }
 }
 
+static void metadata_attribute_tests(void) {
+    exr_header h;
+    exr_attribute a;
+    int iv = 0;
+    float fv = 0.0f;
+    uint8_t px[16];
+    exr_preview_image preview, got;
+    int i;
+    memset(&h, 0, sizeof(h));
+    memset(px, 0, sizeof(px));
+    for (i = 0; i < 16; ++i) px[i] = (uint8_t)(i + 1);
+    CHECK(EXR_OK(exr_header_set_int_attribute(NULL, &h, "iattr", 42)),
+          "set int attribute");
+    CHECK(EXR_OK(exr_header_set_float_attribute(NULL, &h, "fattr", 2.25f)),
+          "set float attribute");
+    CHECK(EXR_OK(exr_header_get_int_attribute(&h, "iattr", &iv)) && iv == 42,
+          "get int attribute");
+    CHECK(EXR_OK(exr_header_get_float_attribute(&h, "fattr", &fv)) &&
+              fabsf(fv - 2.25f) < 1e-6f,
+          "get float attribute");
+    CHECK(EXR_OK(exr_header_find_attribute(&h, "iattr", &a)) &&
+              a.size == sizeof(int32_t),
+          "int attribute has correct payload size");
+
+    preview.width = 2;
+    preview.height = 2;
+    preview.pixels = px;
+    CHECK(EXR_OK(exr_header_set_preview_image(NULL, &h, &preview)),
+          "set preview image attribute");
+    memset(&got, 0, sizeof(got));
+    CHECK(EXR_OK(exr_header_get_preview_image(&h, &got)) &&
+              got.width == 2 && got.height == 2 && got.pixels != NULL &&
+              memcmp(got.pixels, px, sizeof(px)) == 0,
+          "get preview image attribute");
+    exr_header_free(exr_default_allocator(), &h);
+}
+
 int main(void) {
     static const char *poc[] = {
         "test/unit/regression/poc-1383755b301e5f505b2198dc0508918b537fdf48bbfc6deeffe268822e6f6cd6",
@@ -4153,6 +4190,9 @@ int main(void) {
 
     printf("== hardening API regressions ==\n");
     hardening_api_tests();
+
+    printf("== metadata attribute regressions ==\n");
+    metadata_attribute_tests();
 
     printf("== valid corpus ==\n");
     expect_load("asakusa.exr", 1, 660, 440, 4);
