@@ -55,7 +55,8 @@ static void par_worker(void *arg) {
     }
 }
 
-void exr_parallel_for(int nthreads, int njobs, exr_par_fn fn, void *ctx) {
+static void parallel_for_impl(int nthreads, int njobs, exr_par_fn fn, void *ctx,
+                               exr_caller_fn caller) {
     par_state st;
     dispatch_queue_t q;
     dispatch_group_t grp;
@@ -64,7 +65,8 @@ void exr_parallel_for(int nthreads, int njobs, exr_par_fn fn, void *ctx) {
     if (njobs <= 0) return;
     if (nthreads > njobs) nthreads = njobs;
     if (nthreads <= 1) { /* serial */
-        for (i = 0; i < njobs; ++i) fn(ctx, i);
+        if (caller) caller(ctx);
+        else for (i = 0; i < njobs; ++i) fn(ctx, i);
         return;
     }
 
@@ -80,13 +82,15 @@ void exr_parallel_for(int nthreads, int njobs, exr_par_fn fn, void *ctx) {
     grp = dispatch_group_create();
     if (!grp || !q) {
         if (grp) dispatch_release(grp);
-        for (i = 0; i < njobs; ++i) fn(ctx, i);
+        if (caller) caller(ctx);
+        else for (i = 0; i < njobs; ++i) fn(ctx, i);
         return;
     }
     for (i = 0; i < nthreads - 1; ++i)
         dispatch_group_async_f(grp, q, &st, par_worker);
 
-    par_worker(&st); /* calling thread participates */
+    if (caller) caller(ctx);
+    else par_worker(&st); /* calling thread participates */
 
     dispatch_group_wait(grp, DISPATCH_TIME_FOREVER);
     dispatch_release(grp);
@@ -151,7 +155,8 @@ static exr_thread_ret par_worker(void *arg) {
     return EXR_THREAD_RET_OK;
 }
 
-void exr_parallel_for(int nthreads, int njobs, exr_par_fn fn, void *ctx) {
+static void parallel_for_impl(int nthreads, int njobs, exr_par_fn fn, void *ctx,
+                               exr_caller_fn caller) {
     par_state st;
     exr_thread_t threads[EXR_THREAD_CAP];
     int spawned = 0, i;
@@ -160,7 +165,8 @@ void exr_parallel_for(int nthreads, int njobs, exr_par_fn fn, void *ctx) {
     if (nthreads > njobs) nthreads = njobs;
     if (nthreads > EXR_THREAD_CAP) nthreads = EXR_THREAD_CAP;
     if (nthreads <= 1) { /* serial */
-        for (i = 0; i < njobs; ++i) fn(ctx, i);
+        if (caller) caller(ctx);
+        else for (i = 0; i < njobs; ++i) fn(ctx, i);
         return;
     }
 
@@ -169,7 +175,8 @@ void exr_parallel_for(int nthreads, int njobs, exr_par_fn fn, void *ctx) {
     st.njobs = njobs;
     st.next = 0;
     if (!exr_mutex_init(&st.lock)) {
-        for (i = 0; i < njobs; ++i) fn(ctx, i); /* fallback: serial */
+        if (caller) caller(ctx);
+        else for (i = 0; i < njobs; ++i) fn(ctx, i); /* fallback: serial */
         return;
     }
 
@@ -181,7 +188,8 @@ void exr_parallel_for(int nthreads, int njobs, exr_par_fn fn, void *ctx) {
             ++spawned;
     }
 
-    par_worker(&st); /* calling thread participates */
+    if (caller) caller(ctx);
+    else par_worker(&st); /* calling thread participates */
 
     for (i = 0; i < spawned; ++i) exr_thread_join(threads[i]);
     exr_mutex_destroy(&st.lock);
@@ -189,10 +197,80 @@ void exr_parallel_for(int nthreads, int njobs, exr_par_fn fn, void *ctx) {
 
 #else /* !EXR_USE_THREADS : serial, no <threads.h> (freestanding-safe) */
 
-void exr_parallel_for(int nthreads, int njobs, exr_par_fn fn, void *ctx) {
+static void parallel_for_impl(int nthreads, int njobs, exr_par_fn fn, void *ctx,
+                               exr_caller_fn caller) {
     int i;
     (void)nthreads;
-    for (i = 0; i < njobs; ++i) fn(ctx, i);
+    if (caller) caller(ctx);
+    else for (i = 0; i < njobs; ++i) fn(ctx, i);
 }
 
 #endif /* EXR_USE_THREADS */
+
+void exr_parallel_for(int nthreads, int njobs, exr_par_fn fn, void *ctx) {
+    parallel_for_impl(nthreads, njobs, fn, ctx, NULL);
+}
+
+void exr_parallel_caller(int nthreads, exr_par_fn worker, exr_caller_fn caller,
+                          void *ctx) {
+    if (nthreads < 1) nthreads = 1;
+    if (nthreads > 64) nthreads = 64;
+    parallel_for_impl(nthreads, nthreads, worker, ctx, caller);
+}
+
+#if defined(EXR_USE_THREADS) && (defined(__APPLE__) || defined(EXR_THREADS_PTHREAD))
+#include <sched.h>
+void exr_thread_yield(void) { (void)sched_yield(); }
+#elif defined(EXR_USE_THREADS)
+void exr_thread_yield(void) { thrd_yield(); }
+#else
+void exr_thread_yield(void) {}
+#endif
+
+#if defined(EXR_USE_THREADS) && (defined(__APPLE__) || defined(EXR_THREADS_PTHREAD))
+#include <pthread.h>
+struct exr_wait_queue { pthread_mutex_t mutex; pthread_cond_t changed; };
+exr_wait_queue *exr_wait_queue_create(const exr_allocator *a) {
+    exr_wait_queue *q = (exr_wait_queue *)exr_malloc(a, sizeof(*q));
+    if (!q) return NULL;
+    if (pthread_mutex_init(&q->mutex, NULL)) { exr_free(a, q); return NULL; }
+    if (pthread_cond_init(&q->changed, NULL)) {
+        pthread_mutex_destroy(&q->mutex); exr_free(a, q); return NULL;
+    }
+    return q;
+}
+void exr_wait_queue_free(const exr_allocator *a, exr_wait_queue *q) {
+    if (!q) return;
+    pthread_cond_destroy(&q->changed); pthread_mutex_destroy(&q->mutex); exr_free(a, q);
+}
+void exr_wait_queue_lock(exr_wait_queue *q) { if (q) (void)pthread_mutex_lock(&q->mutex); }
+void exr_wait_queue_unlock(exr_wait_queue *q) { if (q) (void)pthread_mutex_unlock(&q->mutex); }
+void exr_wait_queue_wait(exr_wait_queue *q) { if (q) (void)pthread_cond_wait(&q->changed, &q->mutex); }
+void exr_wait_queue_notify(exr_wait_queue *q) { if (q) (void)pthread_cond_broadcast(&q->changed); }
+#elif defined(EXR_USE_THREADS)
+struct exr_wait_queue { mtx_t mutex; cnd_t changed; };
+exr_wait_queue *exr_wait_queue_create(const exr_allocator *a) {
+    exr_wait_queue *q = (exr_wait_queue *)exr_malloc(a, sizeof(*q));
+    if (!q) return NULL;
+    if (mtx_init(&q->mutex, mtx_plain) != thrd_success) { exr_free(a, q); return NULL; }
+    if (cnd_init(&q->changed) != thrd_success) {
+        mtx_destroy(&q->mutex); exr_free(a, q); return NULL;
+    }
+    return q;
+}
+void exr_wait_queue_free(const exr_allocator *a, exr_wait_queue *q) {
+    if (!q) return;
+    cnd_destroy(&q->changed); mtx_destroy(&q->mutex); exr_free(a, q);
+}
+void exr_wait_queue_lock(exr_wait_queue *q) { if (q) (void)mtx_lock(&q->mutex); }
+void exr_wait_queue_unlock(exr_wait_queue *q) { if (q) (void)mtx_unlock(&q->mutex); }
+void exr_wait_queue_wait(exr_wait_queue *q) { if (q) (void)cnd_wait(&q->changed, &q->mutex); }
+void exr_wait_queue_notify(exr_wait_queue *q) { if (q) (void)cnd_broadcast(&q->changed); }
+#else
+exr_wait_queue *exr_wait_queue_create(const exr_allocator *a) { (void)a; return NULL; }
+void exr_wait_queue_free(const exr_allocator *a, exr_wait_queue *q) { (void)a; (void)q; }
+void exr_wait_queue_lock(exr_wait_queue *q) { (void)q; }
+void exr_wait_queue_unlock(exr_wait_queue *q) { (void)q; }
+void exr_wait_queue_wait(exr_wait_queue *q) { (void)q; }
+void exr_wait_queue_notify(exr_wait_queue *q) { (void)q; }
+#endif

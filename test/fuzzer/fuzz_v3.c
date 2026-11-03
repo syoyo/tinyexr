@@ -69,8 +69,27 @@ static exr_result feed_read(void *user, uint64_t offset, uint64_t len,
     return EXR_SUCCESS;
 }
 
+/* Retry the same operation after supplying only its requested range. */
+static int fuzz_supply(exr_reader *r, const uint8_t *file, size_t file_size) {
+    exr_pending_read pr;
+    size_t step;
+    if (exr_reader_pending(r, &pr) != EXR_SUCCESS || pr.offset > file_size ||
+        pr.size > file_size - (size_t)pr.offset || !pr.size) return 0;
+    step = pr.size > 4096 ? 4096 : (size_t)pr.size;
+    return exr_reader_supply(r, pr.offset, file + (size_t)pr.offset, step) == EXR_SUCCESS;
+}
+#define RETRY_READ(expr) do { \
+    do { \
+        rc = (expr); \
+        if (rc == EXR_WOULD_BLOCK && !fuzz_supply(r, file, file_size)) { \
+            rc = EXR_ERROR_CORRUPT; break; \
+        } \
+    } while (rc == EXR_WOULD_BLOCK); \
+} while (0)
+
 /* Block-iterate one part: geometry + per-block decode into a bounded buffer. */
-static void drain_blocks(exr_reader *r, int part) {
+static void drain_blocks(exr_reader *r, int part, const uint8_t *file, size_t file_size) {
+    exr_result rc;
     const exr_header *h = exr_reader_part_header(r, part);
     uint32_t n = 0, i;
     if (!EXR_OK(exr_reader_num_blocks(r, part, &n))) return;
@@ -89,8 +108,8 @@ static void drain_blocks(exr_reader *r, int part) {
             npix = (size_t)bi.width * (size_t)bi.height;
             counts = (int32_t *)calloc(npix, sizeof(*counts));
             if (!counts) continue;
-            if (!EXR_OK(exr_reader_decode_deep_counts(r, part, i, counts, npix,
-                                                      &total))) {
+            RETRY_READ(exr_reader_decode_deep_counts(r, part, i, counts, npix, &total));
+            if (rc != EXR_SUCCESS) {
                 free(counts); continue;
             }
             planes = (exr_buffer *)calloc((size_t)h->num_channels, sizeof(*planes));
@@ -102,9 +121,10 @@ static void drain_blocks(exr_reader *r, int part) {
                     planes[c].data = malloc(planes[c].size ? planes[c].size : 1);
                     if (!planes[c].data) break;
                 }
-                if (c == h->num_channels)
-                    (void)exr_reader_decode_deep_samples(
-                        r, part, i, planes, (size_t)h->num_channels);
+                if (c == h->num_channels) {
+                    RETRY_READ(exr_reader_decode_deep_samples(
+                        r, part, i, planes, (size_t)h->num_channels));
+                }
                 for (c = 0; c < h->num_channels; ++c) free(planes[c].data);
             }
             free(planes);
@@ -116,9 +136,8 @@ static void drain_blocks(exr_reader *r, int part) {
         {
             uint8_t *blk = (uint8_t *)malloc((size_t)bi.uncompressed_size);
             if (!blk) return;
-            if (EXR_OK(exr_reader_decode_block(r, part, i, blk,
-                                               bi.uncompressed_size)) &&
-                h && h->num_channels > 0) {
+            RETRY_READ(exr_reader_decode_block(r, part, i, blk, bi.uncompressed_size));
+            if (rc == EXR_SUCCESS && h && h->num_channels > 0) {
                 void *plane = malloc(bi.uncompressed_size);
                 if (plane) {
                     (void)exr_block_extract_channel(
@@ -133,9 +152,12 @@ static void drain_blocks(exr_reader *r, int part) {
     }
 }
 
-static void drain_reader(exr_reader *r, const exr_allocator *a) {
+static void drain_reader(exr_reader *r, const exr_allocator *a,
+                           const uint8_t *file, size_t file_size) {
     int np, p;
-    if (!EXR_OK(exr_reader_parse_header(r))) {
+    exr_result rc;
+    RETRY_READ(exr_reader_parse_header(r));
+    if (rc != EXR_SUCCESS) {
         (void)exr_reader_parse_header(r); /* terminal parse must be idempotent */
         return;
     }
@@ -144,26 +166,33 @@ static void drain_reader(exr_reader *r, const exr_allocator *a) {
     for (p = 0; p < np; ++p) {
         exr_part out;
         memset(&out, 0, sizeof(out));
-        if (EXR_OK(exr_reader_read_part(r, p, &out))) exr_part_free(a, &out);
+        RETRY_READ(exr_reader_read_part(r, p, &out));
+        if (rc == EXR_SUCCESS) {
+            if (!out.is_deep && (uint64_t)out.width * (uint64_t)out.height *
+                (uint32_t)out.header.num_channels < (1u << 20)) {
+                float *pixels = NULL;
+                (void)exr_part_to_rgba_float(a, &out, &pixels, NULL, NULL, NULL);
+                if (pixels) a->free(a->user, pixels);
+            }
+            exr_part_free(a, &out);
+        }
         {
             const exr_header *h = exr_reader_part_header(r, p);
             if (h && h->part_type == EXR_PART_SCANLINE) {
                 memset(&out, 0, sizeof(out));
-                if (EXR_OK(exr_reader_read_scanlines(
-                        r, p, h->data_window.min_y, 1, &out)))
-                    exr_part_free(a, &out);
+                RETRY_READ(exr_reader_read_scanlines(r, p, h->data_window.min_y, 1, &out));
+                if (rc == EXR_SUCCESS) exr_part_free(a, &out);
             } else if (h && h->part_type == EXR_PART_TILED) {
                 exr_block_info bi;
                 if (EXR_OK(exr_reader_block_info(r, p, 0, &bi))) {
                     memset(&out, 0, sizeof(out));
-                    if (EXR_OK(exr_reader_read_tile(
-                            r, p, bi.tile_x, bi.tile_y, bi.level_x, bi.level_y,
-                            &out)))
-                        exr_part_free(a, &out);
+                    RETRY_READ(exr_reader_read_tile(r, p, bi.tile_x, bi.tile_y,
+                                                    bi.level_x, bi.level_y, &out));
+                    if (rc == EXR_SUCCESS) exr_part_free(a, &out);
                 }
             }
         }
-        drain_blocks(r, p);
+        drain_blocks(r, p, file, file_size);
     }
 }
 
@@ -188,12 +217,12 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     {
         exr_reader *r = NULL;
         if (EXR_OK(exr_reader_open_memory(data, size, &alloc, &r)) && r) {
-            drain_reader(r, &alloc);
+            drain_reader(r, &alloc, data, size);
             exr_reader_close(r);
         }
     }
 
-    /* 3. streaming source path (synchronous full feed, exercises buffering). */
+    /* 3. streaming source path (synchronous range reads). */
     if (size > 0) {
         struct mem_source m;
         exr_data_source ds;
@@ -205,7 +234,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
         ds.read = feed_read;
         ds.total_size = (uint64_t)size;
         if (EXR_OK(exr_reader_open_source(&ds, &alloc, &r)) && r) {
-            drain_reader(r, &alloc);
+            drain_reader(r, &alloc, data, size);
             exr_reader_close(r);
         }
     }
@@ -215,24 +244,10 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
         struct mem_source m;
         exr_data_source ds;
         exr_reader *r = NULL;
-        exr_result rc;
         m.data = data; m.size = size; m.always_block = 1;
         ds.user = &m; ds.read = feed_read; ds.total_size = (uint64_t)size;
         if (EXR_OK(exr_reader_open_source(&ds, &alloc, &r)) && r) {
-            rc = exr_reader_parse_header(r);
-            while (rc == EXR_WOULD_BLOCK) {
-                exr_pending_read pr;
-                size_t step;
-                if (!EXR_OK(exr_reader_pending(r, &pr)) || pr.offset > size ||
-                    pr.size > size - (size_t)pr.offset)
-                    break;
-                step = pr.size > 4096 ? 4096 : (size_t)pr.size;
-                if (!EXR_OK(exr_reader_supply(r, pr.offset,
-                                              data + (size_t)pr.offset, step)))
-                    break;
-                rc = exr_reader_parse_header(r);
-            }
-            drain_reader(r, &alloc);
+            drain_reader(r, &alloc, data, size);
             exr_reader_close(r);
         }
     }

@@ -30,6 +30,40 @@ int strcmp(const char *a, const char *b);
 #include <string.h>
 #endif
 
+#if defined(_MSC_VER)
+#include <intrin.h>
+#endif
+
+/* 0 = uninitialized, 1 = one thread initializing, 2 = ready. */
+static inline int exr_once_begin(volatile long *state) {
+#if defined(_MSC_VER)
+    long v = _InterlockedCompareExchange(state, 1, 0);
+    return (v == 0) ? 1 : ((v == 2) ? 0 : -1);
+#else
+    long expected = 0;
+    if (__atomic_compare_exchange_n(state, &expected, 1, 0,
+                                    __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE))
+        return 1;
+    return (expected == 2) ? 0 : -1;
+#endif
+}
+
+static inline long exr_once_load(const volatile long *state) {
+#if defined(_MSC_VER)
+    return _InterlockedCompareExchange((volatile long *)state, 2, 2);
+#else
+    return __atomic_load_n(state, __ATOMIC_ACQUIRE);
+#endif
+}
+
+static inline void exr_once_finish(volatile long *state) {
+#if defined(_MSC_VER)
+    _InterlockedExchange(state, 2);
+#else
+    __atomic_store_n(state, 2, __ATOMIC_RELEASE);
+#endif
+}
+
 /* ============================================================================
  * EXR format constants
  * ========================================================================== */
@@ -188,7 +222,34 @@ void exr_cpu_caps_force(int level);
  * independent and report results through ctx (no aggregated return value).
  * Defined in exr_thread.c. */
 typedef void (*exr_par_fn)(void *ctx, int job);
+typedef void (*exr_caller_fn)(void *ctx);
 void exr_parallel_for(int nthreads, int njobs, exr_par_fn fn, void *ctx);
+/* Run a calling-thread producer while helpers drain its bounded decode queue. */
+void exr_parallel_caller(int nthreads, exr_par_fn worker, exr_caller_fn caller, void *ctx);
+/* Blocking notification for the source producer/consumer queue. NULL is the
+ * serial fallback when threads are disabled or synchronization setup fails. */
+typedef struct exr_wait_queue exr_wait_queue;
+exr_wait_queue *exr_wait_queue_create(const exr_allocator *a);
+void exr_wait_queue_free(const exr_allocator *a, exr_wait_queue *q);
+void exr_wait_queue_lock(exr_wait_queue *q);
+void exr_wait_queue_unlock(exr_wait_queue *q);
+void exr_wait_queue_wait(exr_wait_queue *q);
+void exr_wait_queue_notify(exr_wait_queue *q);
+void exr_thread_yield(void);
+static inline void exr_input_lock(volatile long *lock) {
+#if defined(_MSC_VER)
+    while (_InterlockedExchange(lock, 1)) exr_thread_yield();
+#else
+    while (__atomic_exchange_n(lock, 1, __ATOMIC_ACQUIRE)) exr_thread_yield();
+#endif
+}
+static inline void exr_input_unlock(volatile long *lock) {
+#if defined(_MSC_VER)
+    _InterlockedExchange(lock, 0);
+#else
+    __atomic_store_n(lock, 0, __ATOMIC_RELEASE);
+#endif
+}
 
 /* Scalar kernels (always built). */
 void exr_half_to_float_scalar(const uint16_t *src, float *dst, size_t count);
@@ -501,13 +562,20 @@ static inline int64_t exr_floordiv(int64_t a, int64_t b) {
     if ((r != 0) && ((r < 0) != (b < 0))) q--;
     return q;
 }
-static inline int exr_num_samples(int lo, int hi, int s) {
+static inline int exr_num_samples(int64_t lo, int64_t hi, int s) {
     int64_t n;
     if (s <= 0 || hi < lo) return 0;
     if (s == 1) n = (int64_t)hi - lo + 1;
     else n = exr_floordiv(hi, s) - exr_floordiv((int64_t)lo - 1, s);
     return (n > 0 && n <= INT32_MAX) ? (int)n : 0;
 }
+
+static inline int exr_valid_span(int32_t origin, int32_t extent) {
+    return extent > 0 && (int64_t)origin + extent - 1 <= INT32_MAX;
+}
+
+/* Set crop geometry and keep the raw dataWindow attribute in sync. */
+exr_result exr_header_crop(const exr_allocator *a, exr_header *h, exr_box2i crop);
 
 /* Scanlines compressed together per chunk for a given compression. */
 int exr_lines_per_block(exr_compression c);
@@ -590,8 +658,15 @@ typedef struct exr_int_part {
 
 typedef enum exr_src_kind {
     EXR_SRC_MEMORY = 0,
-    EXR_SRC_CALLBACK = 1
+    EXR_SRC_CALLBACK = 1,
+    EXR_SRC_CHUNK = 2
 } exr_src_kind;
+
+typedef struct exr_input_buffer {
+    uint8_t *data;
+    size_t capacity, size, target;
+    uint64_t offset, stamp;
+} exr_input_buffer;
 
 struct exr_reader {
     exr_allocator alloc;
@@ -619,27 +694,43 @@ struct exr_reader {
     int32_t num_parts;
     int32_t parts_cap;
 
-    /* streaming suspend state (callback path). The whole file is buffered into
-     * `mem` incrementally; `filled` bytes are valid so far. */
-    size_t filled;
+    uint64_t file_size, source_base;
+    exr_input_buffer prefix, ranges[3];
+    exr_input_buffer *pending_buffer;
+    uint64_t input_clock;
     int have_pending;
     exr_pending_read pending;
+    size_t scan_pos, scan_length, header_end, metadata_end;
+    int scan_state, parse_stage;
+    uint32_t scan_payload;
+    int active_chunk;
+    int32_t active_part;
+    uint32_t active_index;
+    void *read_operation;
+    void *owned_source;
+    void (*close_source)(void *);
+
 };
 
-/* Ensure the streaming buffer holds the whole file; may return EXR_WOULD_BLOCK
- * with r->pending set. No-op for the memory path. */
-exr_result exr_reader_ensure_buffered(exr_reader *r);
-
-/*
- * Random-access read of [offset, offset+size) from the source.
- *   - memory path: returns a direct pointer (zero-copy) via *out_ptr, *out_ptr
- *     stays valid for the reader lifetime. scratch is ignored.
- *   - callback path: copies into scratch (caller-provided, >= size) and sets
- *     *out_ptr = scratch.
- * Returns EXR_WOULD_BLOCK if the callback path needs bytes (Phase 9).
- */
+/* Callback input retains metadata and active chunk ranges, never the file. */
+exr_result exr_source_chunk(exr_reader *r, int32_t part, uint32_t index,
+                             int counts_only, uint8_t **data, size_t *size);
+exr_result exr_reader_tile_index(const exr_int_part *p, int tx, int ty,
+                                  int lx, int ly, uint32_t *index);
+exr_result exr_reader_check_chunk(exr_reader *r, int32_t part, uint32_t index,
+                                  const uint8_t *hdr);
+exr_result exr_source_headers(exr_reader *r);
+exr_result exr_source_prefix(exr_reader *r, size_t needed);
+void exr_source_free(exr_reader *r);
+void exr_source_recycle(exr_reader *r, uint8_t *data, size_t size);
+exr_result exr_source_select(exr_reader *r, int32_t part, uint32_t index);
+exr_result exr_source_read_part(exr_reader *r, int32_t part, int kind,
+                                int32_t x, int32_t y, int32_t lx, int32_t ly,
+                                exr_part *out);
+void exr_source_operation_free(exr_reader *r);
 exr_result exr_reader_fetch(exr_reader *r, uint64_t offset, size_t size,
                             void *scratch, const uint8_t **out_ptr);
+exr_result exr_load_reader(exr_reader *r, const exr_allocator *a, exr_image *out);
 
 /* Mipmap pyramid generation for tiled writing (exr_mip.c). Channels stay in
  * the part's original order; img[level][channel] is a contiguous level image.

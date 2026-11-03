@@ -94,17 +94,6 @@ static int find_channel(const exr_header *h, const char *name) {
     return -1;
 }
 
-static int pixel_elem_size(exr_pixel_type t) {
-    switch (t) {
-    case EXR_PIXEL_HALF:
-        return 2;
-    case EXR_PIXEL_FLOAT:
-    case EXR_PIXEL_UINT:
-        return 4;
-    }
-    return 0;
-}
-
 /* ------------------------------------------------------------- string builder
  * Minimal growable buffer for assembling the header JSON. */
 
@@ -538,45 +527,41 @@ static int finish_selection(exrv_session *s, int part, int level_x, int level_y)
     return count;
 }
 
-/* Luminance-chroma (Y + subsampled RY/BY) reconstruction. The streaming
- * per-block scatter can't combine + upsample chroma, so decode the whole part
- * once and reconstruct it to RGBA via the core helper, writing straight into
- * s->rgba. finish_selection() set lw/lh and allocated rgba; at level 0 those
- * dimensions equal the part's data window, which is what the helper returns.
- * Returns the block count (>= 0) with s->ycc_filled = 1 on success, or -1 if the
- * part isn't luminance-chroma / not level 0 / the decode failed (the caller then
- * resets and falls back to the grayscale-Y path). */
+/* Reconstruct the selected level. Tiled EXR channels have unit sampling, so
+ * tiles can be converted independently without fetching chroma neighbours. */
 static int select_luminance_chroma(exrv_session *s, int part, int lx, int ly) {
     const exr_header *hd = exr_reader_part_header(s->r, part);
-    exr_image img;
-    float *rgba = NULL;
-    int ow = 0, oh = 0, count;
-    if (!hd) return -1;
-    if (lx != 0 || ly != 0) return -1; /* reconstruct full-res level 0 only */
-    if (find_channel(hd, "Y") < 0 || find_channel(hd, "RY") < 0 ||
+    int count, i;
+    if (!hd || find_channel(hd, "Y") < 0 || find_channel(hd, "RY") < 0 ||
         find_channel(hd, "BY") < 0 || find_channel(hd, "R") >= 0 ||
         find_channel(hd, "G") >= 0 || find_channel(hd, "B") >= 0)
         return -1;
-
     count = finish_selection(s, part, lx, ly);
     if (count < 0) return -1;
-
-    memset(&img, 0, sizeof img);
-    if (EXR_OK(exr_load_from_memory(s->data, s->size, NULL, &img)) &&
-        part < img.num_parts &&
-        exr_part_is_luminance_chroma(&img.parts[part]) &&
-        EXR_OK(exr_part_yc_to_rgba_float(NULL, &img.parts[part], &rgba, &ow,
-                                         &oh)) &&
-        rgba && ow == s->lw && oh == s->lh) {
-        memcpy(s->rgba, rgba, (size_t)ow * (size_t)oh * 4 * sizeof(float));
-        s->ycc_filled = 1;
+    for (i = 0; i < (hd->tiled ? count : 1); ++i) {
+        exr_part native = {0};
+        exr_block_info bi;
+        exr_result rc;
+        float *rgba = NULL;
+        int w = 0, h = 0, x0 = 0, y0 = 0, row;
+        if (hd->tiled) {
+            rc = exr_reader_block_info(s->r, part, s->blocks[i], &bi);
+            if (rc != EXR_SUCCESS) return -1;
+            rc = exr_reader_read_tile(s->r, part, bi.tile_x, bi.tile_y, lx, ly, &native);
+            x0 = bi.x0 - s->dw_min_x; y0 = bi.y0 - s->dw_min_y;
+        } else rc = exr_reader_read_part(s->r, part, &native);
+        if (rc == EXR_SUCCESS)
+            rc = exr_part_yc_to_rgba_float(NULL, &native, &rgba, &w, &h);
+        exr_part_free(NULL, &native);
+        if (rc != EXR_SUCCESS || !rgba || x0 < 0 || y0 < 0 ||
+            w > s->lw - x0 || h > s->lh - y0) { free(rgba); return -1; }
+        for (row = 0; row < h; ++row)
+            memcpy(s->rgba + ((size_t)(row + y0) * s->lw + x0) * 4,
+                   rgba + (size_t)row * w * 4, (size_t)w * 4 * sizeof(float));
         free(rgba);
-        exr_image_free(&img);
-        return count;
     }
-    free(rgba);
-    exr_image_free(&img);
-    return -1;
+    s->ycc_filled = 1;
+    return count;
 }
 
 /* Auto-detect a sensible channel mapping for a part (conventional R/G/B/A,
@@ -883,7 +868,7 @@ EXRV_EXPORT int exrv_is_spectral(int h, int part) {
  * spectrum scratch. Returns the number of wavelengths (> 0) or -1. The cube
  * keeps the spectral channels in memory so wavelength scrubbing and per-pixel
  * spectra are allocation-free afterwards. */
-EXRV_EXPORT int exrv_spectral_open(int h) {
+EXRV_EXPORT int exrv_spectral_open_part(int h, int part) {
     exrv_session *s = session_from_handle(h);
     size_t npix;
     if (!s) return -1;
@@ -896,7 +881,7 @@ EXRV_EXPORT int exrv_spectral_open(int h) {
     free(s->spec_pixel);
     s->spec_pixel = NULL;
 
-    if (!EXR_OK(exr_spectral_load_from_memory(s->data, s->size, NULL, &s->spec)))
+    if (!EXR_OK(exr_spectral_load_part_from_memory(s->data, s->size, part, NULL, &s->spec)))
         return -1;
     s->spec_loaded = 1;
     s->lw = s->spec.width;
@@ -912,6 +897,9 @@ EXRV_EXPORT int exrv_spectral_open(int h) {
     if (!s->rgba || !s->spec_pixel) return -1;
     return s->spec.num_wavelengths;
 }
+
+/* Retain the existing entry point for consumers selecting the first part. */
+EXRV_EXPORT int exrv_spectral_open(int h) { return exrv_spectral_open_part(h, -1); }
 
 EXRV_EXPORT int exrv_spectral_width(int h) {
     exrv_session *s = session_from_handle(h);

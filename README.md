@@ -135,9 +135,18 @@ too.
 ## Streaming block I/O (bounded working memory)
 
 The pure-C11 v3 API (`include/exr.h`) can decode and encode an EXR one block at
-a time — one scanline block or one tile — so peak working memory is a single
-block rather than the whole image. This covers scanline, tiled
-(ONE_LEVEL/MIPMAP/RIPMAP), and deep parts.
+a time — one scanline block or one tile. File readers and callback sources fetch
+only the requested ranges: they retain metadata/offset tables and active chunk
+buffers rather than a copy of the whole encoded file. This covers scanline,
+tiled (ONE_LEVEL/MIPMAP/RIPMAP), multipart, and deep parts. Memory readers remain
+zero-copy.
+
+Callback sources require a known length and random access. Requests are at most
+64 KiB; `EXR_WOULD_BLOCK` exposes the pending range for prefix supplies and retry
+of the same operation. Header parsing uses a small read-ahead window. Whole-part
+reads retain their decoded output; parallel source reads additionally buffer a
+batch capped by the worker count (maximum 64 chunks), with callbacks invoked
+only on the calling thread. File-source resources close with the reader.
 
 **Decode** — iterate the chunks of a part, decode each into a small caller
 buffer, and unpack the channels you need:
@@ -197,7 +206,10 @@ The v3 API reads and writes spectral EXRs in the JCGT 2021 layout
 (`exr_spectral_load_from_file/memory`, `exr_spectral_setup_emissive/reflective`)
 live in `include/exr.h`. The [browser viewer](#freestanding--embedded--wasm)
 opens a spectral EXR as a wavelength scrubber with a per-pixel spectrum plot and
-a CIE→sRGB color composite.
+a CIE→sRGB color composite. Multipart input is supported: the convenience
+loaders discover the first flat spectral part, while
+`exr_spectral_load_part_from_file/memory` select an explicit part index. Only the
+selected part's pixels are decoded; deep spectral parts remain unsupported.
 
 ## Freestanding / embedded / WASM
 
@@ -245,19 +257,33 @@ python3 -m http.server   # then open http://localhost:8000/
 
 See `web/viewer/README.md` for details.
 
+## Input validation and profiling (v3)
+
+Tiled channels require unit x/y sampling. Unsupported subsampling is rejected
+before mipmap/ripmap generation; scanline subsampling remains supported. The
+viewer reconstructs Y/RY/BY at every mipmap/ripmap level, including edge tiles.
+
+`make wasm-source-test` runs the source, ownership, spectral, and viewer tests
+on WASM32 with checked memory accesses and UBSan. It verifies 32-bit pointers
+and exercises sparse files above 5 GiB without allocating the holes. Set
+`EMCC` and `NODE` for the local Emscripten SDK. Temporary EXRs stay inside the
+module's in-memory filesystem. Native `make test-c THREADS=1` also verifies
+caller-thread callbacks and low CPU use while the input source is delayed.
+
+`make bench-source THREADS=1` compares memory, bounded file, and block reads;
+`make bench-source-large THREADS=1` adds 2048×2048 and 32-channel sweeps.
+See [the benchmark notes](benchmark/README-source.md) for methodology and results.
+When changing release-library thread flags, rebuild with `make -B lib THREADS=1`
+first (release object flags are not tracked).
+
 ## TODO (v3)
 
 Contribution is welcome!
 
-- [ ] Parallelize the deep and mipmap/ripmap paths (encode/decode are
-  single-threaded there; flat scanline + single-level tiled already parallelize).
-- [ ] Full luminance-chroma color in the browser **viewer**: the core now
-  reconstructs subsampled `Y` + `RY`/`BY` to RGBA
-  (`exr_part_yc_to_rgba_float`, used by the `examples/wasm` binding), but the
-  streaming `web/viewer/` still renders such images as grayscale `Y` pending a
-  whole-part hook through the reconstruction helper.
-- [ ] Larger-image / higher-channel-count performance sweeps.
-- [ ] Multipart in the high-level spectral cube API (part 0 only today).
+- [ ] Reduce the remaining photographic PIZ file-input allocation/page-fault
+  overhead (measurements in `benchmark/README-source.md`).
+- [ ] Extend parallel coverage beyond the existing deep block/tile and
+  mipmap/ripmap generation paths where profiling justifies it.
 - DWAA/DWAB — intentionally unsupported (not planned).
 
 ## Third-party licenses (v3)

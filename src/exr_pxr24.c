@@ -23,7 +23,7 @@ static size_t pxr_bpc(exr_pixel_type t) {
 exr_result exr_pxr24_decompress(const exr_codec_ctx *ctx, const uint8_t *src,
                                 size_t src_size, uint8_t *dst, size_t dst_size) {
     const exr_allocator *a = ctx->alloc;
-    int xmin = ctx->x, xmax = ctx->x + ctx->width - 1;
+    int xmin = ctx->x, xmax = ctx->x + (ctx->width - 1);
     int line, c;
     size_t inter = 0;
     uint8_t *buf;
@@ -150,7 +150,7 @@ static uint32_t float_to_float24(float f) {
 exr_result exr_pxr24_compress(const exr_codec_ctx *ctx, const uint8_t *block,
                               size_t n, uint8_t **out_data, size_t *out_size) {
     const exr_allocator *a = ctx->alloc;
-    int xmin = ctx->x, xmax = ctx->x + ctx->width - 1;
+    int xmin = ctx->x, xmax = ctx->x + (ctx->width - 1);
     int line, c;
     size_t inter = 0;
     uint8_t *buf, *comp = NULL;

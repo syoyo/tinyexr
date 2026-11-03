@@ -16,23 +16,30 @@ typedef struct {
     const exr_allocator *a;
     uint8_t *data;
     size_t len, cap;
-    int err;
+    exr_result err;
+    uint64_t limit;
+    int count_only;
 } obuf;
 
 static void ob_reserve(obuf *b, size_t extra) {
     size_t need;
     if (b->err) return;
-    if (exr_add_ovf(b->len, extra, &need)) { b->err = 1; return; }
+    if (exr_add_ovf(b->len, extra, &need) ||
+        (b->limit && (uint64_t)need > b->limit)) {
+        b->err = EXR_ERROR_LIMIT_EXCEEDED; return;
+    }
+    if (b->count_only) return;
     if (need <= b->cap) return;
     {
         size_t ncap = b->cap ? b->cap : 256;
         uint8_t *nd;
         while (ncap < need) {
-            if (ncap > (SIZE_MAX / 2)) { b->err = 1; return; }
+            if (ncap > (SIZE_MAX / 2)) { b->err = EXR_ERROR_OUT_OF_MEMORY; return; }
             ncap *= 2;
         }
+        if (b->limit && (uint64_t)ncap > b->limit) ncap = (size_t)b->limit;
         nd = (uint8_t *)exr_malloc(b->a, ncap);
-        if (!nd) { b->err = 1; return; }
+        if (!nd) { b->err = EXR_ERROR_OUT_OF_MEMORY; return; }
         if (b->data) {
             memcpy(nd, b->data, b->len);
             exr_free(b->a, b->data);
@@ -44,7 +51,7 @@ static void ob_reserve(obuf *b, size_t extra) {
 static void ob_bytes(obuf *b, const void *p, size_t n) {
     ob_reserve(b, n);
     if (b->err) return;
-    memcpy(b->data + b->len, p, n);
+    if (!b->count_only && n) memcpy(b->data + b->len, p, n);
     b->len += n;
 }
 static void ob_u8(obuf *b, uint8_t v) { ob_bytes(b, &v, 1); }
@@ -147,15 +154,17 @@ static int is_reserved_attr_name(const char *name) {
 
 static void write_header(obuf *b, const exr_header *h, const int *order,
                          exr_compression comp, int multipart,
-                         uint32_t chunk_count, int32_t max_samples) {
+                         uint32_t chunk_count, int32_t max_samples, const char *part_name) {
     /* channels */
     {
         obuf cl;
         int i;
         memset(&cl, 0, sizeof(cl));
         cl.a = b->a;
+        cl.count_only = b->count_only;
+        cl.limit = b->limit;
         for (i = 0; i < h->num_channels; ++i) {
-            const exr_channel *c = &h->channels[order[i]];
+            const exr_channel *c = &h->channels[order ? order[i] : i];
             uint8_t t[16];
             ob_cstr(&cl, c->name);
             exr_wr_i32(t, (int32_t)c->pixel_type);
@@ -166,7 +175,7 @@ static void write_header(obuf *b, const exr_header *h, const int *order,
             ob_bytes(&cl, t, 16);
         }
         ob_u8(&cl, 0); /* terminator */
-        if (cl.err) { b->err = 1; }
+        if (cl.err) { b->err = cl.err; }
         else ob_attr(b, "channels", "chlist", cl.data, (uint32_t)cl.len);
         exr_free(b->a, cl.data);
     }
@@ -215,7 +224,7 @@ static void write_header(obuf *b, const exr_header *h, const int *order,
         ob_attr(b, "tiles", "tiledesc", t, 9);
     }
     if (multipart) {
-        const char *nm = h->name[0] ? h->name : "part";
+        const char *nm = part_name;
         const char *ty = part_type_string(h->part_type);
         ob_attr(b, "name", "string", nm, (uint32_t)strlen(nm));
         ob_attr(b, "type", "string", ty, (uint32_t)strlen(ty));
@@ -292,11 +301,11 @@ static void gather_tile_block(const exr_header *h, const int *order,
             size_t ps = exr_pixel_size(h->channels[c].pixel_type);
             int tnx, cw, ch_row, ch_col;
             if ((yy % ys) != 0) continue;
-            tnx = exr_num_samples(abs_x0, abs_x0 + tile_w - 1, xs);
+            tnx = exr_num_samples(abs_x0, (int64_t)abs_x0 + tile_w - 1, xs);
             if (tnx <= 0) continue;
             cw = exr_num_samples(xmin, xmax, xs);
             ch_row = exr_num_samples(ymin, yy, ys) - 1;
-            ch_col = exr_num_samples(xmin, abs_x0 - 1, xs);
+            ch_col = exr_num_samples(xmin, (int64_t)abs_x0 - 1, xs);
             memcpy(block + off,
                    (const uint8_t *)images[c] + ((size_t)ch_row * cw + ch_col) * ps,
                    (size_t)tnx * ps);
@@ -323,8 +332,8 @@ static void gather_level_tile(const exr_header *h, const int *order,
             int gw, g0, cnt;
             if ((yy % ys) != 0) continue;
             gw = exr_num_samples(0, lw - 1, xs);    /* grid width */
-            g0 = ((x0 + xs - 1) / xs);              /* first sampled col idx */
-            cnt = exr_num_samples(x0, x0 + tw - 1, xs);
+            g0 = ((int)(((int64_t)x0 + xs - 1) / xs));              /* first sampled col idx */
+            cnt = exr_num_samples(x0, (int64_t)x0 + tw - 1, xs);
             if (cnt > 0)
                 memcpy(block + off,
                        (const uint8_t *)level_img[c] +
@@ -418,7 +427,7 @@ static exr_result emit_deep_tile_level(obuf *b, const exr_allocator *a,
         ob_u64(b, o->usamp);
         ob_bytes(b, o->poff, o->poff_sz);
         ob_bytes(b, o->psamp, o->psamp_sz);
-        if (b->err) { rc = EXR_ERROR_OUT_OF_MEMORY; break; }
+        if (b->err) { rc = b->err; break; }
     }
     deep_blocks_free(a, out, ntiles);
     return rc;
@@ -436,7 +445,7 @@ typedef struct {
 
 static void deep_sl_enc_one(deep_sl_enc_ctx *c, uint32_t ci) {
     int y0 = c->ymin + (int)ci * c->lpb;
-    int nlines = (y0 + c->lpb - 1 > c->ymax) ? (c->ymax - y0 + 1) : c->lpb;
+    int nlines = (c->lpb > c->ymax - y0 + 1) ? (c->ymax - y0 + 1) : c->lpb;
     deep_block_out *o = &c->out[ci];
     uint64_t uoff = 0;
     o->rc = exr_deep_encode_block(c->a, c->comp, c->pt, c->prefix, y0, nlines,
@@ -481,7 +490,7 @@ static exr_result emit_deep_scanlines(obuf *b, const exr_allocator *a,
         ob_u64(b, o->usamp);
         ob_bytes(b, o->poff, o->poff_sz);
         ob_bytes(b, o->psamp, o->psamp_sz);
-        if (b->err) { rc = EXR_ERROR_OUT_OF_MEMORY; break; }
+        if (b->err) { rc = b->err; break; }
     }
     deep_blocks_free(a, out, nchunks);
     return rc;
@@ -520,7 +529,7 @@ typedef struct {
 
 static exr_result encode_scanline_one(sl_enc_ctx *c, uint32_t ci) {
     int y0 = c->ymin + (int)ci * c->lpb;
-    int nlines = (y0 + c->lpb - 1 > c->ymax) ? (c->ymax - y0 + 1) : c->lpb;
+    int nlines = (c->lpb > c->ymax - y0 + 1) ? (c->ymax - y0 + 1) : c->lpb;
     size_t blk_size;
     uint8_t *block;
     exr_codec_ctx cx;
@@ -680,7 +689,7 @@ static exr_result encode_parallel_scanline(
             ob_i32(b, y0);
             ob_i32(b, (int32_t)sizes[ci]);
             ob_bytes(b, payloads[ci], sizes[ci]);
-            if (b->err) { rc = EXR_ERROR_OUT_OF_MEMORY; break; }
+            if (b->err) { rc = b->err; break; }
         }
     }
     for (ci = 0; ci < n; ++ci) exr_free(a, payloads[ci]);
@@ -742,7 +751,7 @@ static exr_result encode_parallel_tiled(
             ob_i32(b, 0); /* level y */
             ob_i32(b, (int32_t)sizes[idx]);
             ob_bytes(b, payloads[idx], sizes[idx]);
-            if (b->err) { rc = EXR_ERROR_OUT_OF_MEMORY; break; }
+            if (b->err) { rc = b->err; break; }
         }
     }
     for (idx = 0; idx < n; ++idx) exr_free(a, payloads[idx]);
@@ -756,6 +765,115 @@ static exr_result encode_parallel_tiled(
 static exr_result w_chunk_count(const exr_part *pt, exr_compression comp,
                                 uint32_t *out);
 
+typedef char writer_name[EXR_MAX_NAME];
+
+static void default_part_name(char *dst, unsigned n) {
+    char digits[12];
+    int k = 0, j;
+    memcpy(dst, "part", 4);
+    do { digits[k++] = (char)('0' + n % 10); n /= 10; } while (n);
+    for (j = 0; j < k; ++j) dst[4 + j] = digits[k - j - 1];
+    dst[4 + k] = 0;
+}
+
+/* Count before allocating even the generated-name table. Placeholder names
+ * give a lower bound; a second pass checks the final resolved names exactly. */
+static exr_result writer_metadata_size(exr_context *ctx, const exr_allocator *a,
+                                        const exr_part *parts, int np, int override,
+                                        const writer_name *names) {
+    obuf count;
+    int p;
+    memset(&count, 0, sizeof(count));
+    count.a = a; count.count_only = 1;
+    count.limit = exr_context_max_header_bytes(ctx);
+    ob_u64(&count, 0);
+    for (p = 0; p < np; ++p) {
+        uint32_t nc;
+        exr_result rc;
+        exr_compression comp = override < 0 ? parts[p].header.compression
+                                           : (exr_compression)override;
+        rc = w_chunk_count(&parts[p], comp, &nc);
+        if (rc != EXR_SUCCESS) return rc;
+        write_header(&count, &parts[p].header, NULL, comp, np > 1, nc, 0,
+                     names ? names[p] : (parts[p].header.name[0] ? parts[p].header.name : "part0"));
+        /* Offset entries contribute to metadata but are counted without a loop. */
+        {
+            size_t bytes;
+            if (exr_mul_ovf(nc, 8, &bytes)) count.err = EXR_ERROR_LIMIT_EXCEEDED;
+            else ob_bytes(&count, NULL, bytes);
+        }
+    }
+    if (np > 1) ob_u8(&count, 0);
+    if (count.err || (exr_context_max_file_bytes(ctx) &&
+        (uint64_t)count.len > exr_context_max_file_bytes(ctx))) {
+        return count.err ? count.err : EXR_ERROR_LIMIT_EXCEEDED;
+    }
+    return EXR_SUCCESS;
+}
+
+static exr_result writer_preflight(exr_context *ctx, const exr_allocator *a,
+                                    const exr_part *parts, int np, int override,
+                                    writer_name **out_names) {
+    writer_name *names = NULL;
+    exr_result rc;
+    int p, j;
+    unsigned candidate = 0;
+    *out_names = NULL;
+    rc = writer_metadata_size(ctx, a, parts, np, override, NULL);
+    if (rc != EXR_SUCCESS) return rc;
+    if (np > 1) {
+        names = (writer_name *)exr_calloc(a, (size_t)np, sizeof(*names));
+        if (!names) return EXR_ERROR_OUT_OF_MEMORY;
+        for (p = 0; p < np; ++p) {
+            if (parts[p].header.name[0]) {
+                for (j = 0; j < p; ++j)
+                    if (strcmp(parts[p].header.name, parts[j].header.name) == 0) {
+                        exr_free(a, names); return EXR_ERROR_INVALID_ARGUMENT;
+                    }
+                memcpy(names[p], parts[p].header.name, EXR_MAX_NAME);
+            }
+        }
+        for (p = 0; p < np; ++p) if (!names[p][0]) {
+            int collision;
+            do {
+                default_part_name(names[p], candidate++);
+                collision = 0;
+                for (j = 0; j < np; ++j)
+                    if (j != p && strcmp(names[p], names[j]) == 0) {
+                        collision = 1; break;
+                    }
+            } while (collision);
+        }
+    }
+    rc = writer_metadata_size(ctx, a, parts, np, override, (const writer_name *)names);
+    if (rc != EXR_SUCCESS) { exr_free(a, names); return rc; }
+    *out_names = names;
+    return EXR_SUCCESS;
+}
+
+static exr_result writer_image_bytes(const exr_header *h, int w, int height,
+                                      int deep, uint64_t samples, size_t *out) {
+    size_t total = 0;
+    int c;
+    if (deep && (exr_mul_ovf((size_t)w, (size_t)height, &total) ||
+                 exr_mul_ovf(total, sizeof(int32_t), &total)))
+        return EXR_ERROR_LIMIT_EXCEEDED;
+    if (samples > SIZE_MAX) return EXR_ERROR_LIMIT_EXCEEDED;
+    for (c = 0; c < h->num_channels; ++c) {
+        size_t n = (size_t)samples, bytes;
+        if (!deep && exr_mul_ovf(
+                (size_t)exr_num_samples(h->data_window.min_x,
+                    (int64_t)h->data_window.min_x + w - 1, h->channels[c].x_sampling),
+                (size_t)exr_num_samples(h->data_window.min_y,
+                    (int64_t)h->data_window.min_y + height - 1, h->channels[c].y_sampling), &n))
+            return EXR_ERROR_LIMIT_EXCEEDED;
+        if (exr_mul_ovf(n, exr_pixel_size(h->channels[c].pixel_type), &bytes) ||
+            exr_add_ovf(total, bytes, &total)) return EXR_ERROR_LIMIT_EXCEEDED;
+    }
+    *out = total;
+    return EXR_SUCCESS;
+}
+
 /* ---- serialize a set of parts -------------------------------------------- */
 
 static exr_result serialize(exr_context *context, const exr_allocator *a,
@@ -763,6 +881,8 @@ static exr_result serialize(exr_context *context, const exr_allocator *a,
                             int num_parts, int comp_override, uint8_t **out_data,
                             size_t *out_size) {
     obuf b;
+    writer_name *names = NULL;
+    size_t image_bytes = 0;
     int p;
     int multipart = (num_parts > 1);
     int any_tiled = 0, any_deep = 0;
@@ -780,6 +900,7 @@ static exr_result serialize(exr_context *context, const exr_allocator *a,
 
     memset(&b, 0, sizeof(b));
     b.a = a;
+    b.limit = exr_context_max_file_bytes(context);
 
     for (p = 0; p < num_parts; ++p) {
         int32_t vw, vh;
@@ -822,8 +943,20 @@ static exr_result serialize(exr_context *context, const exr_allocator *a,
                 return EXR_ERROR_INVALID_ARGUMENT;
         }
         if (parts[p].is_deep) any_deep = 1; /* deep tiled allowed (ONE_LEVEL) */
+        {
+            size_t bytes;
+            rc = writer_image_bytes(&parts[p].header, vw, vh, parts[p].is_deep,
+                                     parts[p].deep_total_samples, &bytes);
+            if (rc != EXR_SUCCESS || exr_add_ovf(image_bytes, bytes, &image_bytes))
+                return EXR_ERROR_LIMIT_EXCEEDED;
+            if (exr_context_max_image_bytes(context) &&
+                (uint64_t)image_bytes > exr_context_max_image_bytes(context))
+                return EXR_ERROR_LIMIT_EXCEEDED;
+        }
     }
 
+    rc = writer_preflight(context, a, parts, num_parts, comp_override, &names);
+    if (rc != EXR_SUCCESS) return rc;
     orders = (int **)exr_calloc(a, (size_t)num_parts, sizeof(int *));
     sorted_chans = (exr_channel **)exr_calloc(a, (size_t)num_parts, sizeof(exr_channel *));
     chunk_counts = (uint32_t *)exr_calloc(a, (size_t)num_parts, sizeof(uint32_t));
@@ -876,7 +1009,7 @@ static exr_result serialize(exr_context *context, const exr_allocator *a,
                     max_samples = pt->deep_sample_counts[i];
         }
         write_header(&b, &pt->header, orders[p], comp, multipart,
-                     chunk_counts[p], max_samples);
+                     chunk_counts[p], max_samples, names ? names[p] : "");
     }
     if (multipart) ob_u8(&b, 0); /* end of header list */
 
@@ -901,7 +1034,7 @@ static exr_result serialize(exr_context *context, const exr_allocator *a,
         if (!offset_tables[p]) { rc = EXR_ERROR_OUT_OF_MEMORY; goto done; }
         for (k = 0; k < chunk_counts[p]; ++k) ob_u64(&b, 0);
     }
-    if (b.err) { rc = EXR_ERROR_OUT_OF_MEMORY; goto done; }
+    if (b.err) { rc = b.err; goto done; }
 
     /* chunks */
     for (p = 0; p < num_parts; ++p) {
@@ -1051,7 +1184,7 @@ static exr_result serialize(exr_context *context, const exr_allocator *a,
                         ob_i32(&b, (int32_t)payload_size);
                         ob_bytes(&b, payload, payload_size);
                         exr_free(a, payload);
-                        if (b.err) { rc = EXR_ERROR_OUT_OF_MEMORY; break; }
+                        if (b.err) { rc = b.err; break; }
                     }
                 }
                 if (!EXR_OK(rc)) break;
@@ -1112,7 +1245,7 @@ static exr_result serialize(exr_context *context, const exr_allocator *a,
                             ob_i32(&b, (int32_t)payload_size);
                             ob_bytes(&b, payload, payload_size);
                             exr_free(a, payload);
-                            if (b.err) { rc = EXR_ERROR_OUT_OF_MEMORY; break; }
+                            if (b.err) { rc = b.err; break; }
                         }
                     }
                 }
@@ -1181,7 +1314,7 @@ static exr_result serialize(exr_context *context, const exr_allocator *a,
                     ob_i32(&b, (int32_t)payload_size);
                     ob_bytes(&b, payload, payload_size);
                     exr_free(a, payload);
-                    if (b.err) { rc = EXR_ERROR_OUT_OF_MEMORY; goto done; }
+                    if (b.err) { rc = b.err; goto done; }
                 }
             }
         } else {
@@ -1201,7 +1334,7 @@ static exr_result serialize(exr_context *context, const exr_allocator *a,
             if (!threaded)
             for (ci = 0; ci < chunk_counts[p]; ++ci) {
                 int y0 = ymin + (int)ci * lpb;
-                int nlines = (y0 + lpb - 1 > ymax) ? (ymax - y0 + 1) : lpb;
+                int nlines = (lpb > ymax - y0 + 1) ? (ymax - y0 + 1) : lpb;
                 size_t blk_size, payload_size = 0;
                 uint8_t *block, *payload = NULL;
 
@@ -1236,7 +1369,7 @@ static exr_result serialize(exr_context *context, const exr_allocator *a,
                 ob_i32(&b, (int32_t)payload_size);
                 ob_bytes(&b, payload, payload_size);
                 exr_free(a, payload);
-                if (b.err) { rc = EXR_ERROR_OUT_OF_MEMORY; goto done; }
+                if (b.err) { rc = b.err; goto done; }
             }
         }
     }
@@ -1249,6 +1382,7 @@ static exr_result serialize(exr_context *context, const exr_allocator *a,
                        offset_tables[p][k]);
     }
 
+    if (b.err) { rc = b.err; goto done; }
     *out_data = b.data;
     *out_size = b.len;
     b.data = NULL; /* ownership transferred */
@@ -1269,6 +1403,7 @@ done:
     exr_free(a, offset_positions);
     exr_free(a, chunk_counts);
     exr_free(a, b.data);
+    exr_free(a, names);
     return rc;
 }
 
@@ -1279,11 +1414,10 @@ exr_result exr_save_to_memory_ctx(exr_context *context, void **out_data,
                                   const exr_allocator *alloc,
                                   const exr_image *img,
                                   exr_compression compression) {
-    if (!out_data || !out_size || !img || img->num_parts <= 0)
-        return EXR_ERROR_INVALID_ARGUMENT;
+    if (!out_data || !out_size) return EXR_ERROR_INVALID_ARGUMENT;
+    *out_data = NULL; *out_size = 0;
+    if (!img || img->num_parts <= 0) return EXR_ERROR_INVALID_ARGUMENT;
     if (!alloc) alloc = exr_default_allocator();
-    *out_data = NULL;
-    *out_size = 0;
     if (!exr_allocator_valid(alloc)) return EXR_ERROR_INVALID_ARGUMENT;
     return serialize(context, alloc, img->parts, img->num_parts,
                      (int)compression,
@@ -1309,6 +1443,7 @@ struct exr_writer {
 
     /* streaming-encode state (active between begin_stream and end_stream) */
     int streaming;
+    writer_name *snames;
     exr_data_sink sink;
     int sink_open;        /* 1 once the writer owns the sink (call close once) */
     uint64_t pos;         /* current write offset */
@@ -1467,7 +1602,7 @@ static void gather_block_local(const exr_header *h, const int *order,
             size_t ps = exr_pixel_size(h->channels[c].pixel_type);
             int nx, row;
             if ((yy % ys) != 0) continue;
-            nx = exr_num_samples(x0, x0 + w - 1, xs);
+            nx = exr_num_samples(x0, (int64_t)x0 + w - 1, xs);
             if (nx <= 0) continue;
             row = exr_num_samples(y0, yy, ys) - 1;
             memcpy(block + off,
@@ -1481,15 +1616,16 @@ static void gather_block_local(const exr_header *h, const int *order,
 
 static exr_result validate_flat_buffers(const exr_header *h,
                                         const exr_const_buffer *bufs,
-                                        size_t channel_count, int x0, int y0,
+                                        size_t channel_count, uint64_t limit, int x0, int y0,
                                         int width, int height) {
     int c;
+    size_t total = 0;
     if (!bufs || channel_count != (size_t)h->num_channels)
         return EXR_ERROR_INVALID_ARGUMENT;
     for (c = 0; c < h->num_channels; ++c) {
-        int nx = exr_num_samples(x0, x0 + width - 1,
+        int nx = exr_num_samples(x0, (int64_t)x0 + width - 1,
                                  h->channels[c].x_sampling);
-        int ny = exr_num_samples(y0, y0 + height - 1,
+        int ny = exr_num_samples(y0, (int64_t)y0 + height - 1,
                                  h->channels[c].y_sampling);
         size_t samples, bytes;
         if (nx < 0 || ny < 0 ||
@@ -1497,6 +1633,8 @@ static exr_result validate_flat_buffers(const exr_header *h,
             exr_mul_ovf(samples,
                         exr_pixel_size(h->channels[c].pixel_type), &bytes))
             return EXR_ERROR_CORRUPT;
+        if (exr_add_ovf(total, bytes, &total) || (limit && (uint64_t)total > limit))
+            return EXR_ERROR_LIMIT_EXCEEDED;
         if (bufs[c].size < bytes || (!bufs[c].data && bytes))
             return EXR_ERROR_INVALID_ARGUMENT;
     }
@@ -1507,10 +1645,11 @@ static exr_result validate_deep_buffers(const exr_header *h,
                                         const int32_t *counts, size_t npix,
                                         size_t counts_capacity,
                                         const exr_const_buffer *bufs,
-                                        size_t channel_count,
+                                        size_t channel_count, uint64_t limit,
                                         uint64_t *out_total) {
-    size_t i, total = 0;
+    size_t i, total = 0, owned;
     int c;
+    if (exr_mul_ovf(npix, sizeof(int32_t), &owned)) return EXR_ERROR_LIMIT_EXCEEDED;
     if (!counts || !bufs || counts_capacity < npix ||
         channel_count != (size_t)h->num_channels)
         return EXR_ERROR_INVALID_ARGUMENT;
@@ -1522,6 +1661,8 @@ static exr_result validate_deep_buffers(const exr_header *h,
         size_t bytes;
         if (exr_mul_ovf(total, exr_pixel_size(h->channels[c].pixel_type),
                         &bytes))
+            return EXR_ERROR_LIMIT_EXCEEDED;
+        if (exr_add_ovf(owned, bytes, &owned) || (limit && (uint64_t)owned > limit))
             return EXR_ERROR_LIMIT_EXCEEDED;
         if (bufs[c].size < bytes || (!bufs[c].data && bytes))
             return EXR_ERROR_INVALID_ARGUMENT;
@@ -1661,7 +1802,9 @@ static exr_result sink_write(exr_writer *w, const void *p, size_t n) {
     exr_result rc;
     if (w->stream_error != EXR_SUCCESS) return w->stream_error;
     if (n == 0) return EXR_SUCCESS;
-    if (w->pos > UINT64_MAX - (uint64_t)n) {
+    if (w->pos > UINT64_MAX - (uint64_t)n ||
+        (exr_context_max_file_bytes(w->context) &&
+         w->pos + (uint64_t)n > exr_context_max_file_bytes(w->context))) {
         w->stream_error = EXR_ERROR_LIMIT_EXCEEDED;
         return w->stream_error;
     }
@@ -1699,6 +1842,8 @@ static exr_result stream_free_state(exr_writer *w) {
     exr_free(&w->alloc, w->soff_pos); w->soff_pos = NULL;
     exr_free(&w->alloc, w->smax_pos); w->smax_pos = NULL;
     exr_free(&w->alloc, w->smax); w->smax = NULL;
+    exr_free(&w->alloc, w->snames);
+    w->snames = NULL;
     w->streaming = 0;
     /* Release the sink once (e.g. fclose for the file-backed sink). Ownership
      * is taken only when begin_stream fully succeeds (sink_open == 1). */
@@ -1740,6 +1885,9 @@ exr_result exr_writer_begin_stream(exr_writer *w, const exr_data_sink *sink,
         comp > EXR_COMPRESSION_ZSTD)
         return EXR_ERROR_INVALID_ARGUMENT;
 
+    rc = writer_preflight(w->context, &w->alloc, w->parts, w->num_parts,
+                           (int)comp, &w->snames);
+    if (rc != EXR_SUCCESS) return rc;
     w->sink = *sink;
     w->pos = 0;
     w->stream_error = EXR_SUCCESS;
@@ -1814,8 +1962,8 @@ exr_result exr_writer_begin_stream(exr_writer *w, const exr_data_sink *sink,
         memset(&hp, 0, sizeof(hp));
         hp.a = &w->alloc;
         write_header(&hp, &pt->header, w->sorder[p], comp, w->smultipart,
-                     w->schunk[p], 0);
-        if (hp.err) { exr_free(&w->alloc, hp.data); rc = EXR_ERROR_OUT_OF_MEMORY; goto fail; }
+                     w->schunk[p], 0, w->snames ? w->snames[p] : "");
+        if (hp.err) { exr_free(&w->alloc, hp.data); rc = hp.err; goto fail; }
         if (header_is_deep(&pt->header)) {
             size_t rel;
             if (find_max_samples_pos(hp.data, hp.len, &rel))
@@ -1932,9 +2080,9 @@ exr_result exr_writer_write_scanline_block(exr_writer *w, int32_t part,
     if (ci >= w->schunk[part]) return EXR_ERROR_INVALID_ARGUMENT;
     if (w->swritten[part][ci]) return EXR_ERROR_INVALID_ARGUMENT;
     nlines = lpb;
-    if (y0 + nlines - 1 > ymax) nlines = ymax - y0 + 1;
+    if (nlines > ymax - y0 + 1) nlines = ymax - y0 + 1;
 
-    rc = validate_flat_buffers(h, channel_rows, channel_count,
+    rc = validate_flat_buffers(h, channel_rows, channel_count, exr_context_max_image_bytes(w->context),
                                h->data_window.min_x, y0, pt->width, nlines);
     if (!EXR_OK(rc)) return rc;
 
@@ -1997,13 +2145,15 @@ exr_result exr_writer_write_scanline_block_canon(exr_writer *w, int32_t part,
     if (ci >= w->schunk[part]) return EXR_ERROR_INVALID_ARGUMENT;
     if (w->swritten[part][ci]) return EXR_ERROR_INVALID_ARGUMENT;
     nlines = lpb;
-    if (y0 + nlines - 1 > ymax) nlines = ymax - y0 + 1;
+    if (nlines > ymax - y0 + 1) nlines = ymax - y0 + 1;
 
     rc = exr_block_uncompressed_size(h->channels, h->num_channels,
                                      h->data_window.min_x, y0, pt->width, nlines,
                                      &blk_size);
     if (!EXR_OK(rc)) return rc;
     if (block_size != blk_size) return EXR_ERROR_INVALID_ARGUMENT;
+    if (exr_context_max_image_bytes(w->context) &&
+        blk_size > exr_context_max_image_bytes(w->context)) return EXR_ERROR_LIMIT_EXCEEDED;
     cx.alloc = a;
     cx.context = w->context;
     cx.compression = w->scomp;
@@ -2079,7 +2229,7 @@ exr_result exr_writer_write_tile(exr_writer *w, int32_t part, int32_t tile_x,
     abs_x0 = h->data_window.min_x + x0l;
     abs_y0 = h->data_window.min_y + y0l;
 
-    rc = validate_flat_buffers(h, channel_data, channel_count, abs_x0, abs_y0,
+    rc = validate_flat_buffers(h, channel_data, channel_count, exr_context_max_image_bytes(w->context), abs_x0, abs_y0,
                                tw, th);
     if (!EXR_OK(rc)) return rc;
 
@@ -2182,7 +2332,7 @@ exr_result exr_writer_write_deep_scanline_block(exr_writer *w, int32_t part,
     if (ci >= w->schunk[part]) return EXR_ERROR_INVALID_ARGUMENT;
     if (w->swritten[part][ci]) return EXR_ERROR_INVALID_ARGUMENT;
     nlines = lpb;
-    if (y0 + nlines - 1 > ymax) nlines = ymax - y0 + 1;
+    if (nlines > ymax - y0 + 1) nlines = ymax - y0 + 1;
 
     {
         size_t npix;
@@ -2190,7 +2340,7 @@ exr_result exr_writer_write_deep_scanline_block(exr_writer *w, int32_t part,
         if (exr_mul_ovf((size_t)pt->width, (size_t)nlines, &npix))
             return EXR_ERROR_LIMIT_EXCEEDED;
         rc = validate_deep_buffers(h, counts, npix, counts_capacity, chan_samp,
-                                   channel_count, &total_samples);
+                                   channel_count, exr_context_max_image_bytes(w->context), &total_samples);
         if (!EXR_OK(rc)) return rc;
         planes = (void **)exr_calloc(a, channel_count ? channel_count : 1,
                                      sizeof(void *));
@@ -2296,7 +2446,7 @@ exr_result exr_writer_write_deep_tile(exr_writer *w, int32_t part, int32_t tile_
         if (exr_mul_ovf((size_t)tw, (size_t)th, &npix))
             return EXR_ERROR_LIMIT_EXCEEDED;
         rc = validate_deep_buffers(h, counts, npix, counts_capacity, chan_samp,
-                                   channel_count, &total_samples);
+                                   channel_count, exr_context_max_image_bytes(w->context), &total_samples);
         if (!EXR_OK(rc)) return rc;
         planes = (void **)exr_calloc(a, channel_count ? channel_count : 1,
                                      sizeof(void *));
@@ -2354,6 +2504,8 @@ exr_result exr_writer_end_stream(exr_writer *w) {
     exr_result rc = EXR_SUCCESS;
     if (!w || !w->streaming) return EXR_ERROR_INVALID_ARGUMENT;
     if (w->stream_error != EXR_SUCCESS) rc = w->stream_error;
+    if (exr_context_max_file_bytes(w->context) &&
+        w->pos > exr_context_max_file_bytes(w->context)) rc = EXR_ERROR_LIMIT_EXCEEDED;
     for (p = 0; p < w->num_parts && rc == EXR_SUCCESS; ++p) {
         uint32_t k;
         for (k = 0; k < w->schunk[p]; ++k)

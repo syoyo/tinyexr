@@ -259,18 +259,15 @@ static float grid_sample(const void *src, exr_pixel_type pt, size_t idx) {
     return 0.0f;
 }
 
-/* Fill *out from an already-loaded native image (part 0 only). out must be
- * zeroed by the caller with out->alloc set. */
-static exr_result spectral_fill(const exr_allocator *a, const exr_image *img,
+/* Fill one selected flat spectral part. out is zeroed with its allocator set. */
+static exr_result spectral_fill(const exr_allocator *a, const exr_part *part,
                                 exr_spectral_image *out) {
-    const exr_part *part;
     const exr_header *h;
     exr_spectrum_type type;
     int32_t nwl, w, hgt, c, nstokes, s;
-    size_t npix;
+    size_t npix, cube_bytes;
 
-    if (img->num_parts < 1) return EXR_ERROR_UNSUPPORTED;
-    part = &img->parts[0];
+    if (part->is_deep || !part->images) return EXR_ERROR_UNSUPPORTED;
     h = &part->header;
     if (!exr_is_spectral(h)) return EXR_ERROR_UNSUPPORTED;
     type = exr_spectrum_type_of(h);
@@ -281,7 +278,10 @@ static exr_result spectral_fill(const exr_allocator *a, const exr_image *img,
 
     w = part->width;
     hgt = part->height;
-    npix = (size_t)w * (size_t)hgt;
+    if (exr_mul_ovf((size_t)w, (size_t)hgt, &npix) ||
+        exr_mul_ovf(npix, (size_t)nwl, &cube_bytes) ||
+        exr_mul_ovf(cube_bytes, sizeof(float), &cube_bytes))
+        return EXR_ERROR_LIMIT_EXCEEDED;
 
     out->width = w;
     out->height = hgt;
@@ -293,8 +293,7 @@ static exr_result spectral_fill(const exr_allocator *a, const exr_image *img,
 
     nstokes = (type == EXR_SPECTRUM_POLARISED) ? 4 : 1;
     for (s = 0; s < nstokes; ++s) {
-        out->stokes[s] = (float *)exr_calloc(a, npix ? (size_t)nwl * npix : 1,
-                                             sizeof(float));
+        out->stokes[s] = (float *)exr_calloc(a, cube_bytes ? cube_bytes : 1, 1);
         if (!out->stokes[s]) return EXR_ERROR_OUT_OF_MEMORY;
     }
 
@@ -369,40 +368,74 @@ static exr_result spectral_fill(const exr_allocator *a, const exr_image *img,
     return EXR_SUCCESS;
 }
 
+/* Negative part selects the first supported spectral part. Decode only the
+ * selected part so unrelated multipart pixel payloads need not be read. */
+static exr_result spectral_read(exr_reader *r, int32_t part,
+                                 const exr_allocator *a, exr_spectral_image *out) {
+    exr_part native = {0};
+    exr_result rc = exr_reader_parse_header(r);
+    if (rc != EXR_SUCCESS) return rc;
+    if (part == -1) {
+        int32_t i;
+        for (i = 0; i < exr_reader_num_parts(r); ++i) {
+            const exr_header *h = exr_reader_part_header(r, i);
+            if ((h->part_type == EXR_PART_SCANLINE || h->part_type == EXR_PART_TILED) &&
+                exr_is_spectral(h)) { part = i; break; }
+        }
+        if (part == -1) return EXR_ERROR_UNSUPPORTED;
+    }
+    if (part < 0 || part >= exr_reader_num_parts(r)) return EXR_ERROR_INVALID_ARGUMENT;
+    {
+        const exr_header *h = exr_reader_part_header(r, part);
+        if ((h->part_type != EXR_PART_SCANLINE && h->part_type != EXR_PART_TILED) ||
+            !exr_is_spectral(h)) return EXR_ERROR_UNSUPPORTED;
+    }
+    rc = exr_reader_read_part(r, part, &native);
+    if (rc == EXR_SUCCESS) rc = spectral_fill(a, &native, out);
+    exr_part_free(a, &native);
+    return rc;
+}
+
+exr_result exr_spectral_load_part_from_memory(const void *data, size_t size,
+                                              int32_t part, const exr_allocator *alloc,
+                                              exr_spectral_image *out) {
+    const exr_allocator *a = alloc ? alloc : exr_default_allocator();
+    exr_reader *r = NULL;
+    exr_result rc;
+    if (!out) return EXR_ERROR_INVALID_ARGUMENT;
+    memset(out, 0, sizeof(*out)); out->alloc = *a;
+    rc = exr_reader_open_memory(data, size, a, &r);
+    if (rc == EXR_SUCCESS) rc = spectral_read(r, part, a, out);
+    exr_reader_close(r);
+    if (rc != EXR_SUCCESS) exr_spectral_image_free(out);
+    return rc;
+}
+
+exr_result exr_spectral_load_part_from_file(const char *path, int32_t part,
+                                            const exr_allocator *alloc,
+                                            exr_spectral_image *out) {
+    const exr_allocator *a = alloc ? alloc : exr_default_allocator();
+    exr_reader *r = NULL;
+    exr_result rc;
+    if (!out) return EXR_ERROR_INVALID_ARGUMENT;
+    memset(out, 0, sizeof(*out)); out->alloc = *a;
+    rc = exr_reader_open_file(path, a, &r);
+    if (rc == EXR_SUCCESS) rc = spectral_read(r, part, a, out);
+    exr_reader_close(r);
+    if (rc != EXR_SUCCESS) exr_spectral_image_free(out);
+    return rc;
+}
+
 exr_result exr_spectral_load_from_memory(const void *data, size_t size,
                                          const exr_allocator *alloc,
                                          exr_spectral_image *out) {
-    const exr_allocator *a = alloc ? alloc : exr_default_allocator();
-    exr_image img;
-    exr_result rc;
-    if (!out) return EXR_ERROR_INVALID_ARGUMENT;
-    memset(out, 0, sizeof(*out));
-    if (a) out->alloc = *a;
-    memset(&img, 0, sizeof(img));
-    rc = exr_load_from_memory(data, size, alloc, &img);
-    if (!EXR_OK(rc)) return rc;
-    rc = spectral_fill(a, &img, out);
-    exr_image_free(&img);
-    if (!EXR_OK(rc)) exr_spectral_image_free(out);
-    return rc;
+    return exr_spectral_load_part_from_memory(data, size, -1, alloc, out);
 }
 
 exr_result exr_spectral_load_from_file(const char *path,
                                        const exr_allocator *alloc,
                                        exr_spectral_image *out) {
-    const exr_allocator *a = alloc ? alloc : exr_default_allocator();
-    exr_image img;
-    exr_result rc;
-    if (!out) return EXR_ERROR_INVALID_ARGUMENT;
-    memset(out, 0, sizeof(*out));
-    if (a) out->alloc = *a;
-    memset(&img, 0, sizeof(img));
-    rc = exr_load_from_file(path, alloc, &img);
-    if (!EXR_OK(rc)) return rc;
-    rc = spectral_fill(a, &img, out);
-    exr_image_free(&img);
-    if (!EXR_OK(rc)) exr_spectral_image_free(out);
-    return rc;
+    return exr_spectral_load_part_from_file(path, -1, alloc, out);
 }
 
 /* ------------------------------------------------------------- accessors */

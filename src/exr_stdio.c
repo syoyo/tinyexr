@@ -35,15 +35,15 @@ typedef off_t exr_file_offset;
 #endif
 
 static exr_result checked_file_size(FILE *fp, const exr_context *context,
-                                    size_t *out) {
+                                    uint64_t *out) {
     exr_file_offset sz;
     uint64_t lim = exr_context_max_file_bytes(context);
     if (EXR_FSEEK(fp, 0, SEEK_END) != 0) return EXR_ERROR_IO;
     sz = EXR_FTELL(fp);
     if (sz < 0 || EXR_FSEEK(fp, 0, SEEK_SET) != 0) return EXR_ERROR_IO;
-    if ((uint64_t)sz > (uint64_t)SIZE_MAX || (lim && (uint64_t)sz > lim))
+    if (lim && (uint64_t)sz > lim)
         return EXR_ERROR_LIMIT_EXCEEDED;
-    *out = (size_t)sz;
+    *out = (uint64_t)sz;
     return EXR_SUCCESS;
 }
 
@@ -51,27 +51,15 @@ static exr_result checked_file_size(FILE *fp, const exr_context *context,
 
 exr_result exr_load_from_file_ctx(exr_context *context, const char *path,
                                   const exr_allocator *alloc, exr_image *out) {
-    FILE *fp;
-    size_t sz, n;
-    uint8_t *buf;
+    exr_reader *r = NULL;
     exr_result rc;
-
     if (!path || !out) return EXR_ERROR_INVALID_ARGUMENT;
-    if (!alloc) alloc = exr_default_allocator();
     memset(out, 0, sizeof(*out));
-
-    fp = fopen(path, "rb");
-    if (!fp) return EXR_ERROR_IO;
-    rc = checked_file_size(fp, context, &sz);
-    if (!EXR_OK(rc)) { fclose(fp); return rc; }
-    buf = (uint8_t *)exr_malloc(alloc, sz);
-    if (!buf) { fclose(fp); return EXR_ERROR_OUT_OF_MEMORY; }
-    n = fread(buf, 1, sz, fp);
-    fclose(fp);
-    if (n != sz) { exr_free(alloc, buf); return EXR_ERROR_IO; }
-
-    rc = exr_load_from_memory_ctx(context, buf, sz, alloc, out);
-    exr_free(alloc, buf);
+    rc = exr_reader_open_file_ctx(context, path, alloc, &r);
+    if (rc != EXR_SUCCESS) return rc;
+    rc = exr_load_reader(r, &r->alloc, out);
+    if (rc != EXR_SUCCESS) exr_image_free(out);
+    exr_reader_close(r);
     return rc;
 }
 
@@ -80,32 +68,56 @@ exr_result exr_load_from_file(const char *path, const exr_allocator *alloc,
     return exr_load_from_file_ctx(NULL, path, alloc, out);
 }
 
-/* Open a mid-level reader on a file path: slurp the file into an allocator
- * buffer the reader then owns (freed by exr_reader_close). */
-exr_result exr_reader_open_file_ctx(exr_context *context, const char *path,
-                                    const exr_allocator *alloc,
-                                    exr_reader **out) {
+/* The stdio source owns only a FILE and a small callback wrapper. */
+typedef struct file_source {
     FILE *fp;
-    size_t sz, n;
-    uint8_t *buf;
+    exr_allocator alloc;
+    uint64_t position;
+} file_source;
+
+static exr_result file_source_read(void *user, uint64_t off, uint64_t len, void *dst) {
+    file_source *source = (file_source *)user;
+    exr_file_offset pos = (exr_file_offset)off;
+    if (len > SIZE_MAX) return EXR_ERROR_LIMIT_EXCEEDED;
+    if (pos < 0 || (uint64_t)pos != off) return EXR_ERROR_IO;
+    if (source->position != off && EXR_FSEEK(source->fp, pos, SEEK_SET) != 0)
+        return EXR_ERROR_IO;
+    if (fread(dst, 1, (size_t)len, source->fp) != (size_t)len) {
+        source->position = UINT64_MAX; return EXR_ERROR_IO;
+    }
+    source->position = off + len;
+    return EXR_SUCCESS;
+}
+
+static void file_source_close(void *user) {
+    file_source *source = (file_source *)user;
+    fclose(source->fp);
+    exr_free(&source->alloc, source);
+}
+
+exr_result exr_reader_open_file_ctx(exr_context *context, const char *path,
+                                    const exr_allocator *alloc, exr_reader **out) {
+    FILE *fp;
+    uint64_t size;
+    file_source *owner;
+    exr_data_source source;
     exr_result rc;
-
-    if (!path || !out) return EXR_ERROR_INVALID_ARGUMENT;
+    if (!out) return EXR_ERROR_INVALID_ARGUMENT;
+    *out = NULL;
     if (!alloc) alloc = exr_default_allocator();
-
+    if (!path || !exr_allocator_valid(alloc)) return EXR_ERROR_INVALID_ARGUMENT;
     fp = fopen(path, "rb");
     if (!fp) return EXR_ERROR_IO;
-    rc = checked_file_size(fp, context, &sz);
-    if (!EXR_OK(rc)) { fclose(fp); return rc; }
-    buf = (uint8_t *)exr_malloc(alloc, sz);
-    if (!buf) { fclose(fp); return EXR_ERROR_OUT_OF_MEMORY; }
-    n = fread(buf, 1, sz, fp);
-    fclose(fp);
-    if (n != sz) { exr_free(alloc, buf); return EXR_ERROR_IO; }
-
-    rc = exr_reader_open_memory_ctx(context, buf, sz, alloc, out);
-    if (!EXR_OK(rc)) { exr_free(alloc, buf); return rc; }
-    (*out)->free_mem = 1; /* hand buffer ownership to the reader */
+    rc = checked_file_size(fp, context, &size);
+    if (rc != EXR_SUCCESS) { fclose(fp); return rc; }
+    if (!size) { fclose(fp); return EXR_ERROR_INVALID_FILE; }
+    owner = (file_source *)exr_malloc(alloc, sizeof(*owner));
+    if (!owner) { fclose(fp); return EXR_ERROR_OUT_OF_MEMORY; }
+    owner->fp = fp; owner->alloc = *alloc; owner->position = 0;
+    source.user = owner; source.read = file_source_read; source.total_size = size;
+    rc = exr_reader_open_source_ctx(context, &source, alloc, out);
+    if (rc != EXR_SUCCESS) { file_source_close(owner); return rc; }
+    (*out)->owned_source = owner; (*out)->close_source = file_source_close;
     return EXR_SUCCESS;
 }
 

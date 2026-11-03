@@ -118,6 +118,10 @@ exr_result exr_mip_generate(const exr_allocator *a, const exr_part *part,
 
     memset(out, 0, sizeof(*out));
     out->alloc = *a;
+    for (c = 0; c < nch; ++c)
+        if (part->header.channels[c].x_sampling != 1 ||
+            part->header.channels[c].y_sampling != 1)
+            return EXR_ERROR_UNSUPPORTED;
     out->num_channels = nch;
 
     for (;;) {
@@ -208,6 +212,10 @@ exr_result exr_ripmap_generate(const exr_allocator *a, const exr_part *part,
 
     memset(out, 0, sizeof(*out));
     out->alloc = *a;
+    for (c = 0; c < nch; ++c)
+        if (part->header.channels[c].x_sampling != 1 ||
+            part->header.channels[c].y_sampling != 1)
+            return EXR_ERROR_UNSUPPORTED;
     out->num_channels = nch;
 
     nxl = dim_num_levels(w, round_up);

@@ -122,6 +122,8 @@ exr_result exr_block_uncompressed_size(const exr_channel *channels,
         *out_size = 0;
         return EXR_SUCCESS;
     }
+    if (!exr_valid_span(x, width) || !exr_valid_span(y, num_lines))
+        return EXR_ERROR_CORRUPT;
     for (line = 0; line < num_lines; ++line) {
         int32_t yy = y + line;
         for (c = 0; c < num_channels; ++c) {
@@ -132,7 +134,7 @@ exr_result exr_block_uncompressed_size(const exr_channel *channels,
             size_t row;
             if (xs <= 0 || ys <= 0) return EXR_ERROR_CORRUPT;
             if ((yy % ys) != 0) continue;
-            nx = exr_num_samples(x, x + width - 1, xs);
+            nx = exr_num_samples(x, (int64_t)x + width - 1, xs);
             if (nx < 0) nx = 0;
             if (exr_mul_ovf((size_t)nx, exr_pixel_size(ch->pixel_type), &row))
                 return EXR_ERROR_CORRUPT;
@@ -297,6 +299,8 @@ exr_result exr_header_validate(const exr_header *h, int enforce_short_names,
             ch->pixel_type < EXR_PIXEL_UINT || ch->pixel_type > EXR_PIXEL_FLOAT ||
             ch->x_sampling <= 0 || ch->y_sampling <= 0 || ch->p_linear > 1)
             return EXR_ERROR_CORRUPT;
+        if (h->tiled && (ch->x_sampling != 1 || ch->y_sampling != 1))
+            return EXR_ERROR_CORRUPT;
         if (n > 31) requires_long = 1;
     }
     {
@@ -322,6 +326,19 @@ exr_result exr_header_validate(const exr_header *h, int enforce_short_names,
     if (out_width) *out_width = (int32_t)w;
     if (out_height) *out_height = (int32_t)height;
     if (out_requires_long_names) *out_requires_long_names = requires_long;
+    return EXR_SUCCESS;
+}
+
+exr_result exr_header_crop(const exr_allocator *a, exr_header *h, exr_box2i crop) {
+    uint8_t bytes[16];
+    exr_result rc;
+    if (h->attrs) {
+        exr_wr_i32(bytes, crop.min_x); exr_wr_i32(bytes + 4, crop.min_y);
+        exr_wr_i32(bytes + 8, crop.max_x); exr_wr_i32(bytes + 12, crop.max_y);
+        rc = exr_header_set_attribute(a, h, "dataWindow", "box2i", bytes, sizeof(bytes));
+        if (rc != EXR_SUCCESS) return rc;
+    }
+    h->data_window = crop;
     return EXR_SUCCESS;
 }
 
@@ -563,7 +580,7 @@ int exr_is_exr_memory(const void *data, size_t size) {
     return exr_rd_u32((const uint8_t *)data) == EXR_MAGIC;
 }
 
-static exr_result load_all_parts(exr_reader *r, const exr_allocator *a,
+exr_result exr_load_reader(exr_reader *r, const exr_allocator *a,
                                  exr_image *out) {
     int32_t np, i;
     exr_result rc;
@@ -684,7 +701,7 @@ exr_result exr_load_from_memory_ctx(exr_context *context, const void *data,
     rc = exr_reader_open_memory_ctx(context, data, size, alloc, &r);
     if (!EXR_OK(rc)) return rc;
 
-    rc = load_all_parts(r, alloc, out);
+    rc = exr_load_reader(r, alloc, out);
     if (!EXR_OK(rc)) exr_image_free(out);
     exr_reader_close(r);
     return rc;

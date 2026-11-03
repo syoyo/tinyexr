@@ -411,7 +411,7 @@ static int build_dec_table(const exr_allocator *a, const int64_t *hcode,
         if (!storage) {
             *long_storage = NULL;
             *long_capacity = 0;
-            return 0;
+            return -1;
         }
         *long_storage = storage;
         *long_capacity = total_long;
@@ -638,9 +638,10 @@ static PIZ_OPT_O3 int huf_uncompress(
      * workspace below so Huffman tables cannot race between workers. */
     slot = exr_get_num_threads() <= 1 ? exr_context_piz_slot(context) : NULL;
     if (slot) {
+        a = exr_context_allocator(context);
         if (!*slot) {
             *slot = exr_calloc(a, 1, sizeof(*w));
-            if (!*slot) goto cleanup;
+            if (!*slot) { ret = -1; goto cleanup; }
         }
         w = (PizHufWorkspace *)*slot;
     }
@@ -653,7 +654,7 @@ static PIZ_OPT_O3 int huf_uncompress(
         goto cleanup;
     if (!w->symbols || w->symbols_capacity < symbol_capacity) {
         uint32_t *p = (uint32_t *)exr_malloc(a, symbol_bytes);
-        if (!p) goto cleanup;
+        if (!p) { ret = -1; goto cleanup; }
         exr_free(a, w->symbols);
         w->symbols = p;
         w->symbols_capacity = symbol_capacity;
@@ -665,8 +666,9 @@ static PIZ_OPT_O3 int huf_uncompress(
     if (!w->counts)
         w->counts = (uint32_t *)exr_malloc(a, sizeof(*w->counts) * HUF_DECSIZE);
     if (!w->hcode || !w->lengths || !w->symbols || !w->fast ||
-        !w->longdec || !w->counts)
-        goto cleanup;
+        !w->longdec || !w->counts) {
+        ret = -1; goto cleanup;
+    }
 
     ptr = in + 20;
     ni = (int)(in_len - 20);
@@ -676,7 +678,7 @@ static PIZ_OPT_O3 int huf_uncompress(
 
     if (!w->ids || w->ids_capacity < symbol_count) {
         uint32_t *p = (uint32_t *)exr_malloc(a, symbol_bytes);
-        if (!p) goto cleanup;
+        if (!p) { ret = -1; goto cleanup; }
         exr_free(a, w->ids);
         w->ids = p;
         w->ids_capacity = symbol_capacity;
@@ -727,10 +729,12 @@ static PIZ_OPT_O3 int huf_uncompress(
         goto cleanup;
     }
 
-    if (!build_dec_table(a, w->hcode, w->fast, w->longdec,
-                         w->counts, &w->long_storage, &w->long_capacity,
-                         w->symbols, symbol_count))
-        goto cleanup;
+    {
+        int built = build_dec_table(a, w->hcode, w->fast, w->longdec,
+                                   w->counts, &w->long_storage, &w->long_capacity,
+                                   w->symbols, symbol_count);
+        if (built <= 0) { ret = built; goto cleanup; }
+    }
     /* Keep the read-only decode tables in local pointers for the symbol loop. */
     fast = w->fast;
     longdec = w->longdec;
@@ -839,7 +843,7 @@ cleanup:
 exr_result exr_piz_decompress(const exr_codec_ctx *ctx, const uint8_t *src,
                               size_t src_size, uint8_t *dst, size_t dst_size) {
     const exr_allocator *a = ctx->alloc;
-    int xmin = ctx->x, xmax = ctx->x + ctx->width - 1;
+    int xmin = ctx->x, xmax = ctx->x + (ctx->width - 1);
     const uint8_t *ptr = src, *ptr_end = src + src_size;
     uint8_t bitmap[PIZ_BITMAP_SIZE];
     uint16_t *rev_lut = NULL, *tmp = NULL;
@@ -879,6 +883,7 @@ exr_result exr_piz_decompress(const exr_codec_ctx *ctx, const uint8_t *src,
      * reuse its PIZ scratch. Threaded decodes use a private workspace. */
     slot = exr_get_num_threads() <= 1 ? exr_context_piz_slot(ctx->context) : NULL;
     if (slot) {
+        a = exr_context_allocator(ctx->context);
         if (!*slot) {
             *slot = exr_calloc(a, 1, sizeof(*scratch));
             if (!*slot) { rc = EXR_ERROR_OUT_OF_MEMORY; goto done; }
@@ -910,7 +915,7 @@ exr_result exr_piz_decompress(const exr_codec_ctx *ctx, const uint8_t *src,
         size_t s;
         if (xs <= 0 || ys <= 0) { rc = EXR_ERROR_CORRUPT; goto done; }
         nx = exr_num_samples(xmin, xmax, xs);
-        ny = exr_num_samples(ctx->y, ctx->y + ctx->num_lines - 1, ys);
+        ny = exr_num_samples(ctx->y, (int64_t)ctx->y + ctx->num_lines - 1, ys);
         if (nx < 0) nx = 0;
         if (ny < 0) ny = 0;
         lanes = (ctx->channels[c].pixel_type == EXR_PIXEL_HALF) ? 1 : 2;
@@ -958,7 +963,7 @@ exr_result exr_piz_decompress(const exr_codec_ctx *ctx, const uint8_t *src,
     for (c = 0; c < ctx->num_channels; ++c) {
         int xs = ctx->channels[c].x_sampling, ys = ctx->channels[c].y_sampling;
         int nx = exr_num_samples(xmin, xmax, xs);
-        int ny = exr_num_samples(ctx->y, ctx->y + ctx->num_lines - 1, ys);
+        int ny = exr_num_samples(ctx->y, (int64_t)ctx->y + ctx->num_lines - 1, ys);
         if (nx < 0) nx = 0;
         if (ny < 0) ny = 0;
         cd[c].start = NULL;
@@ -990,9 +995,12 @@ exr_result exr_piz_decompress(const exr_codec_ctx *ctx, const uint8_t *src,
         rc = EXR_ERROR_CORRUPT;
         goto done;
     }
-    if (!huf_uncompress(a, ctx->context, ptr, huf_length, tmp, total)) {
-        rc = EXR_ERROR_CORRUPT;
-        goto done;
+    {
+        int decoded = huf_uncompress(a, ctx->context, ptr, huf_length, tmp, total);
+        if (decoded <= 0) {
+            rc = decoded < 0 ? EXR_ERROR_OUT_OF_MEMORY : EXR_ERROR_CORRUPT;
+            goto done;
+        }
     }
 
     chan_ptr = tmp;
@@ -1352,7 +1360,7 @@ static PIZ_OPT_O3 int huf_compress(const exr_allocator *a,
 exr_result exr_piz_compress(const exr_codec_ctx *ctx, const uint8_t *block,
                             size_t n, uint8_t **out_data, size_t *out_size) {
     const exr_allocator *a = ctx->alloc;
-    int xmin = ctx->x, xmax = ctx->x + ctx->width - 1;
+    int xmin = ctx->x, xmax = ctx->x + (ctx->width - 1);
     size_t total = n / 2;
     uint16_t *tmp = NULL, *lut = NULL;
     uint8_t bitmap[PIZ_BITMAP_SIZE];
@@ -1380,7 +1388,7 @@ exr_result exr_piz_compress(const exr_codec_ctx *ctx, const uint8_t *block,
     for (c = 0; c < ctx->num_channels; ++c) {
         int xs = ctx->channels[c].x_sampling, ys = ctx->channels[c].y_sampling;
         int nx = exr_num_samples(xmin, xmax, xs);
-        int ny = exr_num_samples(ctx->y, ctx->y + ctx->num_lines - 1, ys);
+        int ny = exr_num_samples(ctx->y, (int64_t)ctx->y + ctx->num_lines - 1, ys);
         if (nx < 0) nx = 0;
         if (ny < 0) ny = 0;
         cd[c].nx = nx;

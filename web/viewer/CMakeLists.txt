@@ -58,5 +58,5 @@ target_link_options(exr_viewer PRIVATE
   "-sENVIRONMENT=web"
   "-sFILESYSTEM=0"
   "-sALLOW_MEMORY_GROWTH=1"
-  "-sEXPORTED_FUNCTIONS=['_exrv_open','_exrv_close','_exrv_num_parts','_exrv_header_json','_exrv_select','_exrv_select_channels','_exrv_select_ycc','_exrv_level_width','_exrv_level_height','_exrv_decode_block','_exrv_rgba','_exrv_deep_load','_exrv_deep_points','_exrv_deep_count','_exrv_is_spectral','_exrv_spectral_open','_exrv_spectral_width','_exrv_spectral_height','_exrv_spectral_wavelengths','_exrv_spectral_show','_exrv_spectral_composite','_exrv_spectral_pixel','_exrv_free','_malloc','_free']"
+  "-sEXPORTED_FUNCTIONS=['_exrv_open','_exrv_close','_exrv_num_parts','_exrv_header_json','_exrv_select','_exrv_select_channels','_exrv_select_ycc','_exrv_level_width','_exrv_level_height','_exrv_decode_block','_exrv_rgba','_exrv_deep_load','_exrv_deep_points','_exrv_deep_count','_exrv_is_spectral','_exrv_spectral_open','_exrv_spectral_open_part','_exrv_spectral_width','_exrv_spectral_height','_exrv_spectral_wavelengths','_exrv_spectral_show','_exrv_spectral_composite','_exrv_spectral_pixel','_exrv_free','_malloc','_free']"
   "-sEXPORTED_RUNTIME_METHODS=['HEAPU8','HEAPF32','HEAP32','HEAPU32','UTF8ToString']")

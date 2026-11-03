@@ -183,14 +183,36 @@ static float load_sample(const void *plane, exr_pixel_type t, size_t idx) {
     }
 }
 
+/* Plane dimensions and sample anchors refer to absolute EXR coordinates. */
+static exr_result part_plane_grid(const exr_part *p, int c, int *cw, int *ch) {
+    const exr_channel *v = &p->header.channels[c];
+    int64_t x1 = (int64_t)p->header.data_window.min_x + p->width - 1;
+    int64_t y1 = (int64_t)p->header.data_window.min_y + p->height - 1;
+    if (p->width <= 0 || p->height <= 0 || v->x_sampling <= 0 ||
+        v->y_sampling <= 0 || x1 > INT32_MAX || y1 > INT32_MAX)
+        return EXR_ERROR_INVALID_ARGUMENT;
+    *cw = exr_num_samples(p->header.data_window.min_x, x1, v->x_sampling);
+    *ch = exr_num_samples(p->header.data_window.min_y, y1, v->y_sampling);
+    if (!*cw || !*ch) return EXR_ERROR_UNSUPPORTED;
+    if (!p->images[c]) return EXR_ERROR_INVALID_ARGUMENT;
+    return EXR_SUCCESS;
+}
+
+static int sampled_index(int origin, int pos, int step, int count) {
+    int64_t first = -exr_floordiv(-(int64_t)origin, step) * step;
+    int64_t i = exr_floordiv((int64_t)origin + pos - first, step);
+    return i < 0 ? 0 : i >= count ? count - 1 : (int)i;
+}
+
 exr_result exr_part_to_rgba_float(const exr_allocator *a, const exr_part *part,
                                   float **out, int *out_width, int *out_height,
                                   int *out_channels) {
     int w, h, nch, c, x, y;
     size_t total;
     float *buf;
+    if (out) *out = NULL;
     if (!a) a = exr_default_allocator();
-    if (!part || !out || part->is_deep || !part->images)
+    if (!part || !out || part->is_deep || !part->images || !part->header.channels)
         return EXR_ERROR_INVALID_ARGUMENT;
     w = part->width;
     h = part->height;
@@ -201,6 +223,11 @@ exr_result exr_part_to_rgba_float(const exr_allocator *a, const exr_part *part,
         exr_mul_ovf(total, sizeof(float), &total))
         return EXR_ERROR_CORRUPT;
 
+    for (c = 0; c < nch; ++c) {
+        int cw, ch;
+        exr_result rc = part_plane_grid(part, c, &cw, &ch);
+        if (rc != EXR_SUCCESS) return rc;
+    }
     buf = (float *)exr_malloc(a, total);
     if (!buf) return EXR_ERROR_OUT_OF_MEMORY;
 
@@ -208,12 +235,13 @@ exr_result exr_part_to_rgba_float(const exr_allocator *a, const exr_part *part,
         const exr_channel *ch = &part->header.channels[c];
         int xs = ch->x_sampling < 1 ? 1 : ch->x_sampling;
         int ys = ch->y_sampling < 1 ? 1 : ch->y_sampling;
-        int cw = exr_num_samples(0, w - 1, xs);
+        int cw, chh;
+        (void)part_plane_grid(part, c, &cw, &chh);
         const void *plane = part->images[c];
         for (y = 0; y < h; ++y) {
-            int cy = (ys == 1) ? y : (y / ys);
+            int cy = sampled_index(part->header.data_window.min_y, y, ys, chh);
             for (x = 0; x < w; ++x) {
-                int cx = (xs == 1) ? x : (x / xs);
+                int cx = sampled_index(part->header.data_window.min_x, x, xs, cw);
                 size_t sidx = (size_t)cy * (size_t)cw + (size_t)cx;
                 buf[((size_t)y * w + x) * nch + c] =
                     load_sample(plane, ch->pixel_type, sidx);
@@ -233,7 +261,7 @@ exr_result exr_part_to_rgba_float(const exr_allocator *a, const exr_part *part,
 
 int exr_part_is_luminance_chroma(const exr_part *part) {
     int has_y = 0, has_ry = 0, has_by = 0, has_rgb = 0, c;
-    if (!part || part->is_deep || !part->images) return 0;
+    if (!part || part->is_deep || !part->images || !part->header.channels) return 0;
     for (c = 0; c < part->header.num_channels; ++c) {
         const char *n = part->header.channels[c].name;
         if (strcmp(n, "Y") == 0)
@@ -254,25 +282,31 @@ int exr_part_is_luminance_chroma(const exr_part *part) {
  * sharper 13-tap reconstruction filter (ImfRgbaYca); bilinear is chosen here
  * for simplicity and to stay libm-free, and is visually equivalent on the
  * smoothly-varying chroma these images carry. */
-static void yc_upsample_plane(const void *plane, exr_pixel_type t, int cw,
-                              int ch, int w, int h, int xs, int ys,
-                              float *out) {
-    int x, y;
-    for (y = 0; y < h; ++y) {
-        int gy = y / ys;
-        int gy1 = (gy + 1 < ch) ? gy + 1 : gy;
-        float fy = (float)(y - gy * ys) / (float)ys;
-        for (x = 0; x < w; ++x) {
-            int gx = x / xs;
-            int gx1 = (gx + 1 < cw) ? gx + 1 : gx;
-            float fx = (float)(x - gx * xs) / (float)xs;
-            float v00 = load_sample(plane, t, (size_t)gy * cw + gx);
-            float v01 = load_sample(plane, t, (size_t)gy * cw + gx1);
-            float v10 = load_sample(plane, t, (size_t)gy1 * cw + gx);
-            float v11 = load_sample(plane, t, (size_t)gy1 * cw + gx1);
-            float top = v00 + (v01 - v00) * fx;
-            float bot = v10 + (v11 - v10) * fx;
-            out[(size_t)y * w + x] = top + (bot - top) * fy;
+static void yc_upsample_plane(const exr_part *part, int c, float *out) {
+    const exr_channel *v = &part->header.channels[c];
+    const void *plane = part->images[c];
+    int cw, ch, x, y;
+    int64_t firstx = -exr_floordiv(-(int64_t)part->header.data_window.min_x,
+                                  v->x_sampling) * v->x_sampling;
+    int64_t firsty = -exr_floordiv(-(int64_t)part->header.data_window.min_y,
+                                  v->y_sampling) * v->y_sampling;
+    (void)part_plane_grid(part, c, &cw, &ch);
+    for (y = 0; y < part->height; ++y) {
+        int64_t py = (int64_t)part->header.data_window.min_y + y - firsty;
+        int gy = sampled_index(part->header.data_window.min_y, y, v->y_sampling, ch);
+        int gy1 = gy + 1 < ch ? gy + 1 : gy;
+        float fy = py < 0 ? 0.0f : (float)(py % v->y_sampling) / v->y_sampling;
+        for (x = 0; x < part->width; ++x) {
+            int64_t px = (int64_t)part->header.data_window.min_x + x - firstx;
+            int gx = sampled_index(part->header.data_window.min_x, x, v->x_sampling, cw);
+            int gx1 = gx + 1 < cw ? gx + 1 : gx;
+            float fx = px < 0 ? 0.0f : (float)(px % v->x_sampling) / v->x_sampling;
+            float a = load_sample(plane, v->pixel_type, (size_t)gy * cw + gx);
+            float b = load_sample(plane, v->pixel_type, (size_t)gy * cw + gx1);
+            float d = load_sample(plane, v->pixel_type, (size_t)gy1 * cw + gx);
+            float e = load_sample(plane, v->pixel_type, (size_t)gy1 * cw + gx1);
+            float top = a + (b - a) * fx, bot = d + (e - d) * fx;
+            out[(size_t)y * part->width + x] = top + (bot - top) * fy;
         }
     }
 }
@@ -287,6 +321,7 @@ exr_result exr_part_yc_to_rgba_float(const exr_allocator *a,
     size_t npx, total;
     exr_result rc = EXR_SUCCESS;
     if (!a) a = exr_default_allocator();
+    if (out) *out = NULL;
     if (!part || !out) return EXR_ERROR_INVALID_ARGUMENT;
     if (!exr_part_is_luminance_chroma(part)) return EXR_ERROR_INVALID_ARGUMENT;
     w = part->width;
@@ -306,6 +341,12 @@ exr_result exr_part_yc_to_rgba_float(const exr_allocator *a,
     }
     if (yi < 0 || ryi < 0 || byi < 0) return EXR_ERROR_INVALID_ARGUMENT;
 
+    for (c = 0; c < part->header.num_channels; ++c) {
+        int cw, ch;
+        if (c != yi && c != ryi && c != byi && c != ai) continue;
+        rc = part_plane_grid(part, c, &cw, &ch);
+        if (rc != EXR_SUCCESS) return rc;
+    }
     exr_luminance_weights(part->header.chromaticities,
                           part->header.has_chromaticities, yw);
     if (yw[1] == 0.0f) return EXR_ERROR_CORRUPT; /* would divide by zero */
@@ -321,47 +362,33 @@ exr_result exr_part_yc_to_rgba_float(const exr_allocator *a,
         goto done;
     }
 
-    /* Upsample the two subsampled chroma planes to full resolution. */
-    {
-        const exr_channel *cry = &part->header.channels[ryi];
-        const exr_channel *cby = &part->header.channels[byi];
-        int rxs = cry->x_sampling < 1 ? 1 : cry->x_sampling;
-        int rys = cry->y_sampling < 1 ? 1 : cry->y_sampling;
-        int bxs = cby->x_sampling < 1 ? 1 : cby->x_sampling;
-        int bys = cby->y_sampling < 1 ? 1 : cby->y_sampling;
-        yc_upsample_plane(part->images[ryi], cry->pixel_type,
-                          exr_num_samples(0, w - 1, rxs),
-                          exr_num_samples(0, h - 1, rys), w, h, rxs, rys,
-                          ry_full);
-        yc_upsample_plane(part->images[byi], cby->pixel_type,
-                          exr_num_samples(0, w - 1, bxs),
-                          exr_num_samples(0, h - 1, bys), w, h, bxs, bys,
-                          by_full);
-    }
+    yc_upsample_plane(part, ryi, ry_full);
+    yc_upsample_plane(part, byi, by_full);
 
     /* Convert Y + reconstructed chroma to RGB(A). */
     {
         const exr_channel *cy = &part->header.channels[yi];
         int yxs = cy->x_sampling < 1 ? 1 : cy->x_sampling;
         int yys = cy->y_sampling < 1 ? 1 : cy->y_sampling;
-        int ycw = exr_num_samples(0, w - 1, yxs);
+        int ycw, ych;
+        (void)part_plane_grid(part, yi, &ycw, &ych);
         const void *yplane = part->images[yi];
         const void *aplane = (ai >= 0) ? part->images[ai] : NULL;
         exr_pixel_type aty =
             (ai >= 0) ? part->header.channels[ai].pixel_type : EXR_PIXEL_HALF;
-        int axs = 1, ays = 1, acw = w;
+        int axs = 1, ays = 1, acw = w, ach = h;
         if (ai >= 0) {
             const exr_channel *ca = &part->header.channels[ai];
             axs = ca->x_sampling < 1 ? 1 : ca->x_sampling;
             ays = ca->y_sampling < 1 ? 1 : ca->y_sampling;
-            acw = exr_num_samples(0, w - 1, axs);
+            (void)part_plane_grid(part, ai, &acw, &ach);
         }
         for (y = 0; y < h; ++y) {
-            int ycy = y / yys;
+            int ycy = sampled_index(part->header.data_window.min_y, y, yys, ych);
             for (x = 0; x < w; ++x) {
                 size_t p = (size_t)y * (size_t)w + (size_t)x;
                 float Y = load_sample(yplane, cy->pixel_type,
-                                      (size_t)ycy * ycw + (x / yxs));
+                                      (size_t)ycy * ycw + sampled_index(part->header.data_window.min_x, x, yxs, ycw));
                 float RY = ry_full[p];
                 float BY = by_full[p];
                 float r = (RY + 1.0f) * Y;
@@ -370,7 +397,8 @@ exr_result exr_part_yc_to_rgba_float(const exr_allocator *a,
                 float A = 1.0f;
                 if (aplane)
                     A = load_sample(aplane, aty,
-                                    (size_t)(y / ays) * acw + (x / axs));
+                                    (size_t)sampled_index(part->header.data_window.min_y, y, ays, ach) * acw +
+                                    sampled_index(part->header.data_window.min_x, x, axs, acw));
                 buf[p * 4 + 0] = r;
                 buf[p * 4 + 1] = g;
                 buf[p * 4 + 2] = b;

@@ -16,36 +16,6 @@
 
 #define CAP_F16C (1u << 8)
 
-/* 0 = uninitialized, 1 = one thread initializing, 2 = ready. */
-static int once_begin(volatile long *state) {
-#if defined(_MSC_VER)
-    long v = _InterlockedCompareExchange(state, 1, 0);
-    return (v == 0) ? 1 : ((v == 2) ? 0 : -1);
-#else
-    long expected = 0;
-    if (__atomic_compare_exchange_n(state, &expected, 1, 0,
-                                    __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE))
-        return 1;
-    return (expected == 2) ? 0 : -1;
-#endif
-}
-
-static long once_load(const volatile long *state) {
-#if defined(_MSC_VER)
-    return _InterlockedCompareExchange((volatile long *)state, 2, 2);
-#else
-    return __atomic_load_n(state, __ATOMIC_ACQUIRE);
-#endif
-}
-
-static void once_finish(volatile long *state) {
-#if defined(_MSC_VER)
-    _InterlockedExchange(state, 2);
-#else
-    __atomic_store_n(state, 2, __ATOMIC_RELEASE);
-#endif
-}
-
 #if defined(EXR_X86)
 #if defined(_MSC_VER)
 static void cpuidex(int out[4], int leaf, int subleaf) {
@@ -101,8 +71,8 @@ static uint32_t cpu_caps_cached(void) {
     static volatile long state = 0;
     static uint32_t caps = 0;
     int owner;
-    if (once_load(&state) == 2) return caps;
-    owner = once_begin(&state);
+    if (exr_once_load(&state) == 2) return caps;
+    owner = exr_once_begin(&state);
     if (owner > 0) {
 #if defined(EXR_X86)
         caps = detect_caps();
@@ -111,9 +81,9 @@ static uint32_t cpu_caps_cached(void) {
 #else
         caps = 0;
 #endif
-        once_finish(&state);
+        exr_once_finish(&state);
     } else if (owner < 0) {
-        while (once_load(&state) != 2) { /* initialization is very short */ }
+        while (exr_once_load(&state) != 2) { /* initialization is very short */ }
     }
     return caps;
 }
@@ -186,11 +156,11 @@ void exr_simd_init(void) {
     static volatile long state = 0;
     uint32_t caps;
     int owner;
-    if (once_load(&state) == 2) return;
-    owner = once_begin(&state);
+    if (exr_once_load(&state) == 2) return;
+    owner = exr_once_begin(&state);
     if (owner == 0) return;
     if (owner < 0) {
-        while (once_load(&state) != 2) { /* wait for the single writer */ }
+        while (exr_once_load(&state) != 2) { /* wait for the single writer */ }
         return;
     }
     caps = cpu_caps_cached();
@@ -224,7 +194,7 @@ void exr_simd_init(void) {
     exr_simd.predictor_encode = exr_predictor_encode_neon;
     util_set_simd(1);
 #endif
-    once_finish(&state);
+    exr_once_finish(&state);
 }
 
 void exr_simd_force(int level) {

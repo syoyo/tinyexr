@@ -287,6 +287,9 @@ test-c: $(V3_TEST_OBJ) build/test-tinyexr_zstd.o $(LD_TEST_OBJ) test/unit/test_e
 	$(CC) $(V3_CSTD) -Wall -Wextra $(V3_DEFS) $(V3_INC) -O1 -g $(SAN) \
 	  test/unit/test_exr_v3.c $(V3_TEST_OBJ) build/test-tinyexr_zstd.o $(LD_TEST_OBJ) $(THREAD_LIBS) -lm -o build/test_exr_v3
 	ASAN_OPTIONS="$${ASAN_OPTIONS:-detect_leaks=1}" ./build/test_exr_v3
+	$(CC) $(V3_CSTD) -Wall -Wextra $(V3_DEFS) $(V3_INC) -O1 -g $(SAN) \
+	  -DEXR_TEST_VIEWER test/unit/test_exr_streaming.c web/viewer/exr_viewer_wasm.c $(V3_TEST_OBJ) build/test-tinyexr_zstd.o $(LD_TEST_OBJ) $(THREAD_LIBS) -lm -o build/test_exr_streaming
+	ASAN_OPTIONS="$${ASAN_OPTIONS:-detect_leaks=1}" ./build/test_exr_streaming
 
 # ---- tools/texcomp: pure-C11 BC/ETC/ASTC texture compression --------------
 # One translation unit per codec, plus texcomp.c for the shared core
@@ -665,6 +668,20 @@ test-c-tsan: | build
 	  -DEXR_THREADS_PTHREAD -fsanitize=thread test/unit/test_exr_v3.c $(V3_SRC) $(ZSTD_SRC) \
 	  $(LD_SRC) -pthread -lm -o build/test_exr_v3_tsan
 	./build/test_exr_v3_tsan
+	$(CC) $(V3_CSTD) -Wall -Wextra $(V3_DEFS) -DEXR_USE_THREADS $(V3_INC) -O1 -g \
+	  -DEXR_THREADS_PTHREAD -fsanitize=thread -DEXR_TEST_VIEWER test/unit/test_exr_streaming.c web/viewer/exr_viewer_wasm.c $(V3_SRC) $(ZSTD_SRC) \
+	  $(LD_SRC) -pthread -lm -o build/test_exr_streaming_tsan
+	./build/test_exr_streaming_tsan
+
+.PHONY: bench-source bench-source-large
+build/bench_source: $(V3_OBJ) $(ZSTD_OBJ) $(LD_OBJ) benchmark/bench_source.c | build
+	$(CC) $(V3_CSTD) $(V3_WARN) $(V3_DEFS) $(V3_INC) -O3 \
+	  benchmark/bench_source.c $(V3_OBJ) $(ZSTD_OBJ) $(LD_OBJ) $(THREAD_LIBS) -lm -o $@
+bench-source: build/bench_source
+	./build/bench_source 1024 1024 4 3
+bench-source-large: build/bench_source
+	./build/bench_source 2048 2048 4 3
+	./build/bench_source 1024 1024 32 3
 
 bench: $(V3_OBJ) $(ZSTD_OBJ) $(LD_OBJ) benchmark/bench.c | build
 	$(CC) $(V3_CSTD) -Wall -Wextra $(V3_DEFS) $(V3_INC) -O3 \
@@ -813,6 +830,19 @@ wasm: | build
 	  -s "EXPORTED_RUNTIME_METHODS=$(WASM_RUNTIME)" \
 	  -o build/exr_v3.mjs
 	@echo "built build/exr_v3.mjs + build/exr_v3.wasm"
+
+# Run the source/ownership and viewer regressions on real 32-bit size_t/pointers.
+# The sparse source synthesizes a >5 GiB file without allocating its holes.
+NODE ?= node
+.PHONY: wasm-source-test
+wasm-source-test: | build
+	$(EMCC) -O1 -g $(V3_CSTD) $(V3_INC) -w -DEXR_TEST_VIEWER \
+	  -fsanitize=undefined -fno-sanitize-recover=all \
+	  test/unit/test_exr_streaming.c web/viewer/exr_viewer_wasm.c $(V3_SRC) $(ZSTD_SRC) -lm \
+	  -sENVIRONMENT=node --pre-js test/v3/wasm_source_setup.js -sALLOW_MEMORY_GROWTH=1 \
+	  -sSTACK_SIZE=4194304 -sSAFE_HEAP=1 -sASSERTIONS=1 \
+	  -o build/test_exr_streaming_wasm.js
+	$(NODE) build/test_exr_streaming_wasm.js
 
 # ---- ARM (aarch64 NEON) cross build + emulated run ------------------------
 # Cross-compile the SIMD smoke test for aarch64 and run it under an emulator to

@@ -59,19 +59,26 @@ const char *exr_result_string(exr_result r);
 
 typedef struct exr_allocator {
     void *user;
+    /* With threaded codecs enabled, allocator callbacks may run concurrently. */
     void *(*alloc)(void *user, size_t size);
     void (*free)(void *user, void *ptr);
 } exr_allocator;
 
 /* Reusable, single-owner codec context.  The context retains internal codec
  * scratch between operations; it does not own caller-provided images or the
- * buffers returned by the load/save APIs.  A context is not thread-safe. */
+ * buffers returned by the load/save APIs. Retained scratch uses the context
+ * allocator; image/output allocations use the operation allocator. The context
+ * must outlive readers/writers using it and is not thread-safe. */
 typedef struct exr_context exr_context;
 
 exr_result exr_context_create(const exr_allocator *alloc, exr_context **out);
 void exr_context_destroy(exr_context *ctx);
 /* Resource limits used by operations carrying this context. Both default to
- * 1 GiB. A value of zero explicitly disables that limit. */
+ * 1 GiB. A value of zero explicitly disables that limit. max_image_bytes caps
+ * native pixel/sample/count storage across a whole-image load/save, or native
+ * bytes submitted in one streaming encode block. It is not a total heap limit.
+ * max_file_bytes caps the known input length and encoded output length,
+ * including streaming output (backpatches do not count twice). */
 exr_result exr_context_set_max_image_bytes(exr_context *ctx,
                                            uint64_t max_bytes);
 exr_result exr_context_set_max_file_bytes(exr_context *ctx,
@@ -373,12 +380,17 @@ typedef struct exr_reader exr_reader;
  * Streaming data source. Only used by exr_reader_open_source(). The callback
  * must copy [off, off+len) of the file into dst and return EXR_SUCCESS, or
  * return EXR_WOULD_BLOCK if those bytes are not yet available (the host then
- * fetches them, calls exr_reader_supply(), and re-invokes the reader call).
+ * fetches them, calls exr_reader_supply(), and re-invokes the same reader call).
+ * The source must support random access and keep its bytes immutable for the
+ * reader lifetime. Requests are at most 64 KiB. Callbacks run on the calling
+ * thread; parallel whole-part decoding uses bounded privately buffered batches.
+ * Source ownership stays with the caller. The reader retains metadata/offset
+ * tables and active chunk ranges, not the entire encoded file.
  */
 typedef struct exr_data_source {
     void *user;
     exr_result (*read)(void *user, uint64_t off, uint64_t len, void *dst);
-    uint64_t total_size; /* 0 if unknown */
+    uint64_t total_size; /* known file length; 0 returns EXR_ERROR_UNSUPPORTED */
 } exr_data_source;
 
 /* The memory path is zero-copy and never returns EXR_WOULD_BLOCK. The data
@@ -403,17 +415,21 @@ exr_result exr_reader_open_file_ctx(exr_context *ctx, const char *path,
                                     exr_reader **out);
 void exr_reader_close(exr_reader *r);
 
-/* Parse the file/version + all part headers + offset tables (no pixel I/O).
- * May return EXR_WOULD_BLOCK in streaming mode. */
+/* Parse the file/version + all part headers + offset tables (no pixel decode).
+ * Callback input uses a small metadata read-ahead window, which may include
+ * bytes following the tables. May return EXR_WOULD_BLOCK in streaming mode. */
 exr_result exr_reader_parse_header(exr_reader *r);
 
 int32_t exr_reader_num_parts(const exr_reader *r);
 const exr_header *exr_reader_part_header(const exr_reader *r, int32_t part);
 
 /*
- * Read pixels. Each call appends ownership into *out (a caller-provided,
- * zero-initialized exr_part for the single-part calls). May return
- * EXR_WOULD_BLOCK in streaming mode.
+ * Read pixels into a caller-provided, zero-initialized part. Ownership transfers
+ * only on EXR_SUCCESS. On error or EXR_WOULD_BLOCK, out owns nothing; retry the
+ * same operation/geometry after supply. Do not interleave other pixel requests
+ * while suspended. Closing a reader releases any suspended private output.
+ * Partial scanline/tile results describe their actual returned data_window;
+ * display_window retains the original image's display window.
  */
 exr_result exr_reader_read_part(exr_reader *r, int32_t part, exr_part *out);
 exr_result exr_reader_read_scanlines(exr_reader *r, int32_t part,
@@ -448,7 +464,9 @@ exr_result exr_writer_create_ctx(exr_context *ctx, const exr_allocator *alloc,
 void exr_writer_destroy(exr_writer *w);
 
 /* Add a part described by hdr (its channel list + windows + compression).
- * Returns the new part index in *out_part (may be NULL). */
+ * Returns the new part index in *out_part (may be NULL). At serialization,
+ * duplicate explicit multipart names are rejected; unnamed parts get stable
+ * part<N> names that avoid all explicit names. Caller headers are unchanged. */
 exr_result exr_writer_add_part(exr_writer *w, const exr_header *hdr,
                                int32_t *out_part);
 
@@ -466,7 +484,10 @@ exr_result exr_writer_finalize_to_file(exr_writer *w, const char *path);
  *
  * The calls above materialize a whole part at once. The block API lets a caller
  * process exactly one scanline-block or one tile at a time, so peak memory is a
- * single block rather than the entire image. A "block" is one offset-table
+ * metadata/offset tables plus active compressed ranges, decoded block, and codec
+ * scratch, rather than the entire encoded file or decoded image. Parallel
+ * whole-part reads retain up to 64 chunks (capped by the configured worker
+ * count), plus their requested whole-part output. A "block" is one offset-table
  * chunk: one scanline block for scanline parts, one tile (at one level) for
  * tiled parts; mipmap/ripmap levels and deep parts are covered too.
  * ========================================================================== */
@@ -652,7 +673,7 @@ exr_result exr_spectral_set_attributes(const exr_allocator *alloc,
                                        exr_header *hdr, exr_spectrum_type type,
                                        const char *units);
 
-/* A decoded spectral cube (part 0 only; all planes float). */
+/* One decoded spectral part (all planes float). */
 typedef struct exr_spectral_image {
     int32_t width, height;
     exr_spectrum_type type;
@@ -673,14 +694,24 @@ typedef struct exr_spectral_image {
 
 /* Load + verify spectral + gather wavelengths + fill the float cube. On success
  * *out is filled and must be released with exr_spectral_image_free().
- * EXR_ERROR_UNSUPPORTED if the file is not spectral (or uses subsampled
- * spectral channels, or is multipart-only-spectral past part 0). */
+ * Selects the first flat spectral part in multipart input. Returns
+ * EXR_ERROR_UNSUPPORTED if none exists. Subsampled planes are point-expanded. */
 exr_result exr_spectral_load_from_file(const char *path,
                                        const exr_allocator *alloc,
                                        exr_spectral_image *out);
 exr_result exr_spectral_load_from_memory(const void *data, size_t size,
                                          const exr_allocator *alloc,
                                          exr_spectral_image *out);
+
+/* Select a specific part, or pass -1 to discover the first flat spectral part.
+ * A selected deep/non-spectral part returns EXR_ERROR_UNSUPPORTED; an invalid
+ * index returns EXR_ERROR_INVALID_ARGUMENT. Unselected pixel data is not read. */
+exr_result exr_spectral_load_part_from_memory(const void *data, size_t size,
+                                              int32_t part, const exr_allocator *alloc,
+                                              exr_spectral_image *out);
+exr_result exr_spectral_load_part_from_file(const char *path, int32_t part,
+                                            const exr_allocator *alloc,
+                                            exr_spectral_image *out);
 
 void exr_spectral_image_free(exr_spectral_image *img);
 
@@ -932,7 +963,10 @@ exr_result exr_lut3d_parse_cube(const exr_allocator *a, const char *text,
 
 /* Gather a part's channels (sorted order; subsampling expanded to full res,
  * any pixel type widened to float) into a freshly allocated interleaved buffer.
- * *out must be freed with the same allocator. */
+ * *out must be freed with the same allocator.
+ * Sample grids use absolute data-window coordinates. Returns UNSUPPORTED if
+ * any required plane has no samples in the returned region; no samples are
+ * fetched outside a partial part. On failure *out is NULL. */
 exr_result exr_part_to_rgba_float(const exr_allocator *a, const exr_part *part,
                                   float **out, int *out_width, int *out_height,
                                   int *out_channels);
@@ -948,7 +982,9 @@ int exr_part_is_luminance_chroma(const exr_part *part);
  * upsampled to full resolution and combined with Y using luminance weights from
  * the header's chromaticities (Rec.709 when absent). *out must be freed with the
  * same allocator. Returns EXR_ERROR_INVALID_ARGUMENT if the part is not
- * luminance-chroma (test with exr_part_is_luminance_chroma first). */
+ * luminance-chroma (test with exr_part_is_luminance_chroma first).
+ * Required Y/RY/BY (and present A) planes must contain samples in this part;
+ * otherwise returns EXR_ERROR_UNSUPPORTED with *out == NULL. */
 exr_result exr_part_yc_to_rgba_float(const exr_allocator *a,
                                      const exr_part *part, float **out,
                                      int *out_width, int *out_height);

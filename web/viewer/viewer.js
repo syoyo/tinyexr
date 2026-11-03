@@ -933,7 +933,7 @@ function setupInput() {
   document.getElementById("partSel").addEventListener("change", (e) => {
     const part = parseInt(e.target.value, 10);
     if (header.parts[part] && header.parts[part].deep) enterDeepMode(part);
-    else if (part === 0 && header.parts[part] && header.parts[part].spectral)
+    else if (header.parts[part] && header.parts[part].spectral)
       enterSpectralMode(part);
     else selectAndDecode(part, 0, 0, true);
   });
@@ -1340,7 +1340,7 @@ function spectrumLabel(ph) {
 async function enterSpectralMode(part) {
   setProgress(0, "Decoding spectral planes…");
   await raf();
-  const nwl = M._exrv_spectral_open(handle);
+  const nwl = M._exrv_spectral_open_part(handle, part);
   if (nwl <= 0) {
     setProgress(-1);
     showError("Could not decode this spectral image.");

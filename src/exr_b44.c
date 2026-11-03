@@ -11,6 +11,9 @@
  */
 
 #include "exr_internal.h"
+#if defined(_MSC_VER)
+#include <intrin.h>
+#endif
 
 /* ---- perceptual tables (computed once, on first use) -----------------------
  * The two half-indexed tables (convertFromLinear / convertToLinear) are built
@@ -23,7 +26,7 @@
 
 static uint16_t g_b44_exp_table[65536];
 static uint16_t g_b44_log_table[65536];
-static int g_b44_tables_ready = 0;
+static volatile long g_b44_tables_ready = 0;
 
 static float b44_h2f(uint16_t h) {
     union { uint32_t i; float f; } u;
@@ -108,7 +111,11 @@ static double b44_log(double x) {
 
 static void b44_init_tables(void) {
     int i;
-    if (g_b44_tables_ready) return;
+    int owner = exr_once_begin(&g_b44_tables_ready);
+    if (owner <= 0) {
+        if (owner < 0) while (exr_once_load(&g_b44_tables_ready) != 2) {}
+        return;
+    }
     for (i = 0; i < 65536; ++i) {
         uint16_t x = (uint16_t)i;
         /* expTable: convertFromLinear (decode for p_linear channels) */
@@ -131,7 +138,7 @@ static void b44_init_tables(void) {
                 g_b44_log_table[i] = b44_f2h((float)(8.0 * b44_log((double)ff)));
         }
     }
-    g_b44_tables_ready = 1;
+    exr_once_finish(&g_b44_tables_ready);
 }
 
 /* Internal hook for the table-correctness test (forces init, returns tables). */
@@ -191,7 +198,7 @@ exr_result exr_b44_decompress(const exr_codec_ctx *ctx, const uint8_t *src,
                               size_t src_size, uint8_t *dst, size_t dst_size,
                               int optimize_flat) {
     const exr_allocator *a = ctx->alloc;
-    int xmin = ctx->x, xmax = ctx->x + ctx->width - 1;
+    int xmin = ctx->x, xmax = ctx->x + (ctx->width - 1);
     const uint8_t *in = src, *in_end = src + src_size;
     uint16_t **half = NULL;        /* per-channel decoded scratch (HALF) */
     const uint8_t **nonhalf = NULL; /* per-channel raw ptr (UINT/FLOAT) */
@@ -225,7 +232,7 @@ exr_result exr_b44_decompress(const exr_codec_ctx *ctx, const uint8_t *src,
         int width, height, pw, ph, bx, by, nbx, nby;
         if (xs <= 0 || ys <= 0) { rc = EXR_ERROR_CORRUPT; goto done; }
         width = exr_num_samples(xmin, xmax, xs);
-        height = exr_num_samples(ctx->y, ctx->y + ctx->num_lines - 1, ys);
+        height = exr_num_samples(ctx->y, (int64_t)ctx->y + ctx->num_lines - 1, ys);
         if (width < 0) width = 0;
         if (height < 0) height = 0;
         cw[c] = width;
@@ -385,7 +392,7 @@ exr_result exr_b44_compress(const exr_codec_ctx *ctx, const uint8_t *block,
                             size_t n, uint8_t **out_data, size_t *out_size,
                             int optimize_flat) {
     const exr_allocator *a = ctx->alloc;
-    int xmin = ctx->x, xmax = ctx->x + ctx->width - 1;
+    int xmin = ctx->x, xmax = ctx->x + (ctx->width - 1);
     uint16_t **hp = NULL;
     uint8_t **np = NULL;
     int *cw = NULL, *ch = NULL, *emit = NULL;
@@ -413,7 +420,7 @@ exr_result exr_b44_compress(const exr_codec_ctx *ctx, const uint8_t *block,
         int w, h;
         if (xs <= 0 || ys <= 0) { rc = EXR_ERROR_CORRUPT; goto done; }
         w = exr_num_samples(xmin, xmax, xs);
-        h = exr_num_samples(ctx->y, ctx->y + ctx->num_lines - 1, ys);
+        h = exr_num_samples(ctx->y, (int64_t)ctx->y + ctx->num_lines - 1, ys);
         if (w < 0) w = 0;
         if (h < 0) h = 0;
         cw[c] = w;
