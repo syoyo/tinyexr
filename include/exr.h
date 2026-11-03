@@ -220,7 +220,9 @@ typedef struct exr_part {
      * the data window. NULL for deep parts.
      *
      * When images_block is non-NULL, every images[c] points inside that single
-     * allocation and the block is released once instead of per channel.
+     * allocation and the block is released once instead of per channel. Do not
+     * free or reallocate individual images[c] pointers in that case; use
+     * exr_part_free (or exr_image_free) on the whole part.
      */
     void **images;
     void *images_block;
@@ -249,7 +251,8 @@ void exr_image_free(exr_image *img);
 
 /* Release a single part filled by the mid-level reader (exr_reader_read_part /
  * _read_scanlines / _read_tile). Pass the allocator the reader was opened with
- * (NULL for the default). Safe on a zero-initialized part. */
+ * (NULL for the default). Safe on a zero-initialized part. Releases a shared
+ * images_block once; do not free channel pointers separately. */
 void exr_part_free(const exr_allocator *a, exr_part *part);
 
 /* ============================================================================

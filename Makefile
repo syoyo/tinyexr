@@ -772,7 +772,7 @@ bench-htj2k: build/bench_compare
 fuzz: test/fuzzer/fuzz_v3.c | build
 	clang $(V3_CSTD) $(V3_INC) -O1 -g -w -fsanitize=fuzzer,address,undefined \
 	  test/fuzzer/fuzz_v3.c $(V3_SRC) $(ZSTD_SRC) -lm -o build/fuzz_v3
-	@echo "built build/fuzz_v3 - e.g. ./build/fuzz_v3 -dict=test/fuzzer/exr.dict -max_total_time=60 test/unit/regression"
+	@echo "built build/fuzz_v3 - e.g. ./build/fuzz_v3 -dict=test/fuzzer/exr.dict -max_total_time=60 build/fuzz-corpus-v3 test/unit/regression"
 
 # Same fuzzer but with libdeflate as the default zlib backend, so the shipped
 # DEFLATE=auto decode path (ZIP/ZIPS/PXR24 -> libdeflate) is fuzzed too.

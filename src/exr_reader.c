@@ -1073,7 +1073,7 @@ static exr_result read_scanline_part(exr_reader *r, exr_int_part *p,
         rc = exr_reader_fetch(r, want, (size_t)data_size, NULL, &cdata);
         if (rc != EXR_SUCCESS) goto done;
 
-        if (dst_size > block_cap) {
+        if (!block || dst_size > block_cap) {
             exr_free(a, block);
             block = (uint8_t *)exr_malloc(a, dst_size ? dst_size : 1);
             if (!block) {
@@ -1316,7 +1316,7 @@ static exr_result read_tiled_part(exr_reader *r, exr_int_part *p,
             rc = exr_reader_fetch(r, want, (size_t)dsize, NULL, &cdata);
             if (rc != EXR_SUCCESS) goto done;
 
-            if (dst_size > block_cap) {
+            if (!block || dst_size > block_cap) {
                 exr_free(a, block);
                 block = (uint8_t *)exr_malloc(a, dst_size ? dst_size : 1);
                 if (!block) { rc = EXR_ERROR_OUT_OF_MEMORY; goto done; }
@@ -1488,7 +1488,7 @@ exr_result exr_reader_read_scanlines(exr_reader *r, int32_t part,
         if (exr_add_ovf((size_t)off, hdr_size, &want)) { rc = EXR_ERROR_CORRUPT; goto fail; }
         rc = exr_reader_fetch(r, want, (size_t)data_size, NULL, &cdata);
         if (rc != EXR_SUCCESS) goto fail;
-        if (dst_size > block_cap) {
+        if (!block || dst_size > block_cap) {
             exr_free(a, block);
             block = (uint8_t *)exr_malloc(a, dst_size ? dst_size : 1);
             if (!block) { rc = EXR_ERROR_OUT_OF_MEMORY; goto fail; }
