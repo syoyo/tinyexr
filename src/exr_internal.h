@@ -582,6 +582,22 @@ static inline int exr_valid_span(int32_t origin, int32_t extent) {
 /* Set crop geometry and keep the raw dataWindow attribute in sync. */
 exr_result exr_header_crop(const exr_allocator *a, exr_header *h, exr_box2i crop);
 
+/* Flat planar output for the rect (x0, y0, width, height) of header h.
+ *
+ * exr_flat_planes_size reports the bytes exr_flat_planes_alloc may allocate:
+ * the images[] pointer array plus every plane rounded up to 8 bytes (a plane
+ * is at least one byte). It is the single size used for max_image_bytes
+ * checks, so the limit always covers what is really allocated.
+ *
+ * exr_flat_planes_alloc sets out->images (and out->images_block when the
+ * planes fit in EXR_FLAT_PLANES_BLOCK_MAX). On failure out may own partial
+ * storage; release it with exr_part_free. */
+exr_result exr_flat_planes_size(const exr_header *h, int32_t x0, int32_t y0,
+                                int32_t width, int32_t height, size_t *out);
+exr_result exr_flat_planes_alloc(const exr_allocator *a, const exr_header *h,
+                                 int32_t x0, int32_t y0, int32_t width,
+                                 int32_t height, exr_part *out);
+
 /* Scanlines compressed together per chunk for a given compression. */
 int exr_lines_per_block(exr_compression c);
 

@@ -22,14 +22,17 @@
 /* Upper bound on distinct wavelengths gathered in a single query (real spectral
  * images carry tens to a few hundred). */
 #define EXR_SPECTRAL_MAX_WL 4096
+/* Largest wavelength (nm) accepted from a channel name. */
+#define EXR_SPECTRAL_MAX_NM 1.0e7f
 
 /* ---------------------------------------------------------------- low level */
 
 /* Locale-independent decimal parser. Reads an optional sign, integer digits,
  * and (after '.' or ',') fractional digits; stops at the first other byte and
  * reports it via *endp. */
-static float parse_decimal(const char *p, const char **endp) {
+static float parse_decimal(const char *p, const char **endp, int *digits) {
     float val = 0.0f, sign = 1.0f;
+    int nd = 0;
     if (*p == '-') {
         sign = -1.0f;
         p++;
@@ -37,7 +40,8 @@ static float parse_decimal(const char *p, const char **endp) {
         p++;
     }
     while (*p >= '0' && *p <= '9') {
-        val = val * 10.0f + (float)(*p - '0');
+        if (val < 1e30f) val = val * 10.0f + (float)(*p - '0');
+        nd++;
         p++;
     }
     if (*p == '.' || *p == ',') {
@@ -46,10 +50,12 @@ static float parse_decimal(const char *p, const char **endp) {
         while (*p >= '0' && *p <= '9') {
             val += (float)(*p - '0') * scale;
             scale *= 0.1f;
+            nd++;
             p++;
         }
     }
     if (endp) *endp = p;
+    if (digits) *digits = nd;
     return val * sign;
 }
 
@@ -72,6 +78,7 @@ static size_t u_to_str(unsigned v, char *out) {
 float exr_spectral_channel_wavelength(const char *channel_name) {
     const char *p = channel_name, *end;
     float wl;
+    int digits;
     if (!p) return -1.0f;
     if (p[0] == 'S' && p[1] >= '0' && p[1] <= '3' && p[2] == '.')
         p += 3;
@@ -79,8 +86,11 @@ float exr_spectral_channel_wavelength(const char *channel_name) {
         p += 2;
     else
         return -1.0f;
-    wl = parse_decimal(p, &end);
+    wl = parse_decimal(p, &end, &digits);
     if (end[0] != 'n' || end[1] != 'm') return -1.0f;
+    /* Reject names without digits and implausible magnitudes so hostile
+     * names never yield infinities or NaN wavelengths. */
+    if (!digits || !(wl >= 0.0f && wl <= EXR_SPECTRAL_MAX_NM)) return -1.0f;
     return wl;
 }
 
@@ -184,19 +194,22 @@ static int32_t gather_wavelengths(const exr_header *hdr, float *sorted) {
 }
 
 int32_t exr_spectral_wavelengths(const exr_header *hdr, float *out, int32_t max) {
-    /* Gather into a private scratch so the dedupe/sort is never limited by the
-     * caller's `max`, then copy what fits. The scratch is function-static (the
-     * helpers assume single-threaded use); callers needing concurrency should
-     * size their own buffer to the queried count. */
-    static float scratch[EXR_SPECTRAL_MAX_WL];
+    /* Gather into a private heap scratch so the dedupe/sort is never limited
+     * by the caller's `max`, then copy what fits. The scratch is per call, so
+     * concurrent queries are safe. Returns 0 if the scratch cannot be had. */
+    const exr_allocator *a = exr_default_allocator();
+    float *scratch;
     int32_t k, i, n;
     if (!hdr) return 0;
     if (out && max < 0) return 0;
+    scratch = (float *)exr_malloc(a, EXR_SPECTRAL_MAX_WL * sizeof(float));
+    if (!scratch) return 0;
     k = gather_wavelengths(hdr, scratch);
     if (out) {
         n = (k < max) ? k : max;
         for (i = 0; i < n; ++i) out[i] = scratch[i];
     }
+    exr_free(a, scratch);
     return k;
 }
 
@@ -261,11 +274,11 @@ static float grid_sample(const void *src, exr_pixel_type pt, size_t idx) {
 
 /* Fill one selected flat spectral part. out is zeroed with its allocator set. */
 static exr_result spectral_fill(const exr_allocator *a, const exr_part *part,
-                                exr_spectral_image *out) {
+                                uint64_t limit, exr_spectral_image *out) {
     const exr_header *h;
     exr_spectrum_type type;
     int32_t nwl, w, hgt, c, nstokes, s;
-    size_t npix, cube_bytes;
+    size_t npix, cube_bytes, total;
 
     if (part->is_deep || !part->images) return EXR_ERROR_UNSUPPORTED;
     h = &part->header;
@@ -273,25 +286,33 @@ static exr_result spectral_fill(const exr_allocator *a, const exr_part *part,
     type = exr_spectrum_type_of(h);
     if (type == EXR_SPECTRUM_NONE) return EXR_ERROR_UNSUPPORTED;
 
-    nwl = exr_spectral_wavelengths(h, NULL, 0);
+    /* Sized for the bound so the gather needs no shared scratch. */
+    out->wavelengths = (float *)exr_malloc(a, EXR_SPECTRAL_MAX_WL * sizeof(float));
+    if (!out->wavelengths) return EXR_ERROR_OUT_OF_MEMORY;
+    nwl = gather_wavelengths(h, out->wavelengths);
     if (nwl <= 0) return EXR_ERROR_UNSUPPORTED;
 
+    /* The spectral cube is expanded to full resolution (subsampled channels
+     * are point-expanded) and polarised images get four of them, so the
+     * output can far exceed the decoded part. Charge it against the image
+     * limit before allocating. */
     w = part->width;
     hgt = part->height;
-    if (exr_mul_ovf((size_t)w, (size_t)hgt, &npix) ||
+    nstokes = (type == EXR_SPECTRUM_POLARISED) ? 4 : 1;
+    if (w <= 0 || hgt <= 0 ||
+        exr_mul_ovf((size_t)w, (size_t)hgt, &npix) ||
         exr_mul_ovf(npix, (size_t)nwl, &cube_bytes) ||
-        exr_mul_ovf(cube_bytes, sizeof(float), &cube_bytes))
+        exr_mul_ovf(cube_bytes, sizeof(float), &cube_bytes) ||
+        exr_mul_ovf(cube_bytes, (size_t)nstokes, &total) ||
+        exr_add_ovf(total, EXR_SPECTRAL_MAX_WL * sizeof(float), &total) ||
+        (limit && (uint64_t)total > limit))
         return EXR_ERROR_LIMIT_EXCEEDED;
 
     out->width = w;
     out->height = hgt;
     out->type = type;
     out->num_wavelengths = nwl;
-    out->wavelengths = (float *)exr_malloc(a, (size_t)nwl * sizeof(float));
-    if (!out->wavelengths) return EXR_ERROR_OUT_OF_MEMORY;
-    exr_spectral_wavelengths(h, out->wavelengths, nwl);
 
-    nstokes = (type == EXR_SPECTRUM_POLARISED) ? 4 : 1;
     for (s = 0; s < nstokes; ++s) {
         out->stokes[s] = (float *)exr_calloc(a, cube_bytes ? cube_bytes : 1, 1);
         if (!out->stokes[s]) return EXR_ERROR_OUT_OF_MEMORY;
@@ -391,7 +412,8 @@ static exr_result spectral_read(exr_reader *r, int32_t part,
             !exr_is_spectral(h)) return EXR_ERROR_UNSUPPORTED;
     }
     rc = exr_reader_read_part(r, part, &native);
-    if (rc == EXR_SUCCESS) rc = spectral_fill(a, &native, out);
+    if (rc == EXR_SUCCESS)
+        rc = spectral_fill(a, &native, exr_reader_image_limit(r), out);
     exr_part_free(a, &native);
     return rc;
 }

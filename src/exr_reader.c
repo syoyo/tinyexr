@@ -770,38 +770,12 @@ static int nsamp(int64_t lo, int64_t hi, int s) {
     return exr_num_samples(lo, hi, s);
 }
 
-static exr_result flat_output_size(const exr_header *h, int x0, int y0,
-                                   int width, int height, size_t *out) {
-    size_t total, ptr_bytes;
-    int c;
-    if (width <= 0 || height <= 0 || h->num_channels <= 0)
-        return EXR_ERROR_CORRUPT;
-    if (exr_mul_ovf((size_t)h->num_channels, sizeof(void *), &ptr_bytes))
-        return EXR_ERROR_CORRUPT;
-    total = ptr_bytes;
-    for (c = 0; c < h->num_channels; ++c) {
-        int nx = exr_num_samples(x0, (int64_t)x0 + width - 1,
-                                 h->channels[c].x_sampling);
-        int ny = exr_num_samples(y0, (int64_t)y0 + height - 1,
-                                 h->channels[c].y_sampling);
-        size_t samples, bytes;
-        if (nx < 0 || ny < 0 ||
-            exr_mul_ovf((size_t)nx, (size_t)ny, &samples) ||
-            exr_mul_ovf(samples, exr_pixel_size(h->channels[c].pixel_type),
-                        &bytes) ||
-            exr_add_ovf(total, bytes, &total))
-            return EXR_ERROR_CORRUPT;
-    }
-    *out = total;
-    return EXR_SUCCESS;
-}
-
 static exr_result check_flat_output_limit(const exr_reader *r,
                                           const exr_header *h, int x0, int y0,
                                           int width, int height) {
     uint64_t limit = exr_reader_image_limit(r);
     size_t bytes;
-    exr_result rc = flat_output_size(h, x0, y0, width, height, &bytes);
+    exr_result rc = exr_flat_planes_size(h, x0, y0, width, height, &bytes);
     if (rc != EXR_SUCCESS) return rc;
     if (limit && (uint64_t)bytes > limit) return EXR_ERROR_LIMIT_EXCEEDED;
     return EXR_SUCCESS;
@@ -812,72 +786,6 @@ static void channel_dims(const exr_header *h, int c, int *cw, int *ch_) {
     int xs = h->channels[c].x_sampling, ys = h->channels[c].y_sampling;
     *cw = nsamp(h->data_window.min_x, h->data_window.max_x, xs);
     *ch_ = nsamp(h->data_window.min_y, h->data_window.max_y, ys);
-}
-
-/* Allocate every flat channel plane of a rect from one zeroed block.
- *
- * images[c] is carved out of images_block, which exr_part_free releases once.
- * One allocation per image keeps allocation count independent of the channel
- * count and gives the allocator a single large chunk it can recycle across
- * repeated loads instead of many medium chunks.
- *
- * Only modest images use one block: very large images keep per-channel planes
- * so the library never forces a single huge allocation that an allocator may
- * only satisfy with a fresh mapping. */
-static exr_result flat_alloc_planes(const exr_allocator *a, const exr_header *h,
-                                    int x0, int y0, int width, int height,
-                                    exr_part *out) {
-    size_t total = 0, off = 0;
-    int c;
-    out->images = (void **)exr_calloc(a, (size_t)h->num_channels, sizeof(void *));
-    if (!out->images) return EXR_ERROR_OUT_OF_MEMORY;
-    for (c = 0; c < h->num_channels; ++c) {
-        int cw = nsamp(x0, (int64_t)x0 + width - 1,
-                       h->channels[c].x_sampling);
-        int ch_ = nsamp(y0, (int64_t)y0 + height - 1,
-                        h->channels[c].y_sampling);
-        size_t n, bytes;
-        if (cw < 0) cw = 0;
-        if (ch_ < 0) ch_ = 0;
-        if (exr_mul_ovf((size_t)cw, (size_t)ch_, &n) ||
-            exr_mul_ovf(n, exr_pixel_size(h->channels[c].pixel_type), &bytes) ||
-            exr_add_ovf(total, bytes ? bytes : 1, &total) ||
-            exr_add_ovf(total, 7u, &total))
-            return EXR_ERROR_CORRUPT;
-    }
-    if (total > EXR_FLAT_PLANES_BLOCK_MAX) {
-        for (c = 0; c < h->num_channels; ++c) {
-            int cw = nsamp(x0, (int64_t)x0 + width - 1,
-                           h->channels[c].x_sampling);
-            int ch_ = nsamp(y0, (int64_t)y0 + height - 1,
-                            h->channels[c].y_sampling);
-            size_t n, bytes;
-            if (cw < 0) cw = 0;
-            if (ch_ < 0) ch_ = 0;
-            n = (size_t)cw * (size_t)ch_;
-            bytes = n * exr_pixel_size(h->channels[c].pixel_type);
-            out->images[c] = exr_calloc(a, bytes ? bytes : 1, 1);
-            if (!out->images[c]) return EXR_ERROR_OUT_OF_MEMORY;
-        }
-        return EXR_SUCCESS;
-    }
-    out->images_block = exr_calloc(a, total ? total : 1, 1);
-    if (!out->images_block) return EXR_ERROR_OUT_OF_MEMORY;
-    for (c = 0; c < h->num_channels; ++c) {
-        int cw = nsamp(x0, (int64_t)x0 + width - 1,
-                       h->channels[c].x_sampling);
-        int ch_ = nsamp(y0, (int64_t)y0 + height - 1,
-                        h->channels[c].y_sampling);
-        size_t n, bytes;
-        if (cw < 0) cw = 0;
-        if (ch_ < 0) ch_ = 0;
-        n = (size_t)cw * (size_t)ch_;
-        bytes = n * exr_pixel_size(h->channels[c].pixel_type);
-        off = (off + 7u) & ~(size_t)7u;
-        out->images[c] = (uint8_t *)out->images_block + off;
-        off += bytes ? bytes : 1;
-    }
-    return EXR_SUCCESS;
 }
 
 /* Scatter one decompressed scanline block into the planar channel buffers. */
@@ -998,7 +906,7 @@ static exr_result read_scanline_part(exr_reader *r, exr_int_part *p,
     uint32_t ci;
 
     /* allocate planar channel buffers from one block */
-    rc = flat_alloc_planes(a, h, h->data_window.min_x, h->data_window.min_y,
+    rc = exr_flat_planes_alloc(a, h, h->data_window.min_x, h->data_window.min_y,
                            p->width, p->height, out);
     if (rc != EXR_SUCCESS) return rc;
 
@@ -1241,7 +1149,7 @@ static exr_result read_tiled_part(exr_reader *r, exr_int_part *p,
         p->num_chunks != (uint32_t)nxt * (uint32_t)nyt)
         return EXR_ERROR_CORRUPT;
 
-    rc = flat_alloc_planes(a, h, h->data_window.min_x, h->data_window.min_y,
+    rc = exr_flat_planes_alloc(a, h, h->data_window.min_x, h->data_window.min_y,
                            p->width, p->height, out);
     if (rc != EXR_SUCCESS) return rc;
 
@@ -1440,7 +1348,7 @@ exr_result exr_reader_read_scanlines(exr_reader *r, int32_t part,
     int *cws = (int *)exr_calloc(a, (size_t)h->num_channels, sizeof(int));
     if (!chans || !cws) { rc = EXR_ERROR_OUT_OF_MEMORY; goto fail; }
 
-    rc = flat_alloc_planes(a, h, h->data_window.min_x, y_start, p->width,
+    rc = exr_flat_planes_alloc(a, h, h->data_window.min_x, y_start, p->width,
                            y_count, out);
     if (rc != EXR_SUCCESS) goto fail;
     for (c = 0; c < h->num_channels; ++c) {
@@ -1670,7 +1578,7 @@ exr_result exr_reader_read_tile(exr_reader *r, int32_t part, int32_t tile_x,
     out->header.data_window.min_y = abs_y0;
     out->header.data_window.max_x = abs_x0 + (tw - 1);
     out->header.data_window.max_y = abs_y0 + (th - 1);
-    rc = flat_alloc_planes(a, h, abs_x0, abs_y0, tw, th, out);
+    rc = exr_flat_planes_alloc(a, h, abs_x0, abs_y0, tw, th, out);
     if (rc != EXR_SUCCESS) goto fail;
 
     rc = exr_block_uncompressed_size(h->channels, h->num_channels, abs_x0, abs_y0,

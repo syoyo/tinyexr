@@ -3381,6 +3381,67 @@ static void spectral_tests(void) {
         }
         free(samples);
     }
+
+    /* Hostile amplification: a 16384^2 polarised image whose channels are
+     * 64x64-subsampled is tiny on disk and as decoded planes, but its four
+     * full-resolution float cubes would be 4 GiB. The load must refuse it
+     * against the image limit instead of allocating. */
+    {
+        enum { BW = 2, BH = 2, BNWL = 2, BIG = 16384, SS = 64 };
+        float bwls[BNWL] = {450.0f, 550.0f};
+        float bsamples[BNWL * BW * BH];
+        exr_image img;
+        exr_spectral_image spec;
+        void *blob = NULL;
+        size_t blob_size = 0, plane = (size_t)(BIG / SS) * (BIG / SS);
+        int c, ok = 1;
+        memset(bsamples, 0, sizeof(bsamples));
+        memset(&img, 0, sizeof(img));
+        if (EXR_OK(exr_spectral_setup_emissive(NULL, BW, BH, BNWL, bwls, bsamples,
+                                               "W.m^-2.sr^-1", &img))) {
+            exr_part *pt = &img.parts[0];
+            pt->width = pt->height = BIG;
+            pt->header.data_window.max_x = pt->header.data_window.max_y = BIG - 1;
+            pt->header.display_window = pt->header.data_window;
+            pt->header.channels[1].name[1] = '1'; /* S1.* => polarised */
+            for (c = 0; c < pt->header.num_channels; ++c) {
+                pt->header.channels[c].x_sampling = SS;
+                pt->header.channels[c].y_sampling = SS;
+                free(pt->images[c]);
+                pt->images[c] = calloc(plane, pt->header.channels[c].pixel_type ==
+                                                      EXR_PIXEL_HALF ? 2 : 4);
+                if (!pt->images[c]) ok = 0;
+            }
+            ok = ok && EXR_OK(exr_save_to_memory(&blob, &blob_size, NULL, &img,
+                                                 EXR_COMPRESSION_ZIP));
+            CHECK(ok, "amplified spectral save");
+            exr_image_free(&img);
+            if (ok) {
+                exr_result rc = exr_spectral_load_from_memory(blob, blob_size,
+                                                              NULL, &spec);
+                CHECK(rc == EXR_ERROR_LIMIT_EXCEEDED,
+                      "amplified spectral load refused by image limit");
+                CHECK(!spec.wavelengths && !spec.stokes[0] && !spec.stokes[3],
+                      "refused spectral load owns nothing");
+            }
+            free(blob);
+        } else {
+            CHECK(0, "amplified spectral setup");
+        }
+    }
+
+    /* Hostile channel names never yield non-finite or digitless wavelengths. */
+    {
+        char nm[EXR_MAX_NAME];
+        size_t i;
+        CHECK(exr_spectral_channel_wavelength("S0.nm") < 0.0f,
+              "digitless spectral name rejected");
+        nm[0] = 'S'; nm[1] = '0'; nm[2] = '.';
+        for (i = 3; i < 3 + 60; ++i) nm[i] = '9';
+        nm[i++] = 'n'; nm[i++] = 'm'; nm[i] = 0;
+        CHECK(exr_spectral_channel_wavelength(nm) < 0.0f,
+              "overflowing spectral wavelength rejected");
+    }
 }
 
 /* ============================================================================
