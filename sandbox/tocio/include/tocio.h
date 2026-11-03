@@ -183,6 +183,10 @@ typedef struct toc_op_list {
     float **owned; /* LUT sample arrays the ops borrow; freed with the list */
     size_t owned_count, owned_cap;
     toc_allocator alloc;
+    /* Processor-build bookkeeping: current transform nesting depth and the
+     * FileTransform loads made, both bounded so cyclic or exponential hostile
+     * configs fail instead of exhausting stack or memory. Not for callers. */
+    int build_depth, build_files;
 } toc_op_list;
 
 void toc_op_list_free(toc_op_list *list);

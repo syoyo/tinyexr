@@ -401,6 +401,8 @@ static void test_cdl_inverse(void) {
     /* forward lin -> cdlin (inverse of cdlin's to_reference) */
     rc = toc_processor_from_colorspaces(cfg, "lin", "cdlin", NULL, &fwd);
     CHECK(TOC_OK(rc) && fwd, "CDL forward build");
+    toc_op_list_free(fwd);
+    fwd = NULL;
     /* but cdlin's to_reference is CDL, so lin->cdlin is the inverse path */
     /* Actually: cdlin's to_reference is CDL, so cdlin->lin is forward CDL.
      * lin->cdlin is inverse CDL. Let me test both. */
@@ -927,6 +929,199 @@ static void build_pipeline(toc_op_list *l) {
         r->u.range.max[c] = 1.0f;
     }
     r->u.range.clamp_lo = r->u.range.clamp_hi = 1;
+}
+
+/* ---- hostile-input hardening (security audit 2026-11-04) ---------------- */
+static toc_result spi2_reader(void *user, const char *name,
+                              const toc_allocator *a, char **data, size_t *len) {
+    const char *txt = (const char *)user;
+    size_t n = strlen(txt);
+    char *buf = (char *)toc_malloc(a, n ? n : 1);
+    (void)name;
+    if (!buf) return TOC_ERROR_OUT_OF_MEMORY;
+    memcpy(buf, txt, n); /* deliberately not NUL-terminated */
+    *data = buf;
+    *len = n;
+    return TOC_SUCCESS;
+}
+
+static void test_hostile(void) {
+    /* Cyclic ColorSpaceTransform must fail, not recurse until stack overflow. */
+    {
+        static const char *cfg_txt =
+            "ocio_profile_version: 2\n"
+            "colorspaces:\n"
+            "  - !<ColorSpace>\n"
+            "    name: a\n"
+            "    to_reference: !<ColorSpaceTransform> {src: a, dst: b}\n"
+            "  - !<ColorSpace>\n"
+            "    name: b\n";
+        toc_config *cfg = NULL;
+        toc_op_list *ops = NULL;
+        CHECK(TOC_OK(toc_config_parse(cfg_txt, strlen(cfg_txt), NULL, &cfg)),
+              "cyclic config parses");
+        if (cfg) {
+            CHECK(!TOC_OK(toc_processor_from_colorspaces(cfg, "a", "b", NULL, &ops)) &&
+                      !ops,
+                  "cyclic ColorSpaceTransform rejected");
+            toc_config_free(cfg);
+        }
+    }
+    /* Deeply nested flow and block YAML is rejected, not a stack overflow. */
+    {
+        size_t depth = 100000, i, n = 0;
+        char *txt = (char *)malloc(depth * 2 + 16);
+        toc_config *cfg = NULL;
+        if (txt) {
+            n = 0;
+            memcpy(txt, "k: ", 3); n = 3;
+            for (i = 0; i < depth; ++i) txt[n++] = '[';
+            CHECK(!TOC_OK(toc_config_parse(txt, n, NULL, &cfg)) && !cfg,
+                  "deep flow nesting rejected");
+            n = 0;
+            for (i = 0; i < depth; ++i) { txt[n++] = '-'; txt[n++] = ' '; }
+            txt[n++] = 'x';
+            CHECK(!TOC_OK(toc_config_parse(txt, n, NULL, &cfg)) && !cfg,
+                  "deep block nesting rejected");
+            free(txt);
+        }
+    }
+    /* A wide flow sequence parses in linear (not quadratic) arena space. */
+    {
+        size_t items = 200000, i, n = 0;
+        char *txt = (char *)malloc(items * 2 + 16);
+        toc_config *cfg = NULL;
+        if (txt) {
+            memcpy(txt, "k: [", 4); n = 4;
+            for (i = 0; i < items; ++i) { txt[n++] = '1'; txt[n++] = ','; }
+            txt[n++] = ']';
+            CHECK(TOC_OK(toc_config_parse(txt, n, NULL, &cfg)), "wide flow seq parses");
+            toc_config_free(cfg);
+            free(txt);
+        }
+    }
+    /* 2-component spi1d would be read with stride 3 past its end. */
+    {
+        const char *s = "Version 1\nFrom 0.0 1.0\nLength 2\nComponents 2\n{\n"
+                        "0 0\n1 1\n}\n";
+        toc_op_list *l = newlist();
+        CHECK(!TOC_OK(toc_load_lutfile(l, "two.spi1d", s, strlen(s), 0)),
+              "spi1d Components 2 rejected");
+        toc_op_list_free(l);
+    }
+    /* Size headers larger than the text can hold fail before allocating. */
+    {
+        const char *cube = "LUT_3D_SIZE 256\n0 0 0\n";
+        const char *spi3 = "SPILUT 1.0\n3 3\n256 256 256\n0 0 0 0 0 0\n";
+        const char *clf = "<ProcessList><LUT3D><Array dim=\"3 256 256 256\">0 0 0"
+                          "</Array></LUT3D></ProcessList>";
+        const char *csp = "CSPLUTV1.0\n3DMESH 256\n3D\n0 0 0\n";
+        toc_op_list *l = newlist();
+        CHECK(toc_load_lutfile(l, "big.cube", cube, strlen(cube), 0) == TOC_ERROR_PARSE,
+              "oversized .cube header rejected");
+        CHECK(toc_load_lutfile(l, "big.spi3d", spi3, strlen(spi3), 0) == TOC_ERROR_PARSE,
+              "oversized .spi3d header rejected");
+        CHECK(toc_load_lutfile(l, "big.clf", clf, strlen(clf), 0) == TOC_ERROR_PARSE,
+              "oversized .clf LUT3D rejected");
+        CHECK(toc_load_lutfile(l, "big.csp", csp, strlen(csp), 0) == TOC_ERROR_PARSE,
+              "oversized .csp mesh rejected");
+        CHECK(l->count == 0 && l->owned_count == 0, "rejected LUTs own nothing");
+        toc_op_list_free(l);
+    }
+    /* Repeated size/Array/section declarations no longer leak (LSan). */
+    {
+        const char *cube = "LUT_1D_SIZE 2\nLUT_1D_SIZE 2\n0 0 0\n1 1 1\n";
+        const char *clf = "<ProcessList><LUT1D><Array dim=\"2 3\">0 0 0 1 1 1</Array>"
+                          "<Array dim=\"2 3\">0 0 0 1 1 1</Array></LUT1D></ProcessList>";
+        const char *csp = "CSPLUTV1.0\nPRE_1D 2\n0 0 0 1 1 1\nPRE_1D 2\n0 0 0 1 1 1\n";
+        toc_op_list *l = newlist();
+        CHECK(!TOC_OK(toc_load_lutfile(l, "dup.cube", cube, strlen(cube), 0)),
+              "duplicate .cube size rejected");
+        CHECK(!TOC_OK(toc_load_lutfile(l, "dup.clf", clf, strlen(clf), 0)),
+              "duplicate .clf Array rejected");
+        CHECK(!TOC_OK(toc_load_lutfile(l, "dup.csp", csp, strlen(csp), 0)),
+              "duplicate .csp PRE_1D rejected");
+        toc_op_list_free(l);
+    }
+    /* CLF LUT1D must supply every channel value (no uninitialized reads). */
+    {
+        const char *clf = "<ProcessList><LUT1D><Array dim=\"4 3\">0 0 0 1</Array>"
+                          "</LUT1D></ProcessList>";
+        toc_op_list *l = newlist();
+        CHECK(!TOC_OK(toc_load_lutfile(l, "short.clf", clf, strlen(clf), 0)),
+              "short .clf LUT1D rejected");
+        toc_op_list_free(l);
+    }
+    /* Unterminated <? in a non-NUL-terminated buffer stays in bounds (ASan). */
+    {
+        static const char clf[] = "<ProcessList><?";
+        char *buf = (char *)malloc(sizeof(clf) - 1);
+        toc_op_list *l = newlist();
+        if (buf) {
+            memcpy(buf, clf, sizeof(clf) - 1);
+            (void)toc_load_lutfile(l, "pi.clf", buf, sizeof(clf) - 1, 0);
+            free(buf);
+        }
+        toc_op_list_free(l);
+        CHECK(1, "unterminated <? stays in bounds");
+    }
+    /* Huge exponents/integers saturate (no int overflow, no 2^31-step loop). */
+    {
+        const char *s = "1e999999999999 -2e-99999999999 99999999999999999999999";
+        const char *p = s, *end = s + strlen(s);
+        float a = 0.0f, b = 1.0f;
+        long n = 0;
+        CHECK(toc_parse_float(&p, end, &a) && a > 3e38f, "huge exponent -> inf");
+        CHECK(toc_parse_float(&p, end, &b) && b == 0.0f, "tiny exponent -> 0");
+        CHECK(toc_parse_int(&p, end, &n) && n > 0, "huge integer saturates");
+    }
+    /* Non-ASCII byte in attributes used to spin xa() forever (fuzz timeout). */
+    {
+        const char clf[] = "<ProcessList id=\"x\" \xce\xd9 a=\"b\">"
+                           "<LUT1D><Array dim=\"2 \xd9\">0 1</Array></LUT1D>"
+                           "</ProcessList>";
+        toc_op_list *l = newlist();
+        (void)toc_load_lutfile(l, "hi.clf", clf, sizeof(clf) - 1, 0);
+        toc_op_list_free(l);
+        CHECK(1, "non-ASCII CLF attribute bytes terminate");
+    }
+    /* FileTransform through a non-terminating reader + LUT load cap. */
+    {
+        static const char *cfg_txt =
+            "ocio_profile_version: 2\n"
+            "colorspaces:\n"
+            "  - !<ColorSpace>\n"
+            "    name: lut\n"
+            "    to_reference: !<FileTransform> {src: x.clf}\n"
+            "  - !<ColorSpace>\n"
+            "    name: ref\n";
+        toc_config *cfg = NULL;
+        toc_op_list *ops = NULL;
+        if (TOC_OK(toc_config_parse(cfg_txt, strlen(cfg_txt), NULL, &cfg))) {
+            toc_config_set_file_reader(cfg, spi2_reader, (void *)"<?xml?><Proc");
+            CHECK(!TOC_OK(toc_processor_from_colorspaces(cfg, "lut", "ref", NULL, &ops)),
+                  "truncated CLF via reader rejected");
+            toc_op_list_free(ops);
+            toc_config_free(cfg);
+        } else {
+            CHECK(0, "filetransform hostile config parse");
+        }
+    }
+    /* AOT-C function name must be a C identifier. */
+    {
+        toc_op_list *l = newlist();
+        toc_codegen_c_opts o;
+        char *src = NULL;
+        size_t n = 0;
+        memset(&o, 0, sizeof(o));
+        o.func_name = "f(void){} int evil";
+        CHECK(toc_emit_c(l, &o, NULL, &src, &n) == TOC_ERROR_INVALID_ARGUMENT && !src,
+              "codegen rejects non-identifier func_name");
+        o.func_name = "ok_name_1";
+        CHECK(TOC_OK(toc_emit_c(l, &o, NULL, &src, &n)) && src, "codegen identifier ok");
+        free(src);
+        toc_op_list_free(l);
+    }
 }
 
 /* ---- edge-case hardening ------------------------------------------------ */
@@ -2400,6 +2595,7 @@ int main(void) {
     test_filetransform();
     printf("== tocio edge cases ==\n");
     test_edge_cases();
+    test_hostile();
     printf("== tocio AOT-C codegen ==\n");
     test_codegen_c();
     test_codegen_c_hdr();

@@ -94,7 +94,7 @@ toc_result toc_load_csp(toc_op_list *list, const char *data, size_t len) {
     {
         size_t _maxit = len + 1;
         while (csp_peek(&c)) {
-            if (!_maxit--) return TOC_ERROR_PARSE;
+            if (!_maxit--) { rc = TOC_ERROR_PARSE; goto fail; }
             if (!csp_isword(&c)) {
                 /* skip non-word content (e.g. stray chars) */
                 ++c.p;
@@ -112,20 +112,20 @@ toc_result toc_load_csp(toc_op_list *list, const char *data, size_t len) {
             if (csp_kweq(w, "3DMESH") || csp_kweq(w, "3DMESH2")) {
                 long n1, n2, n3;
                 /* read first N */
-                if (!csp_int(&c, &n1)) return TOC_ERROR_PARSE;
+                if (!csp_int(&c, &n1)) { rc = TOC_ERROR_PARSE; goto fail; }
                 {
                     const char *peek = c.p;
                     while (peek < c.end && csp_isspc(*peek)) ++peek;
                     if (peek < c.end && *peek == '\n') {
                         c.p = peek + 1;
-                        if (n1 < 2 || n1 > 256) return TOC_ERROR_PARSE;
+                        if (n1 < 2 || n1 > 256) { rc = TOC_ERROR_PARSE; goto fail; }
                         mesh = (int)n1;
                     } else {
                         c.p = peek;
                         if (!csp_int(&c, &n2) || !csp_int(&c, &n3))
-                            return TOC_ERROR_PARSE;
+                            { rc = TOC_ERROR_PARSE; goto fail; }
                         if (n1 != n2 || n2 != n3 || n1 < 2 || n1 > 256)
-                            return TOC_ERROR_PARSE;
+                            { rc = TOC_ERROR_PARSE; goto fail; }
                         mesh = (int)n1;
                     }
                 }
@@ -134,11 +134,13 @@ toc_result toc_load_csp(toc_op_list *list, const char *data, size_t len) {
 
             if (csp_kweq(w, "PRE_1D")) {
                 long n;
-                if (!csp_int(&c, &n) || n < 2 || n > 65536) return TOC_ERROR_PARSE;
+                if (pre_data || !csp_int(&c, &n) || n < 2 || n > 65536 ||
+                    !toc_values_fit((size_t)n * 3, c.p, c.end))
+                    { rc = TOC_ERROR_PARSE; goto fail; }
                 pre_len = (int)n;
                 pre_data = (float *)toc_malloc(&list->alloc,
                                                (size_t)pre_len * 3 * sizeof(float));
-                if (!pre_data) return TOC_ERROR_OUT_OF_MEMORY;
+                if (!pre_data) { rc = TOC_ERROR_OUT_OF_MEMORY; goto fail; }
                 got_pre = 0;
                 while (got_pre < pre_len) {
                     float r, g, b;
@@ -150,17 +152,19 @@ toc_result toc_load_csp(toc_op_list *list, const char *data, size_t len) {
                     pre_data[got_pre * 3 + 2] = b;
                     ++got_pre;
                 }
-                if (got_pre != pre_len) { toc_free(&list->alloc, pre_data); return TOC_ERROR_PARSE; }
+                if (got_pre != pre_len) { rc = TOC_ERROR_PARSE; goto fail; }
                 continue;
             }
 
             if (csp_kweq(w, "POST_1D")) {
                 long n;
-                if (!csp_int(&c, &n) || n < 2 || n > 65536) return TOC_ERROR_PARSE;
+                if (post_data || !csp_int(&c, &n) || n < 2 || n > 65536 ||
+                    !toc_values_fit((size_t)n * 3, c.p, c.end))
+                    { rc = TOC_ERROR_PARSE; goto fail; }
                 post_len = (int)n;
                 post_data = (float *)toc_malloc(&list->alloc,
                                                 (size_t)post_len * 3 * sizeof(float));
-                if (!post_data) return TOC_ERROR_OUT_OF_MEMORY;
+                if (!post_data) { rc = TOC_ERROR_OUT_OF_MEMORY; goto fail; }
                 got_post = 0;
                 while (got_post < post_len) {
                     float r, g, b;
@@ -172,15 +176,16 @@ toc_result toc_load_csp(toc_op_list *list, const char *data, size_t len) {
                     post_data[got_post * 3 + 2] = b;
                     ++got_post;
                 }
-                if (got_post != post_len) { toc_free(&list->alloc, post_data); return TOC_ERROR_PARSE; }
+                if (got_post != post_len) { rc = TOC_ERROR_PARSE; goto fail; }
                 continue;
             }
 
             if (csp_kweq(w, "3D")) {
-                if (mesh < 2) return TOC_ERROR_PARSE;
                 size_t want = (size_t)mesh * mesh * mesh;
+                if (mesh < 2 || lut3d || !toc_values_fit(want * 3, c.p, c.end))
+                    { rc = TOC_ERROR_PARSE; goto fail; }
                 lut3d = (float *)toc_malloc(&list->alloc, want * 3 * sizeof(float));
-                if (!lut3d) return TOC_ERROR_OUT_OF_MEMORY;
+                if (!lut3d) { rc = TOC_ERROR_OUT_OF_MEMORY; goto fail; }
                 got_3d = 0;
                 while ((size_t)got_3d < want) {
                     float r, g, b;
@@ -192,7 +197,7 @@ toc_result toc_load_csp(toc_op_list *list, const char *data, size_t len) {
                     lut3d[got_3d * 3 + 2] = b;
                     ++got_3d;
                 }
-                if ((size_t)got_3d != want) { toc_free(&list->alloc, lut3d); return TOC_ERROR_PARSE; }
+                if ((size_t)got_3d != want) { rc = TOC_ERROR_PARSE; goto fail; }
                 continue;
             }
 

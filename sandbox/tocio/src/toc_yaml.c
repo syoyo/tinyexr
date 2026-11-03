@@ -26,7 +26,13 @@ typedef struct {
     int n, i;
     toc_arena *ar;
     int err_line;
+    int depth; /* current block/flow nesting, bounded by TOC_YAML_MAX_DEPTH */
 } yparser;
+
+/* Hostile-input bounds. Real OCIO configs nest well under 20 levels and are a
+ * few hundred KiB; these keep recursion and line arithmetic (int) safe. */
+#define TOC_YAML_MAX_DEPTH 128
+#define TOC_YAML_MAX_BYTES ((size_t)64u << 20)
 
 /* ---- node construction --------------------------------------------------- */
 static toc_node *node_new(yparser *y, toc_node_kind k) {
@@ -37,30 +43,40 @@ static toc_node *node_new(yparser *y, toc_node_kind k) {
     return n;
 }
 
-static int seq_push(yparser *y, toc_node *seq, toc_node *item) {
-    toc_node **na = (toc_node **)toc_arena_alloc(
-        y->ar, (seq->n_items + 1) * sizeof(toc_node *));
-    size_t j;
+/* Arrays live in the arena (never freed individually), so growth must be
+ * geometric: capacity is implicitly the next power of two >= n, and a new
+ * array is taken only when n is 0 or a power of two. Total arena use stays
+ * linear in the item count instead of quadratic. */
+static int needs_grow(size_t n) { return n == 0 || (n & (n - 1)) == 0; }
+
+static int grow_ptrs(yparser *y, void ***arr, size_t n) {
+    void **na;
+    size_t ncap = n ? n * 2 : 1, bytes;
+    if (!needs_grow(n)) return 1;
+    if (toc_mul_ovf(ncap, sizeof(void *), &bytes)) return 0;
+    na = (void **)toc_arena_alloc(y->ar, bytes);
     if (!na) return 0;
-    for (j = 0; j < seq->n_items; ++j) na[j] = seq->items[j];
-    na[seq->n_items] = item;
-    seq->items = na;
-    seq->n_items++;
+    if (n) memcpy(na, *arr, n * sizeof(void *));
+    *arr = na;
+    return 1;
+}
+
+static int seq_push(yparser *y, toc_node *seq, toc_node *item) {
+    void **items = (void **)seq->items;
+    if (!grow_ptrs(y, &items, seq->n_items)) return 0;
+    seq->items = (toc_node **)items;
+    seq->items[seq->n_items++] = item;
     return 1;
 }
 
 static int map_push(yparser *y, toc_node *map, const char *key, toc_node *val) {
-    size_t j;
-    const char **nk = (const char **)toc_arena_alloc(
-        y->ar, (map->n_pairs + 1) * sizeof(char *));
-    toc_node **nv = (toc_node **)toc_arena_alloc(
-        y->ar, (map->n_pairs + 1) * sizeof(toc_node *));
-    if (!nk || !nv) return 0;
-    for (j = 0; j < map->n_pairs; ++j) { nk[j] = map->keys[j]; nv[j] = map->vals[j]; }
-    nk[map->n_pairs] = key;
-    nv[map->n_pairs] = val;
-    map->keys = nk;
-    map->vals = nv;
+    void **keys = (void **)map->keys, **vals = (void **)map->vals;
+    if (!grow_ptrs(y, &keys, map->n_pairs) || !grow_ptrs(y, &vals, map->n_pairs))
+        return 0;
+    map->keys = (const char **)keys;
+    map->vals = (toc_node **)vals;
+    map->keys[map->n_pairs] = key;
+    map->vals[map->n_pairs] = val;
     map->n_pairs++;
     return 1;
 }
@@ -132,7 +148,18 @@ static const char *flow_scalar_end(const char *p, const char *end) {
     return p;
 }
 
+static toc_node *parse_flow_inner(yparser *y, const char **pp, const char *end);
+
 static toc_node *parse_flow(yparser *y, const char **pp, const char *end) {
+    toc_node *n;
+    if (y->depth >= TOC_YAML_MAX_DEPTH) return NULL;
+    ++y->depth;
+    n = parse_flow_inner(y, pp, end);
+    --y->depth;
+    return n;
+}
+
+static toc_node *parse_flow_inner(yparser *y, const char **pp, const char *end) {
     const char *p = *pp;
     flow_skip_ws(&p, end);
     if (p >= end) { *pp = p; return node_new(y, TOC_NODE_SCALAR); }
@@ -184,6 +211,7 @@ static toc_node *parse_flow(yparser *y, const char **pp, const char *end) {
         toc_node *sc = node_new(y, TOC_NODE_SCALAR);
         if (!sc) return NULL;
         sc->scalar = unescape_scalar(y, p, (int)(e - p));
+        if (!sc->scalar) return NULL; /* OOM: never leave a NULL scalar */
         *pp = e;
         return sc;
     }
@@ -236,6 +264,7 @@ static toc_node *parse_inline_or_block(yparser *y, const char *inl, int inl_len,
                 (void)l;
                 sc->tag = tag;
             }
+            if (sc && (!sc->scalar || sb.oom)) sc = NULL; /* OOM: fail, not truncate */
             toc_sb_free(&sb);
             return sc;
         }
@@ -249,6 +278,7 @@ static toc_node *parse_inline_or_block(yparser *y, const char *inl, int inl_len,
             toc_node *sc = node_new(y, TOC_NODE_SCALAR);
             if (!sc) return NULL;
             sc->scalar = unescape_scalar(y, inl, inl_len);
+            if (!sc->scalar) return NULL;
             sc->tag = tag;
             return sc;
         }
@@ -267,8 +297,19 @@ static toc_node *parse_inline_or_block(yparser *y, const char *inl, int inl_len,
     }
 }
 
+static toc_node *parse_block_inner(yparser *y, int indent);
+
 /* parse one block (map / seq / scalar) at the given indent */
 static toc_node *parse_block(yparser *y, int indent) {
+    toc_node *n;
+    if (y->depth >= TOC_YAML_MAX_DEPTH || y->i >= y->n) return NULL;
+    ++y->depth;
+    n = parse_block_inner(y, indent);
+    --y->depth;
+    return n;
+}
+
+static toc_node *parse_block_inner(yparser *y, int indent) {
     yline *L = &y->lines[y->i];
     const char *blk_tag = NULL;
     /* A leading "!<Tag>" on a non-dash line: the tag applies to the block. If
@@ -351,7 +392,7 @@ static toc_node *parse_block(yparser *y, int indent) {
                 sc->tag = blk_tag;
             }
             ++y->i;
-            return sc;
+            return (sc && sc->scalar) ? sc : NULL;
         }
         /* mapping: collect all key: value lines at this indent */
         {
@@ -369,6 +410,7 @@ static toc_node *parse_block(yparser *y, int indent) {
                 toc_node *v;
                 if (cc < 0) break; /* not a map line */
                 key = unescape_scalar(y, ln->p, cc);
+                if (!key) return NULL; /* OOM: a NULL key would reach strcmp */
                 val = ln->p + cc + 1;
                 val_len = ln->len - cc - 1;
                 while (val_len > 0 && *val == ' ') { ++val; --val_len; }
@@ -418,6 +460,7 @@ toc_result toc_yaml_parse(const char *text, size_t len, toc_arena *ar,
     int cap = 64, ln = 0;
     yline *lines = (yline *)toc_arena_alloc(ar, (size_t)cap * sizeof(yline));
     int count = 0;
+    if (len > TOC_YAML_MAX_BYTES) return TOC_ERROR_PARSE;
     if (!lines) return TOC_ERROR_OUT_OF_MEMORY;
     while (p < end) {
         const char *bol = p;
@@ -469,6 +512,7 @@ toc_result toc_yaml_parse(const char *text, size_t len, toc_arena *ar,
     y.i = 0;
     y.ar = ar;
     y.err_line = 0;
+    y.depth = 0;
     if (count == 0) {
         *out_root = node_new(&y, TOC_NODE_MAP);
         return *out_root ? TOC_SUCCESS : TOC_ERROR_OUT_OF_MEMORY;

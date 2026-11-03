@@ -451,6 +451,17 @@ toc_result toc_emit_c(const toc_op_list *ops, const toc_codegen_c_opts *opts,
     toc_sb sb;
     const char *fname = (opts && opts->func_name) ? opts->func_name : "tocio_apply";
     int need_math = 0, need_lut1d = 0, need_lut3d = 0, lut_idx = 0;
+    /* fname is pasted into generated source: only a C identifier is allowed,
+     * so a caller-forwarded name can never inject code. */
+    {
+        const char *q = fname;
+        if (!((*q >= 'A' && *q <= 'Z') || (*q >= 'a' && *q <= 'z') || *q == '_'))
+            return TOC_ERROR_INVALID_ARGUMENT;
+        for (; *q; ++q)
+            if (!((*q >= 'A' && *q <= 'Z') || (*q >= 'a' && *q <= 'z') ||
+                  (*q >= '0' && *q <= '9') || *q == '_') || q - fname >= 128)
+                return TOC_ERROR_INVALID_ARGUMENT;
+    }
     int need_glow = 0, need_darktodim = 0, need_rgbhsv = 0, need_xyz = 0;
     int need_hdr = 0, need_aces = 0;
     size_t k;

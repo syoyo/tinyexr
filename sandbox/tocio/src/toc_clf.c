@@ -43,9 +43,10 @@ static void xs(xr *r) {
         /* <? ... ?> */
         if (r->p + 1 < r->end && r->p[0] == '<' && r->p[1] == '?') {
             r->p += 2;
-            while (r->p < r->end && !(r->p[0] == '?' && r->p[1] == '>'))
+            /* bounded pair test: data need not be NUL-terminated */
+            while (r->p + 1 < r->end && !(r->p[0] == '?' && r->p[1] == '>'))
                 ++r->p;
-            if (r->p < r->end) r->p += 2;
+            r->p = (r->p + 1 < r->end) ? r->p + 2 : r->end;
             continue;
         }
         break;
@@ -70,12 +71,12 @@ static int xtag(xr *r, char *buf, int sz) {
     if (*r->p == '/') {
         /* closing tag: consume '/' and read name into buf but return 0 */
         ++r->p;
-        while (r->p < r->end && *r->p > 0x20 && *r->p != '>' && n < sz - 1)
+        while (r->p < r->end && (unsigned char)*r->p > 0x20 && *r->p != '>' && n < sz - 1)
             buf[n++] = *r->p++;
         buf[n] = 0;
         return 0;
     }
-    while (r->p < r->end && *r->p > 0x20 && *r->p != '>' && *r->p != '/' &&
+    while (r->p < r->end && (unsigned char)*r->p > 0x20 && *r->p != '>' && *r->p != '/' &&
            n < sz - 1)
         buf[n++] = *r->p++;
     buf[n] = 0;
@@ -87,10 +88,14 @@ static int xa(xr *r, char *key, int ksz, char *val, int vsz) {
     int n = 0;
     xs(r);
     if (r->p >= r->end || *r->p == '>' || *r->p == '/') return 0;
-    while (r->p < r->end && *r->p != '=' && *r->p > 0x20 && n < ksz - 1)
+    /* compare as unsigned: high (non-ASCII) bytes are name characters, and a
+     * signed char would stop the scan without consuming anything */
+    while (r->p < r->end && *r->p != '=' && (unsigned char)*r->p > 0x20 &&
+           n < ksz - 1)
         key[n++] = *r->p++;
     key[n] = 0;
     if (r->p < r->end && *r->p == '=') ++r->p;
+    else if (n == 0) ++r->p; /* always make progress: callers loop on xa() */
     xs(r);
     if (r->p < r->end && (*r->p == '"' || *r->p == '\'')) {
         char q = *r->p++;
@@ -353,13 +358,17 @@ static toc_result clf_lut1d(toc_op_list *list, xr *r) {
                     const char *vp = val;
                     while (*vp && nd < 4) {
                         long d;
-                        if (toc_parse_int(&vp, vp + strlen(vp), &d) && d > 0)
+                        const char *before = vp;
+                        if (toc_parse_int(&vp, vp + strlen(vp), &d) && d > 0 &&
+                            d <= 65536)
                             dims[nd++] = (int)d;
                         while (*vp == ' ') ++vp;
+                        if (vp == before) break; /* unparsable: no progress */
                     }
                 }
             }
             xc(r);
+            if (data) goto parse_fail; /* one Array per LUT1D */
             if (nd >= 2) {
                 channels = dims[0];
                 length = dims[1];
@@ -367,7 +376,9 @@ static toc_result clf_lut1d(toc_op_list *list, xr *r) {
                     length > 65536)
                     return TOC_ERROR_PARSE;
             }
-            if (length < 2) return TOC_ERROR_PARSE;
+            if (length < 2 ||
+                !toc_values_fit((size_t)length * (size_t)channels, r->p, r->end))
+                return TOC_ERROR_PARSE;
             data = (float *)toc_malloc(&list->alloc,
                                        (size_t)length * 3 * sizeof(float));
             if (!data) return TOC_ERROR_OUT_OF_MEMORY;
@@ -377,7 +388,9 @@ static toc_result clf_lut1d(toc_op_list *list, xr *r) {
                 int n;
                 if (!tmp) { toc_free(&list->alloc, data); return TOC_ERROR_OUT_OF_MEMORY; }
                 n = xfloats(r, tmp, length * channels);
-                if (n < length) {
+                /* every channel of every entry must be present: the copy
+                 * below reads all length*channels values */
+                if (n != length * channels) {
                     toc_free(&list->alloc, tmp);
                     toc_free(&list->alloc, data);
                     return TOC_ERROR_PARSE;
@@ -401,7 +414,7 @@ static toc_result clf_lut1d(toc_op_list *list, xr *r) {
             xc(r);
         }
     }
-    if (!xskip_close(r)) return TOC_ERROR_PARSE; /* </LUT1D> */
+    if (!xskip_close(r)) goto parse_fail; /* </LUT1D> */
     if (!data) return TOC_ERROR_PARSE;
     if (!toc_op_list_own(list, data)) { toc_free(&list->alloc, data); return TOC_ERROR_OUT_OF_MEMORY; }
     {
@@ -415,6 +428,9 @@ static toc_result clf_lut1d(toc_op_list *list, xr *r) {
         op->u.lut1d.interp = TOC_INTERP_LINEAR;
     }
     return TOC_SUCCESS;
+parse_fail:
+    toc_free(&list->alloc, data);
+    return TOC_ERROR_PARSE;
 }
 
 /* --- <LUT3D> --------------------------------------------------------------- */
@@ -431,16 +447,21 @@ static toc_result clf_lut3d(toc_op_list *list, xr *r) {
                     const char *vp = val;
                     while (*vp && nd < 4) {
                         long d;
-                        if (toc_parse_int(&vp, vp + strlen(vp), &d) && d > 0)
+                        const char *before = vp;
+                        if (toc_parse_int(&vp, vp + strlen(vp), &d) && d > 0 &&
+                            d <= 65536)
                             dims[nd++] = (int)d;
                         while (*vp == ' ') ++vp;
+                        if (vp == before) break; /* unparsable: no progress */
                     }
                 }
             }
             xc(r);
+            if (data) goto parse_fail; /* one Array per LUT3D */
             if (nd < 4 || dims[0] != 3) return TOC_ERROR_UNSUPPORTED;
             size = dims[1];
-            if (dims[2] != size || dims[3] != size || size < 2 || size > 256)
+            if (dims[2] != size || dims[3] != size || size < 2 || size > 256 ||
+                !toc_values_fit((size_t)size * size * size * 3, r->p, r->end))
                 return TOC_ERROR_PARSE;
             data = (float *)toc_malloc(&list->alloc,
                                        (size_t)size * size * size * 3 * sizeof(float));
@@ -456,7 +477,7 @@ static toc_result clf_lut3d(toc_op_list *list, xr *r) {
             xc(r);
         }
     }
-    if (!xskip_close(r)) return TOC_ERROR_PARSE; /* </LUT3D> */
+    if (!xskip_close(r)) goto parse_fail; /* </LUT3D> */
     if (!data) return TOC_ERROR_PARSE;
     if (!toc_op_list_own(list, data)) { toc_free(&list->alloc, data); return TOC_ERROR_OUT_OF_MEMORY; }
     {
@@ -471,6 +492,9 @@ static toc_result clf_lut3d(toc_op_list *list, xr *r) {
         op->u.lut3d.interp = TOC_INTERP_TETRAHEDRAL;
     }
     return TOC_SUCCESS;
+parse_fail:
+    toc_free(&list->alloc, data);
+    return TOC_ERROR_PARSE;
 }
 
 /* ============================================================================

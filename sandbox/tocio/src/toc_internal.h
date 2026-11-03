@@ -40,6 +40,17 @@ void *toc_calloc(const toc_allocator *a, size_t count, size_t size);
 void toc_free(const toc_allocator *a, void *ptr);
 char *toc_strndup(const toc_allocator *a, const char *s, size_t n);
 
+/* Can `count` whitespace-separated numbers fit in [p, end)? Each needs at
+ * least one digit plus a separator, so a header claiming more values than the
+ * text could hold is rejected before its sample array is allocated. */
+static inline int toc_values_fit(size_t count, const char *p, const char *end) {
+    size_t avail = (p && end > p) ? (size_t)(end - p) : 0;
+    return count <= avail / 2 + 1;
+}
+
+/* Largest flattened op list a processor build may produce. */
+#define TOC_MAX_OPS 65536
+
 static inline int toc_mul_ovf(size_t a, size_t b, size_t *out) {
 #if defined(__GNUC__) || defined(__clang__)
     return __builtin_mul_overflow(a, b, out);

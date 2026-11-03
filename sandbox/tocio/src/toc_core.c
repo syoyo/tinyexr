@@ -127,6 +127,8 @@ void toc_arena_free(toc_arena *ar) {
  * Op-list builder
  * ========================================================================== */
 toc_op *toc_op_list_push(toc_op_list *list, toc_op_kind kind) {
+    /* Bound the flattened list so exponential transform expansion fails. */
+    if (list->count >= TOC_MAX_OPS) return NULL;
     if (list->count == list->cap) {
         size_t ncap;
         size_t bytes;

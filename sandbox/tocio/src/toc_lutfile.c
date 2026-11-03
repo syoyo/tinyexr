@@ -80,11 +80,14 @@ static toc_result load_cube(toc_op_list *list, cur *c) {
                 while (c->p < c->end && *c->p != '\n') ++c->p;
             } else if (kweq(w, "LUT_1D_SIZE") || kweq(w, "LUT_3D_SIZE")) {
                 long n = 0;
-                if (!read_int(c, &n) || n < 2 || n > 256) return TOC_ERROR_PARSE;
+                /* One size declaration only; a second would orphan arr. */
+                if (arr || !read_int(c, &n) || n < 2 || n > 256)
+                    goto parse_fail;
                 size = (int)n;
                 dim = w[4] == '1' ? 1 : 3;
                 want = dim == 1 ? (size_t)size * 3
                                 : (size_t)size * size * size * 3;
+                if (!toc_values_fit(want, c->p, c->end)) goto parse_fail;
                 arr = (float *)toc_malloc(&list->alloc, want * sizeof(float));
                 if (!arr) return TOC_ERROR_OUT_OF_MEMORY;
             } else if (kweq(w, "DOMAIN_MIN")) {
@@ -103,10 +106,10 @@ static toc_result load_cube(toc_op_list *list, cur *c) {
             }
         } else {
             float r, g, b;
-            if (!arr) return TOC_ERROR_PARSE;
+            if (!arr) goto parse_fail;
             if (!read_float(c, &r) || !read_float(c, &g) || !read_float(c, &b))
                 break;
-            if (got + 3 > want) return TOC_ERROR_PARSE;
+            if (got + 3 > want) goto parse_fail;
             arr[got++] = r; arr[got++] = g; arr[got++] = b;
         }
     }
@@ -131,6 +134,9 @@ static toc_result load_cube(toc_op_list *list, cur *c) {
         op->u.lut3d.interp = TOC_INTERP_TETRAHEDRAL;
     }
     return TOC_SUCCESS;
+parse_fail:
+    toc_free(&list->alloc, arr);
+    return TOC_ERROR_PARSE;
 }
 
 /* ---- Sony .spi1d --------------------------------------------------------- */
@@ -158,12 +164,16 @@ static toc_result load_spi1d(toc_op_list *list, cur *c) {
             break; /* unknown header word */
         }
     }
-    if (length < 2 || length > 1 << 18 || comps < 1 || comps > 3) return TOC_ERROR_PARSE;
+    /* LUT1D kernels and codegens index 1- or 3-channel tables only; a
+     * 2-component table would be read with stride 3 past its end. */
+    if (length < 2 || length > 1 << 18 || (comps != 1 && comps != 3))
+        return TOC_ERROR_PARSE;
     skip_ws(c);
     if (c->p < c->end && *c->p == '{') ++c->p;
     if ((size_t)length > SIZE_MAX / (size_t)comps) return TOC_ERROR_PARSE;
     want = (size_t)length * (size_t)comps;
-    if (want > (SIZE_MAX / sizeof(float))) return TOC_ERROR_PARSE;
+    if (want > (SIZE_MAX / sizeof(float)) || !toc_values_fit(want, c->p, c->end))
+        return TOC_ERROR_PARSE;
     arr = (float *)toc_malloc(&list->alloc, want * sizeof(float));
     if (!arr) return TOC_ERROR_OUT_OF_MEMORY;
     while (got < want) {
@@ -203,6 +213,8 @@ static toc_result load_spi3d(toc_op_list *list, cur *c) {
     if (n1 != n2 || n2 != n3 || n1 < 2 || n1 > 256) return TOC_ERROR_UNSUPPORTED;
     N = (int)n1;
     want = (size_t)N * N * N * 3;
+    /* each entry is three indices plus three values */
+    if (!toc_values_fit(want * 2, c->p, c->end)) return TOC_ERROR_PARSE;
     arr = (float *)toc_calloc(&list->alloc, want, sizeof(float));
     if (!arr) return TOC_ERROR_OUT_OF_MEMORY;
     while (filled < (size_t)N * N * N) {

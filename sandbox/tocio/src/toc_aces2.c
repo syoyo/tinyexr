@@ -73,6 +73,8 @@ static float a2_copysign(float x, float y) {
     return y < 0.0f ? -ax : ax;
 }
 static float a2_roundf(float x) {
+    /* |x| >= 2^23 is already integral; NaN/huge must not reach (int). */
+    if (!(x > -8388608.0f && x < 8388608.0f)) return x;
     return x >= 0.0f ? (float)(int)(x + 0.5f) : (float)(int)(x - 0.5f);
 }
 static float a2_lnf(float x) { return toc_log2f(x) * 0.69314718055994531f; }
@@ -82,7 +84,7 @@ static float a2_log10f(float x) { return toc_log2f(x) * 0.30102999566398120f; }
 static float a2_sinf(float x) {
     const float TWO_PI = 6.28318530717958648f, HALF_PI = 1.57079632679489662f;
     float k = x * (1.0f / TWO_PI), x2;
-    k = k >= 0.0f ? (float)(int)(k + 0.5f) : (float)(int)(k - 0.5f);
+    k = a2_roundf(k);
     x -= k * TWO_PI;
     if (x > HALF_PI) x = A2_PI - x;
     else if (x < -HALF_PI) x = -A2_PI - x;
@@ -650,7 +652,14 @@ static float remap_M(float M, float gbM, float rbM) {
     return thr + reinhard_remap(scale, nd);
 }
 static unsigned lookup_hue_interval(float h, const float *hues, int slo, int shi) {
-    unsigned i = A2_BASE + (unsigned)h;
+    unsigned i;
+    /* hues[] spans [A2_LOWER, A2_UPPER]: keep the seed index in range even
+     * for NaN or out-of-range hues (the cast would be undefined). Only the
+     * seed is clamped; comparisons below still use h. */
+    float hs = h;
+    if (!(hs >= 0.0f)) hs = 0.0f;
+    if (hs > (float)(A2_NOMINAL - 1)) hs = (float)(A2_NOMINAL - 1);
+    i = A2_BASE + (unsigned)hs;
     int ilo_i = (int)i + slo, ihi_i = (int)i + shi;
     unsigned ilo = ilo_i < A2_LOWER ? A2_LOWER : (unsigned)ilo_i;
     unsigned ihi = ihi_i > (int)A2_UPPER ? A2_UPPER : (unsigned)ihi_i;

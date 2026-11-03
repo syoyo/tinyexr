@@ -51,6 +51,7 @@ float toc_exp2f(float x) {
     union { uint32_t u; float f; } v;
     float k, f, g, p;
     int ki;
+    if (!(x == x)) return x; /* NaN: (int)NaN below would be undefined */
     if (x > 127.0f) return TOC_INF_POS;
     if (x < -126.0f) return 0.0f;
     k = (x >= 0.0f) ? (float)(int)(x + 0.5f) : (float)(int)(x - 0.5f);
@@ -123,8 +124,10 @@ int toc_parse_float(const char **pp, const char *end, float *out) {
             if (*p == '-') esign = -1;
             ++p;
         }
+        /* saturate: beyond 1e4 the result is 0 or inf anyway, and an
+         * unbounded exponent overflows int and drives the loop below */
         while (p < end && *p >= '0' && *p <= '9') {
-            exp = exp * 10 + (*p - '0');
+            if (exp < 10000) exp = exp * 10 + (*p - '0');
             ++p;
         }
     }
@@ -150,8 +153,9 @@ int toc_parse_int(const char **pp, const char *end, long *out) {
         if (*p == '-') sign = -1;
         ++p;
     }
+    /* saturate instead of overflowing long; callers range-check the value */
     while (p < end && *p >= '0' && *p <= '9') {
-        v = v * 10 + (*p - '0');
+        if (v < 100000000000000L) v = v * 10 + (*p - '0');
         ++p;
         any = 1;
     }

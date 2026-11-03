@@ -576,8 +576,27 @@ static toc_result emit_to_ref(const toc_config *, toc_op_list *, const char *,
 static toc_result emit_from_ref(const toc_config *, toc_op_list *, const char *,
                                 int);
 
+/* Hostile-config bounds: transform references (ColorSpaceTransform naming
+ * itself, mutually-referencing colorspaces) are cyclic or exponential without
+ * them. Real configs nest a handful of levels and load a few LUTs. */
+#define TOC_MAX_WALK_DEPTH 64
+#define TOC_MAX_FILE_LOADS 256
+
+static toc_result walk_node(const toc_config *cfg, toc_op_list *list,
+                            const toc_node *node, int invert);
+
 static toc_result walk(const toc_config *cfg, toc_op_list *list,
                        const toc_node *node, int invert) {
+    toc_result rc;
+    if (list->build_depth >= TOC_MAX_WALK_DEPTH) return TOC_ERROR_PARSE;
+    ++list->build_depth;
+    rc = walk_node(cfg, list, node, invert);
+    --list->build_depth;
+    return rc;
+}
+
+static toc_result walk_node(const toc_config *cfg, toc_op_list *list,
+                            const toc_node *node, int invert) {
     const char *tag;
     const toc_node *dir;
     int dir_inv = invert;
@@ -623,6 +642,7 @@ static toc_result walk(const toc_config *cfg, toc_op_list *list,
         size_t len = 0;
         if (!src) return TOC_ERROR_PARSE;
         if (!cfg->reader) return TOC_ERROR_IO;
+        if (++list->build_files > TOC_MAX_FILE_LOADS) return TOC_ERROR_PARSE;
         rc = cfg->reader(cfg->reader_user, src, &cfg->alloc, &data, &len);
         if (!TOC_OK(rc)) return rc;
         rc = toc_load_lutfile(list, src, data, len, dir_inv);
