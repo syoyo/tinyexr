@@ -77,7 +77,9 @@ Keep first-party code out of the allowlist.
 Build / test:
 - `make tocio-c11-gate`   — C11 strict gate for all `sandbox/tocio/src/*.c`
 - `make tocio-freestanding-gate` — freestanding gate (nm-scans for libm symbols)
-- `make tocio-test`       — unit tests (ASan+UBSan)
+- `make tocio-test`       — unit tests (ASan+UBSan+LSan)
+- `make tocio-fuzz`       — libFuzzer target (`build/toc_fuzz`); replay fixed
+  findings with `./build/toc_fuzz sandbox/tocio/tests/fuzz-regression/*`
 - `make wasm-tocio`       — WASM/emscripten build (`build/tocio.mjs` + `.wasm`)
 - `make wasm-tocio-test`  — WASM smoke check via Node (set PATH to emsdk's node)
 - `make tocio-wasm`       — WASM build of core
@@ -166,3 +168,6 @@ Phase 6 (file LUTs)        █████████████████�
 - Every new FixedFunction style must have an inverse pair (`_INV = forward+1`)
 - GamutComp13 is complex — AOT-C and GLSL codegens fall back to interpreter for it
 - Decompose inverse ops at lowering time (not in backends) for backend-agnostic support
+- Hostile input: every parser loop must consume input on each iteration (compare
+  bytes as `unsigned char`); LUT loaders check `toc_values_fit` before
+  allocating; recursion is depth-capped (YAML 128, transform walk 64)
