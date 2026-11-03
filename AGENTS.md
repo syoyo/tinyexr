@@ -168,6 +168,10 @@ Phase 6 (file LUTs)        █████████████████�
 - Every new FixedFunction style must have an inverse pair (`_INV = forward+1`)
 - GamutComp13 is complex — AOT-C and GLSL codegens fall back to interpreter for it
 - Decompose inverse ops at lowering time (not in backends) for backend-agnostic support
+- File LUTs follow OpenColorIO's readers (CLF dims/bit depths/styles, CSP
+  "CSPLUTV100"); check changes against the PyOCIO oracle in `ref/.pyoracle`
+  (run it with `python3.12`). Unsupported CLF nodes must return UNSUPPORTED,
+  never be skipped silently. 3D LUTs default to trilinear (OCIO default).
 - Hostile input: every parser loop must consume input on each iteration (compare
   bytes as `unsigned char`); LUT loaders check `toc_values_fit` before
   allocating; recursion is depth-capped (YAML 128, transform walk 64)
