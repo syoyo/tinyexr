@@ -298,7 +298,11 @@ static int reverse_bits(int code, int len) {
     return rev;
 }
 
-static int ht_build(dfl_huff *table, const uint8_t *lens, int count) {
+/* kind: 0 = code-length, 1 = literal/length, 2 = distance. It must be passed
+ * explicitly: a distance alphabet may legally have exactly 19 codes (HDIST=18),
+ * the same count as the code-length alphabet, and inferring the kind from the
+ * count then decoded every distance of such a block wrongly. */
+static int ht_build(dfl_huff *table, const uint8_t *lens, int count, int kind) {
     int bl_count[DFL_MAX_BITS + 1] = {0};
     int next_code[DFL_MAX_BITS + 1] = {0};
     int max_len = 0, i, code, sym, bits;
@@ -316,8 +320,7 @@ static int ht_build(dfl_huff *table, const uint8_t *lens, int count) {
         }
     }
     table->max_bits = max_len;
-    table->kind = (count == DFL_CODELEN_CODES) ? 0 :
-                  (count > DFL_DIST_CODES ? 1 : 2);
+    table->kind = kind;
     table->slow_count = 0;
     table->long_count = 0;
     memset(table->distance_info, 0, sizeof(table->distance_info));
@@ -341,7 +344,7 @@ static int ht_build(dfl_huff *table, const uint8_t *lens, int count) {
             uint32_t entry = dfl_fast_entry(sym, len, table->kind);
             int fill = 1 << (DFL_FAST_BITS - len), k;
             for (k = 0; k < fill; k++) table->fast_table[rev | (k << len)] = entry;
-            if (count <= DFL_DIST_CODES && len <= DFL_DIST_FAST_BITS) {
+            if (kind == 2 && len <= DFL_DIST_FAST_BITS) {
                 int dist_fill = 1 << (DFL_DIST_FAST_BITS - len);
                 for (k = 0; k < dist_fill; k++)
                     table->dist_fast_table[rev | (k << len)] = entry;
@@ -384,7 +387,7 @@ static int ht_build(dfl_huff *table, const uint8_t *lens, int count) {
         }
     }
 
-    if (count <= DFL_DIST_CODES) {
+    if (kind == 2) {
         for (i = 0; i < 30 && i < count; ++i)
             table->distance_info[i] =
                 (uint32_t)dfl_dist_base[i] |
@@ -565,7 +568,7 @@ static int decode_dynamic_tables(dfl_br *reader, dfl_huff *litlen,
         if (reader->count < 3) br_refill(reader);
         codelen_lens[dfl_codelen_order[i]] = (uint8_t)br_read(reader, 3);
     }
-    if (!ht_build(&codelen_table, codelen_lens, DFL_CODELEN_CODES)) return 0;
+    if (!ht_build(&codelen_table, codelen_lens, DFL_CODELEN_CODES, 0)) return 0;
 
     total = hlit + hdist;
     i = 0;
@@ -593,8 +596,8 @@ static int decode_dynamic_tables(dfl_br *reader, dfl_huff *litlen,
             return 0;
         }
     }
-    if (!ht_build(litlen, all_lens, hlit)) return 0;
-    if (!ht_build(dist, all_lens + hlit, hdist)) return 0;
+    if (!ht_build(litlen, all_lens, hlit, 1)) return 0;
+    if (!ht_build(dist, all_lens + hlit, hdist, 2)) return 0;
     return 1;
 }
 
