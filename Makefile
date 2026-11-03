@@ -23,7 +23,7 @@ MINIZ_SRC = ./deps/miniz/miniz.c
 # ---- legacy v1 single-header test (unchanged) -----------------------------
 TARGET = test_tinyexr
 
-.PHONY: all test clean help lib test-c test-c-threads test-c-tsan c11-gate texcomp-web fuzz fuzz-jph fuzz-libdeflate fuzz-corpus fuzz-corpus-asan parse-test wasm freestanding-gate freestanding-zstd-gate examples-c bench bench-compare bench-htj2k arm-smoke host-smoke gpu-test vk-test jph-gpu-test bench-gpu-jph texcomp texcomp-arm texcomp-c11-gate texcomp-test texcomp-bench texcomp-astc-psnr texcomp-astc-arm-smoke texcomp-astc-arm-gate texcomp-astc-hdr-gate texcomp-uni-gate texcomp-bc6h-gate texcomp-wasm texcomp-wasm-simd wasm-texcomp wasm-texcomp-simd ptexatlas-c11-gate
+.PHONY: all test clean help lib test-c test-c-threads test-c-tsan c11-gate texcomp-web fuzz fuzz-threads tocio-fuzz fuzz-jph fuzz-libdeflate fuzz-corpus fuzz-corpus-asan parse-test wasm freestanding-gate freestanding-zstd-gate examples-c bench bench-compare bench-htj2k arm-smoke host-smoke gpu-test vk-test jph-gpu-test bench-gpu-jph texcomp texcomp-arm texcomp-c11-gate texcomp-test texcomp-bench texcomp-astc-psnr texcomp-astc-arm-smoke texcomp-astc-arm-gate texcomp-astc-hdr-gate texcomp-uni-gate texcomp-bc6h-gate texcomp-wasm texcomp-wasm-simd wasm-texcomp wasm-texcomp-simd ptexatlas-c11-gate
 
 all: $(TARGET)
 
@@ -774,6 +774,14 @@ fuzz: test/fuzzer/fuzz_v3.c | build
 	  test/fuzzer/fuzz_v3.c $(V3_SRC) $(ZSTD_SRC) -lm -o build/fuzz_v3
 	@echo "built build/fuzz_v3 - e.g. ./build/fuzz_v3 -dict=test/fuzzer/exr.dict -max_total_time=60 build/fuzz-corpus-v3 test/unit/regression"
 
+# Same fuzzer with the thread pool enabled (4 workers) so the parallel
+# scanline/tile/source-batch decode paths are fuzzed too.
+fuzz-threads: test/fuzzer/fuzz_v3.c | build
+	clang $(V3_CSTD) -DEXR_USE_THREADS $(V3_INC) -O1 -g -w \
+	  -fsanitize=fuzzer,address,undefined \
+	  test/fuzzer/fuzz_v3.c $(V3_SRC) $(ZSTD_SRC) -pthread -lm -o build/fuzz_v3_threads
+	@echo "built build/fuzz_v3_threads - run like build/fuzz_v3"
+
 # Same fuzzer but with libdeflate as the default zlib backend, so the shipped
 # DEFLATE=auto decode path (ZIP/ZIPS/PXR24 -> libdeflate) is fuzzed too.
 fuzz-libdeflate: test/fuzzer/fuzz_v3.c | build
@@ -1004,7 +1012,19 @@ tocio-freestanding-gate: $(TOC_FS_OBJ) sandbox/tocio/tests/toc_fs_smoke.c | buil
 tocio-test: | build
 	$(CC) $(V3_CSTD) -Wall -Wextra $(TOC_INC) -O1 -g $(SAN) \
 	  sandbox/tocio/tests/toc_test.c $(TOC_SRC) -lm -ldl -o build/toc_test
-	ASAN_OPTIONS=detect_leaks=0 ./build/toc_test
+	./build/toc_test
+
+# Coverage-guided fuzzer over the tocio hostile-input surface (YAML config,
+# processor build, LUT loaders via FileTransform, CPU/JIT apply, codegens).
+# -fno-sanitize=function: UBSan's indirect-call type check reads the 8 bytes
+# before the callee, which faults on JIT code placed at the start of a page.
+#   ./build/toc_fuzz -max_total_time=600 build/toc-fuzz-corpus
+tocio-fuzz: sandbox/tocio/tests/toc_fuzz.c | build
+	clang $(V3_CSTD) $(TOC_INC) -O1 -g -w -fsanitize=fuzzer,address,undefined \
+	  -fno-sanitize=function \
+	  sandbox/tocio/tests/toc_fuzz.c $(TOC_SRC) -lm -ldl -o build/toc_fuzz
+	@echo "built build/toc_fuzz - e.g. ./build/toc_fuzz -max_total_time=600 build/toc-fuzz-corpus"
+	@echo "replay fixed findings: ./build/toc_fuzz sandbox/tocio/tests/fuzz-regression/*"
 
 # Validate tocio against the REAL AcademySoftwareFoundation ACES OCIO configs:
 # parse each config, build every transform, and compare results to golden values

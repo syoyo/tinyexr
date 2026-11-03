@@ -38,16 +38,35 @@ typedef struct fuzz_alloc_state {
 } fuzz_alloc_state;
 static size_t g_fail_at_override;
 
+/* The threaded build decodes on worker threads, which requires a thread-safe
+ * allocator; serialize the budget bookkeeping there. */
+#if defined(EXR_USE_THREADS)
+#include <pthread.h>
+static pthread_mutex_t g_alloc_lock = PTHREAD_MUTEX_INITIALIZER;
+#define FUZZ_LOCK() pthread_mutex_lock(&g_alloc_lock)
+#define FUZZ_UNLOCK() pthread_mutex_unlock(&g_alloc_lock)
+#else
+#define FUZZ_LOCK() ((void)0)
+#define FUZZ_UNLOCK() ((void)0)
+#endif
+
 static void *fuzz_alloc(void *user, size_t size) {
     fuzz_alloc_state *s = (fuzz_alloc_state *)user;
     fuzz_alloc_header *h;
+    FUZZ_LOCK();
     if (++s->calls == s->fail_at || size > FUZZ_ALLOC_BUDGET - s->live ||
-        size > SIZE_MAX - sizeof(*h))
+        size > SIZE_MAX - sizeof(*h)) {
+        FUZZ_UNLOCK();
         return NULL;
-    h = (fuzz_alloc_header *)malloc(sizeof(*h) + size);
-    if (!h) return NULL;
-    h->size = size;
+    }
     s->live += size;
+    FUZZ_UNLOCK();
+    h = (fuzz_alloc_header *)malloc(sizeof(*h) + size);
+    if (!h) {
+        FUZZ_LOCK(); s->live -= size; FUZZ_UNLOCK();
+        return NULL;
+    }
+    h->size = size;
     return h + 1;
 }
 
@@ -56,7 +75,9 @@ static void fuzz_free(void *user, void *ptr) {
     fuzz_alloc_header *h;
     if (!ptr) return;
     h = ((fuzz_alloc_header *)ptr) - 1;
+    FUZZ_LOCK();
     s->live -= h->size;
+    FUZZ_UNLOCK();
     free(h);
 }
 
@@ -173,6 +194,15 @@ static void drain_reader(exr_reader *r, const exr_allocator *a,
                 float *pixels = NULL;
                 (void)exr_part_to_rgba_float(a, &out, &pixels, NULL, NULL, NULL);
                 if (pixels) a->free(a->user, pixels);
+                if (exr_part_is_luminance_chroma(&out)) {
+                    pixels = NULL;
+                    (void)exr_part_yc_to_rgba_float(a, &out, &pixels, NULL, NULL);
+                    if (pixels) a->free(a->user, pixels);
+                }
+                {
+                    float wl[8];
+                    (void)exr_spectral_wavelengths(&out.header, wl, 8);
+                }
             }
             exr_part_free(a, &out);
         }
@@ -194,6 +224,24 @@ static void drain_reader(exr_reader *r, const exr_allocator *a,
         }
         drain_blocks(r, p, file, file_size);
     }
+}
+
+#if defined(EXR_USE_THREADS)
+/* Threaded build (make fuzz-threads): force the parallel scanline, tile and
+ * source batch paths with a small fixed pool. */
+int LLVMFuzzerInitialize(int *argc, char ***argv) {
+    (void)argc; (void)argv;
+    exr_set_num_threads(4);
+    return 0;
+}
+#endif
+
+static int fuzz_has(const uint8_t *d, size_t n, const char *needle) {
+    size_t k = strlen(needle), i;
+    if (n < k) return 0;
+    for (i = 0; i + k <= n; ++i)
+        if (d[i] == (uint8_t)needle[0] && memcmp(d + i, needle, k) == 0) return 1;
+    return 0;
 }
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
@@ -237,6 +285,17 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
             drain_reader(r, &alloc, data, size);
             exr_reader_close(r);
         }
+    }
+    /* 5. Spectral loader: first spectral part and an input-chosen part.
+     * Only inputs naming the spectral layout attribute can take this path,
+     * so skip the extra decode for everything else. */
+    if (size > 1 && fuzz_has(data, size, "spectralLayoutVersion")) {
+        exr_spectral_image spec;
+        if (EXR_OK(exr_spectral_load_from_memory(data, size, &alloc, &spec)))
+            exr_spectral_image_free(&spec);
+        if (EXR_OK(exr_spectral_load_part_from_memory(
+                data, size, (int32_t)(data[1] & 3u), &alloc, &spec)))
+            exr_spectral_image_free(&spec);
     }
     /* 4. Suspend/resume source. Supply the requested range in short prefixes
      * so pending offset/size updates and repeated WOULD_BLOCK are exercised. */
