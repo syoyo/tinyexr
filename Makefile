@@ -683,6 +683,23 @@ bench-source-large: build/bench_source
 	./build/bench_source 2048 2048 4 3
 	./build/bench_source 1024 1024 32 3
 
+# Repeated whole-image load: per-load time and minor page faults, so
+# allocation-lifetime/paging regressions in the source path stay visible.
+# Point EXR_RELOAD_FIXTURE at a small photographic EXR (PIZ recommended).
+EXR_RELOAD_FIXTURE ?=
+.PHONY: bench-reload bench-reload-ab
+build/bench_reload: $(V3_OBJ) $(ZSTD_OBJ) $(LD_OBJ) benchmark/bench_reload.c | build
+	$(CC) $(V3_CSTD) $(V3_WARN) $(V3_DEFS) $(V3_INC) -O2 \
+	  benchmark/bench_reload.c $(V3_OBJ) $(ZSTD_OBJ) $(LD_OBJ) $(THREAD_LIBS) -lm -o $@
+bench-reload: build/bench_reload
+	@test -n "$(EXR_RELOAD_FIXTURE)" || { \
+	  echo "bench-reload: set EXR_RELOAD_FIXTURE=/path/to/file.exr" >&2; exit 2; }
+	./build/bench_reload "$(EXR_RELOAD_FIXTURE)" 300 6 1
+bench-reload-ab:
+	@test -n "$(EXR_RELOAD_FIXTURE)" || { \
+	  echo "bench-reload-ab: set EXR_RELOAD_FIXTURE=/path/to/file.exr" >&2; exit 2; }
+	sh benchmark/bench_reload_ab.sh "$(EXR_RELOAD_FIXTURE)" 300 9 ef203db
+
 bench: $(V3_OBJ) $(ZSTD_OBJ) $(LD_OBJ) benchmark/bench.c | build
 	$(CC) $(V3_CSTD) -Wall -Wextra $(V3_DEFS) $(V3_INC) -O3 \
 	  benchmark/bench.c $(V3_OBJ) $(ZSTD_OBJ) $(LD_OBJ) $(THREAD_LIBS) -lm -o build/bench
@@ -1262,6 +1279,8 @@ help:
 	@echo "make texcomp-wasm - Emscripten texcomp C API + Node CLI (scalar wasm)"
 	@echo "make texcomp-wasm-simd - Emscripten texcomp C API + Node CLI (-msimd128)"
 	@echo "make bench-compare - tinyexr-vs-OpenEXR codec comparison (needs OpenEXR build)"
+	@echo "make bench-reload  - repeated-load ms/minor-faults (EXR_RELOAD_FIXTURE=file.exr)"
+	@echo "make bench-reload-ab - same benchmark A/B against a baseline git revision"
 	@echo "make fuzz   - build libFuzzer target (build/fuzz_v3)"
 	@echo "make fuzz-corpus - replay regression corpus under ASan+UBSan+LSan"
 	@echo "make fuzz-corpus-asan - replay corpus with LSan disabled for ptrace sandboxes"

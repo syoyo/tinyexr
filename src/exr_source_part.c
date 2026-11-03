@@ -131,8 +131,12 @@ static exr_result source_init(exr_reader *r, int32_t part, int kind,
         if (!op->output.deep_sample_counts || !op->output.deep_images)
             return EXR_ERROR_OUT_OF_MEMORY;
     } else {
+        size_t total = 0, off = 0;
         op->output.images = (void **)exr_calloc(&r->alloc, h->num_channels, sizeof(void *));
         if (!op->output.images) return EXR_ERROR_OUT_OF_MEMORY;
+        /* One block for all planes: a single large chunk is recycled across
+         * repeated loads instead of several medium ones. Very large images
+         * keep per-channel planes (see EXR_FLAT_PLANES_BLOCK_MAX). */
         for (c = 0; c < h->num_channels; ++c) {
             size_t n, bytes;
             if (exr_mul_ovf((size_t)exr_num_samples(crop.min_x, crop.max_x, h->channels[c].x_sampling),
@@ -141,8 +145,37 @@ static exr_result source_init(exr_reader *r, int32_t part, int kind,
                 return EXR_ERROR_LIMIT_EXCEEDED;
             rc = source_owned(op, bytes);
             if (rc != EXR_SUCCESS) return rc;
-            op->output.images[c] = exr_calloc(&r->alloc, bytes ? bytes : 1, 1);
-            if (!op->output.images[c]) return EXR_ERROR_OUT_OF_MEMORY;
+            if (exr_add_ovf(total, bytes ? bytes : 1, &total) ||
+                exr_add_ovf(total, 7u, &total))
+                return EXR_ERROR_LIMIT_EXCEEDED;
+        }
+        if (total > EXR_FLAT_PLANES_BLOCK_MAX) {
+            for (c = 0; c < h->num_channels; ++c) {
+                size_t n, bytes;
+                n = (size_t)exr_num_samples(crop.min_x, crop.max_x,
+                                            h->channels[c].x_sampling) *
+                    (size_t)exr_num_samples(crop.min_y, crop.max_y,
+                                            h->channels[c].y_sampling);
+                bytes = n * exr_pixel_size(h->channels[c].pixel_type);
+                op->output.images[c] =
+                    exr_calloc(&r->alloc, bytes ? bytes : 1, 1);
+                if (!op->output.images[c]) return EXR_ERROR_OUT_OF_MEMORY;
+            }
+            return EXR_SUCCESS;
+        }
+        op->output.images_block =
+            exr_calloc(&r->alloc, total ? total : 1, 1);
+        if (!op->output.images_block) return EXR_ERROR_OUT_OF_MEMORY;
+        for (c = 0; c < h->num_channels; ++c) {
+            size_t n, bytes;
+            n = (size_t)exr_num_samples(crop.min_x, crop.max_x,
+                                        h->channels[c].x_sampling) *
+                (size_t)exr_num_samples(crop.min_y, crop.max_y,
+                                        h->channels[c].y_sampling);
+            bytes = n * exr_pixel_size(h->channels[c].pixel_type);
+            off = (off + 7u) & ~(size_t)7u;
+            op->output.images[c] = (uint8_t *)op->output.images_block + off;
+            off += bytes ? bytes : 1;
         }
     }
     return EXR_SUCCESS;

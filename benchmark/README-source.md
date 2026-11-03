@@ -60,14 +60,37 @@ All four-worker measurements are emitted by the same commands. On this host,
 70.06 ms (1024²×32). Small NONE blocks do not benefit from file-side parallel
 queueing; this sweep is intended to make those costs visible.
 
-### Photographic PIZ comparison still under investigation
+### Photographic PIZ repeated loads
 
-For the original 660×440 photographic PIZ fixture, three fresh-process trials
-of 300 serial loads measured a median 5.546 ms with the pre-streaming
-`ef203db` library and 6.787 ms with bounded source reads (about 22% overhead,
-down from the earlier roughly 34%). Both builds use the same compiler/flags.
-A separate `perf stat` pass recorded 222,834 versus 91,431 page faults,
-1.512 versus 1.436 seconds of user CPU, and 0.524 versus 0.219 seconds of system
-CPU for the two 300-load runs. Allocation/page reuse is the remaining focus;
-the generic larger-image sweeps above have near-equal serial memory/file PIZ
-throughput. Global allocator policy has not been changed to influence results.
+`make bench-reload EXR_RELOAD_FIXTURE=<file.exr>` times repeated warm-cache
+loads of one file and reports minor page faults per load.
+`make bench-reload-ab EXR_RELOAD_FIXTURE=<file.exr>` additionally builds the
+`ef203db` baseline in a detached worktree, compiles the same benchmark source
+against both libraries, and alternates fresh processes (median of 9 processes,
+300 loads each, `THREADS=1`):
+
+| Path | ef203db ms/load | current ms/load | ef203db faults/load | current faults/load |
+|---|---:|---:|---:|---:|
+| `exr_load_from_file` | 5.784 | 5.310 | 288.7 | 0.0 |
+| `exr_load_from_file_ctx` | 5.280 | 5.246 | 0.0 | 0.0 |
+
+The 660×440 photographic PIZ fixture previously cost about 22% more through
+bounded source reads, almost all of it page faults. Whole-image loads now
+allocate all flat channel planes from one block when the planes total at most
+16 MiB (`exr_part.images_block`), so a repeated load hands the allocator a
+single large chunk instead of four medium ones. That keeps the working set
+resident across loads: measurements went from 735 to 0 minor faults per load
+and the median load is now faster than the whole-file `ef203db` loader.
+Allocations per load fell from 91 to 88 and peak tracked library bytes are
+unchanged apart from 8-byte plane alignment.
+
+Larger images keep per-channel planes: a single block at or above the
+allocator's large-allocation cutoff is served by a fresh mapping every time and
+re-faults the whole image (2048×2048×4 PIZ measured about 30% slower that way,
+1024×1024×4 and 1024×1024×8 were unaffected). Keeping the block bounded avoids
+that without touching allocator policy.
+
+No global allocator policy (`mallopt`, `MALLOC_*` tunables) is used and the
+bounded 64 KiB input window is unchanged; the improvement is a plain
+allocation-layout change. `exr_load_from_file_ctx` with a caller-reused
+`exr_context` remains the best option when a caller can keep one alive.

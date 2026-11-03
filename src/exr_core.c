@@ -546,7 +546,11 @@ void exr_part_free(const exr_allocator *a, exr_part *p) {
     if (!a) a = exr_default_allocator();
     nch = p->header.num_channels;
     if (p->images) {
-        for (c = 0; c < nch; ++c) exr_free(a, p->images[c]);
+        if (p->images_block) {
+            exr_free(a, p->images_block);
+        } else {
+            for (c = 0; c < nch; ++c) exr_free(a, p->images[c]);
+        }
         exr_free(a, p->images);
     }
     if (p->deep_images) {

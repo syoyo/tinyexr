@@ -218,8 +218,12 @@ typedef struct exr_part {
      * Flat (non-deep) pixel storage, planar per channel. images[c] points to
      * width*height elements of header.channels[c].pixel_type, row-major within
      * the data window. NULL for deep parts.
+     *
+     * When images_block is non-NULL, every images[c] points inside that single
+     * allocation and the block is released once instead of per channel.
      */
     void **images;
+    void *images_block;
 
     /*
      * Deep storage (is_deep != 0). deep_sample_counts[y*width+x] holds the

@@ -84,6 +84,11 @@ static inline void exr_once_finish(volatile long *state) {
 #define EXR_MAX_ATTR_SIZE (256u * 1024u * 1024u)
 #define EXR_MAX_DIMENSION (1 << 20) /* 1,048,576 px per axis */
 
+/* Largest total plane size that a whole-image load still satisfies with one
+ * contiguous block. Bigger images keep per-channel planes so a load never
+ * forces a single huge allocation. */
+#define EXR_FLAT_PLANES_BLOCK_MAX ((size_t)16u << 20)
+
 /* ============================================================================
  * Checked integer arithmetic (size_t domain)
  * ========================================================================== */
