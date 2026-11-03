@@ -78,6 +78,153 @@ static void moncurve_params(float gamma, float offset, float *scale, float *off,
     *slope = (float)(a * toc_powf((float)b, (float)G));
 }
 
+/* ---- shared op builders (YAML lowering and the CLF loader) --------------- */
+
+#define TOC_RANGE_UNBOUNDED 3.4e38f
+
+/* OCIO RangeOpData semantics on RGB; alpha passes through.
+ *   both pairs : out = (in-minIn)*(maxOut-minOut)/(maxIn-minIn) + minOut,
+ *                clamped to [minOut,maxOut] unless noclamp;
+ *   min only   : out = max(in + (minOut-minIn), minOut);
+ *   max only   : out = min(in + (maxOut-maxIn), maxOut). */
+toc_result toc_push_range(toc_op_list *list, int has_min, float min_in,
+                          float min_out, int has_max, float max_in,
+                          float max_out, int noclamp) {
+    float scale = 1.0f, offset;
+    toc_op *op;
+    int i, full = has_min && has_max;
+    if (!has_min && !has_max) return TOC_ERROR_PARSE;
+    if (full) {
+        if (!(max_in > min_in)) return TOC_ERROR_PARSE;
+        scale = (max_out - min_out) / (max_in - min_in);
+        offset = min_out - min_in * scale;
+    } else {
+        offset = has_min ? min_out - min_in : max_out - max_in;
+    }
+    op = toc_op_list_push(list, TOC_OP_RANGE);
+    if (!op) return TOC_ERROR_OUT_OF_MEMORY;
+    for (i = 0; i < 3; ++i) {
+        op->u.range.scale[i] = scale;
+        op->u.range.offset[i] = offset;
+        op->u.range.min[i] = has_min ? min_out : -TOC_RANGE_UNBOUNDED;
+        op->u.range.max[i] = has_max ? max_out : TOC_RANGE_UNBOUNDED;
+    }
+    op->u.range.scale[3] = 1.0f;
+    op->u.range.offset[3] = 0.0f;
+    op->u.range.min[3] = -TOC_RANGE_UNBOUNDED;
+    op->u.range.max[3] = TOC_RANGE_UNBOUNDED;
+    op->u.range.clamp_lo = op->u.range.clamp_hi = !(noclamp && full);
+    return TOC_SUCCESS;
+}
+
+/* MonCurve (OCIO GammaOpData MONCURVE[_MIRROR]) from per-channel gamma/offset;
+ * the inverse is analytic (flag). */
+toc_result toc_push_exp_linear(toc_op_list *list, const float gamma[4],
+                               const float offset[4], int inverse, int mirror) {
+    toc_op *op = toc_op_list_push(list, TOC_OP_EXP_LINEAR);
+    int i;
+    if (!op) return TOC_ERROR_OUT_OF_MEMORY;
+    for (i = 0; i < 4; ++i)
+        moncurve_params(gamma[i], offset[i], &op->u.exp_linear.scale[i],
+                        &op->u.exp_linear.offset[i], &op->u.exp_linear.gamma[i],
+                        &op->u.exp_linear.breakpoint[i], &op->u.exp_linear.slope[i]);
+    op->u.exp_linear.inverse = inverse ? 1 : 0;
+    op->u.exp_linear.mirror = mirror ? 1 : 0;
+    return TOC_SUCCESS;
+}
+
+/* LogCamera (OCIO LogOpData camera style). Without an explicit linearSlope the
+ * linear segment is derived for C1 continuity at the break; its offset always
+ * gives C0 continuity. */
+toc_result toc_push_logcam(toc_op_list *list, float base, const float ls[3],
+                           const float lo[3], const float ns[3],
+                           const float no[3], const float brk[3],
+                           const float *lslope, int inverse) {
+    toc_op *op = toc_op_list_push(list, TOC_OP_LOG_CAMERA);
+    int i;
+    if (!op) return TOC_ERROR_OUT_OF_MEMORY;
+    op->u.logcam.base = base;
+    for (i = 0; i < 3; ++i) {
+        float lnb = toc_log2f(base) * 0.6931471805599453f; /* ln(base) */
+        float xb = ns[i] * brk[i] + no[i];
+        float yb = ls[i] * (toc_log2f(xb > 0 ? xb : 1e-30f) / toc_log2f(base)) + lo[i];
+        float lsl = lslope ? lslope[i]
+                           : (ls[i] * ns[i] / ((xb != 0 ? xb : 1e-30f) * lnb));
+        op->u.logcam.log_slope[i] = ls[i];
+        op->u.logcam.log_offset[i] = lo[i];
+        op->u.logcam.lin_slope[i] = ns[i];
+        op->u.logcam.lin_offset[i] = no[i];
+        op->u.logcam.lin_break[i] = brk[i];
+        op->u.logcam.linear_slope[i] = lsl;
+        op->u.logcam.linear_offset[i] = yb - lsl * brk[i]; /* C0 continuity */
+    }
+    op->u.logcam.inverse = inverse ? 1 : 0;
+    return TOC_SUCCESS;
+}
+
+/* ASC CDL. Forward is one CDL op; the inverse is decomposed into basic ops
+ * (inverse saturation matrix -> inverse power -> inverse slope/offset) so every
+ * backend supports it. */
+toc_result toc_push_cdl(toc_op_list *list, const float sl[3], const float of[3],
+                        const float pw[3], float sat, int clamp_val, int invert) {
+    toc_op *op;
+    int i;
+    if (invert) {
+        /* ASC CDL saturation uses Rec.709 luma (as the forward kernel) */
+        float luma[3] = {0.2126f, 0.7152f, 0.0722f};
+        float ny = (sat != 0.0f) ? 1.0f / sat : 1.0f;
+        /* 1. Inverse saturation as a matrix:
+         *    c' = c/s - ((1-s)/s)*broadcast(luma.c)
+         *  => M[i][j] = delta(i,j)/s + (1-1/s)*luma[j]   (col-major). */
+        {
+            toc_op *m = toc_op_list_push(list, TOC_OP_MATRIX);
+            if (!m) return TOC_ERROR_OUT_OF_MEMORY;
+            memset(m->u.matrix.m, 0, sizeof(m->u.matrix.m));
+            for (i = 0; i < 3; ++i) {
+                int j;
+                for (j = 0; j < 3; ++j)
+                    m->u.matrix.m[j * 4 + i] =
+                        (i == j ? ny : 0.0f) + (1.0f - ny) * luma[j];
+            }
+            m->u.matrix.m[15] = 1.0f;
+            memset(m->u.matrix.off, 0, sizeof(m->u.matrix.off));
+        }
+        /* 2. Inverse power: pow(c, 1/power) */
+        {
+            toc_op *e = toc_op_list_push(list, TOC_OP_EXPONENT);
+            if (!e) return TOC_ERROR_OUT_OF_MEMORY;
+            for (i = 0; i < 3; ++i)
+                e->u.exponent.e[i] = (pw[i] != 0.0f) ? 1.0f / pw[i] : 1.0f;
+            e->u.exponent.e[3] = 1.0f;
+        }
+        /* 3. Inverse (slope,offset): (c - offset) / slope */
+        {
+            toc_op *r = toc_op_list_push(list, TOC_OP_RANGE);
+            if (!r) return TOC_ERROR_OUT_OF_MEMORY;
+            for (i = 0; i < 4; ++i) {
+                float s = (i < 3 && sl[i] != 0.0f) ? 1.0f / sl[i] : 1.0f;
+                r->u.range.scale[i] = s;
+                r->u.range.offset[i] = (i < 3) ? -of[i] * s : 0.0f;
+                r->u.range.min[i] = 0.0f;
+                r->u.range.max[i] = 1.0f;
+            }
+            r->u.range.clamp_lo = clamp_val;
+            r->u.range.clamp_hi = clamp_val;
+        }
+        return TOC_SUCCESS;
+    }
+    op = toc_op_list_push(list, TOC_OP_CDL);
+    if (!op) return TOC_ERROR_OUT_OF_MEMORY;
+    for (i = 0; i < 3; ++i) {
+        op->u.cdl.slope[i] = sl[i];
+        op->u.cdl.offset[i] = of[i];
+        op->u.cdl.power[i] = pw[i];
+    }
+    op->u.cdl.saturation = sat;
+    op->u.cdl.clamp = clamp_val;
+    return TOC_SUCCESS;
+}
+
 /* ---- lower a primitive transform into an op ------------------------------ */
 toc_result toc_lower_transform(const toc_config *cfg, toc_op_list *list,
                                const toc_node *node, int invert) {
@@ -125,19 +272,9 @@ toc_result toc_lower_transform(const toc_config *cfg, toc_op_list *list,
 
     if (strcmp(tag, "ExponentWithLinearTransform") == 0) {
         float gamma[4] = {1, 1, 1, 1}, offset[4] = {0, 0, 0, 0};
-        int i;
         read_vec(node, "gamma", gamma, 4);
         read_vec(node, "offset", offset, 4);
-        op = toc_op_list_push(list, TOC_OP_EXP_LINEAR);
-        if (!op) return TOC_ERROR_OUT_OF_MEMORY;
-        for (i = 0; i < 4; ++i)
-            moncurve_params(gamma[i], offset[i], &op->u.exp_linear.scale[i],
-                            &op->u.exp_linear.offset[i],
-                            &op->u.exp_linear.gamma[i],
-                            &op->u.exp_linear.breakpoint[i],
-                            &op->u.exp_linear.slope[i]);
-        op->u.exp_linear.inverse = invert ? 1 : 0;
-        return TOC_SUCCESS;
+        return toc_push_exp_linear(list, gamma, offset, invert, 0);
     }
 
     if (strcmp(tag, "LogTransform") == 0 ||
@@ -170,7 +307,7 @@ toc_result toc_lower_transform(const toc_config *cfg, toc_op_list *list,
         float ls[3] = {1, 1, 1}, lo[3] = {0, 0, 0};
         float ns[3] = {1, 1, 1}, no[3] = {0, 0, 0};
         float brk[3] = {0, 0, 0}, lslope[3];
-        int has_lslope, i;
+        int has_lslope;
         read_scalar(node, "base", &base);
         read_vec2(node, "log_side_slope", "logSideSlope", ls, 3);
         read_vec2(node, "log_side_offset", "logSideOffset", lo, 3);
@@ -179,32 +316,15 @@ toc_result toc_lower_transform(const toc_config *cfg, toc_op_list *list,
         if (read_vec2(node, "lin_side_break", "linSideBreak", brk, 3) == 0)
             return TOC_ERROR_PARSE; /* required */
         has_lslope = read_vec2(node, "linear_slope", "linearSlope", lslope, 3) != 0;
-        op = toc_op_list_push(list, TOC_OP_LOG_CAMERA);
-        if (!op) return TOC_ERROR_OUT_OF_MEMORY;
-        op->u.logcam.base = base;
-        for (i = 0; i < 3; ++i) {
-            float lnb = toc_log2f(base) * 0.6931471805599453f; /* ln(base) */
-            float xb = ns[i] * brk[i] + no[i];
-            float yb = ls[i] * (toc_log2f(xb > 0 ? xb : 1e-30f) / toc_log2f(base)) + lo[i];
-            float lsl = has_lslope ? lslope[i]
-                                   : (ls[i] * ns[i] / ((xb != 0 ? xb : 1e-30f) * lnb));
-            op->u.logcam.log_slope[i] = ls[i];
-            op->u.logcam.log_offset[i] = lo[i];
-            op->u.logcam.lin_slope[i] = ns[i];
-            op->u.logcam.lin_offset[i] = no[i];
-            op->u.logcam.lin_break[i] = brk[i];
-            op->u.logcam.linear_slope[i] = lsl;
-            op->u.logcam.linear_offset[i] = yb - lsl * brk[i]; /* C0 continuity */
-        }
-        op->u.logcam.inverse = invert ? 1 : 0;
-        return TOC_SUCCESS;
+        return toc_push_logcam(list, base, ls, lo, ns, no, brk,
+                               has_lslope ? lslope : NULL, invert);
     }
 
     if (strcmp(tag, "CDLTransform") == 0) {
         float sl[3] = {1, 1, 1}, of[3] = {0, 0, 0}, pw[3] = {1, 1, 1};
         float sat = 1.0f;
         const toc_node *style;
-        int i, clamp_val = 1;
+        int clamp_val = 1;
         read_vec(node, "slope", sl, 3);
         read_vec(node, "offset", of, 3);
         read_vec(node, "power", pw, 3);
@@ -214,87 +334,24 @@ toc_result toc_lower_transform(const toc_config *cfg, toc_op_list *list,
             const char *s = toc_node_scalar(style);
             if (s && strcmp(s, "noclamp") == 0) clamp_val = 0;
         }
-        if (invert) {
-            /* Decompose CDL inverse into basic ops for backend-agnostic support.
-             * Forward: slope*in+offset -> power -> saturation.
-             * Inverse: inv_saturation -> inv_power -> inv_slope+offset. */
-            float luma[3] = {0.2126f, 0.7152f, 0.0593f};
-            float ny = (sat != 0.0f) ? 1.0f / sat : 1.0f;
-            /* 1. Inverse saturation as a matrix:
-             *    c' = c/s - ((1-s)/s)*broadcast(luma·c)
-             *  => M[i][j] = delta(i,j)/s + (1-1/s)*luma[j]   (col-major). */
-            {
-                toc_op *m = toc_op_list_push(list, TOC_OP_MATRIX);
-                if (!m) return TOC_ERROR_OUT_OF_MEMORY;
-                memset(m->u.matrix.m, 0, sizeof(m->u.matrix.m));
-                for (i = 0; i < 3; ++i) {
-                    int j;
-                    for (j = 0; j < 3; ++j)
-                        m->u.matrix.m[j * 4 + i] =
-                            (i == j ? ny : 0.0f) + (1.0f - ny) * luma[j];
-                }
-                m->u.matrix.m[15] = 1.0f;
-                memset(m->u.matrix.off, 0, sizeof(m->u.matrix.off));
-            }
-            /* 2. Inverse power: pow(c, 1/power) */
-            {
-                toc_op *e = toc_op_list_push(list, TOC_OP_EXPONENT);
-                if (!e) return TOC_ERROR_OUT_OF_MEMORY;
-                for (i = 0; i < 3; ++i)
-                    e->u.exponent.e[i] = (pw[i] != 0.0f) ? 1.0f / pw[i] : 1.0f;
-                e->u.exponent.e[3] = 1.0f;
-            }
-            /* 3. Inverse (slope,offset): (c - offset) / slope = (1/slope)*c - offset/slope */
-            {
-                toc_op *r = toc_op_list_push(list, TOC_OP_RANGE);
-                if (!r) return TOC_ERROR_OUT_OF_MEMORY;
-                for (i = 0; i < 4; ++i) {
-                    float s = (i < 3 && sl[i] != 0.0f) ? 1.0f / sl[i] : 1.0f;
-                    r->u.range.scale[i] = s;
-                    r->u.range.offset[i] = (i < 3) ? -of[i] * s : 0.0f;
-                    r->u.range.min[i] = 0.0f;
-                    r->u.range.max[i] = 1.0f;
-                }
-                r->u.range.clamp_lo = clamp_val;
-                r->u.range.clamp_hi = clamp_val;
-            }
-            return TOC_SUCCESS;
-        }
-        op = toc_op_list_push(list, TOC_OP_CDL);
-        if (!op) return TOC_ERROR_OUT_OF_MEMORY;
-        for (i = 0; i < 3; ++i) {
-            op->u.cdl.slope[i] = sl[i];
-            op->u.cdl.offset[i] = of[i];
-            op->u.cdl.power[i] = pw[i];
-        }
-        op->u.cdl.saturation = sat;
-        op->u.cdl.clamp = clamp_val;
-        return TOC_SUCCESS;
+        return toc_push_cdl(list, sl, of, pw, sat, clamp_val, invert);
     }
 
     if (strcmp(tag, "RangeTransform") == 0) {
-        float minIn, maxIn, minOut, maxOut, scale = 1.0f, offset = 0.0f;
+        float minIn = 0, maxIn = 0, minOut = 0, maxOut = 0;
         int hasIn = read_scalar(node, "minInValue", &minIn);
         int hasInH = read_scalar(node, "maxInValue", &maxIn);
         int hasOut = read_scalar(node, "minOutValue", &minOut);
         int hasOutH = read_scalar(node, "maxOutValue", &maxOut);
-        int i;
-        if (hasIn && hasInH && hasOut && hasOutH && (maxIn - minIn) != 0.0f) {
-            scale = (maxOut - minOut) / (maxIn - minIn);
-            offset = minOut - minIn * scale;
-        }
-        op = toc_op_list_push(list, TOC_OP_RANGE);
-        if (!op) return TOC_ERROR_OUT_OF_MEMORY;
-        for (i = 0; i < 4; ++i) {
-            op->u.range.scale[i] = scale;
-            op->u.range.offset[i] = offset;
-            op->u.range.min[i] = hasOut ? minOut : 0.0f;
-            op->u.range.max[i] = hasOutH ? maxOut : 1.0f;
-        }
-        op->u.range.clamp_lo = hasOut;
-        op->u.range.clamp_hi = hasOutH;
-        if (invert) return toc_invert_op(list, op);
-        return TOC_SUCCESS;
+        const char *st = toc_node_scalar(toc_node_map_get(node, "style"));
+        int noclamp = st && strcmp(st, "noClamp") == 0;
+        toc_result rc;
+        if (hasIn != hasOut || hasInH != hasOutH) return TOC_ERROR_PARSE;
+        rc = toc_push_range(list, hasIn, minIn, minOut, hasInH, maxIn, maxOut,
+                            noclamp);
+        if (TOC_OK(rc) && invert)
+            return toc_invert_op(list, &list->ops[list->count - 1]);
+        return rc;
     }
 
     return TOC_ERROR_UNSUPPORTED;
@@ -510,15 +567,17 @@ toc_result toc_invert_op(toc_op_list *list, toc_op *op) {
                 no[i] = -op->u.range.offset[i] * ns[i];
             }
             for (i = 0; i < 4; ++i) {
+                /* The inverse clamps to the forward *input* bounds: map the
+                 * forward output bounds back through the inverse (unbounded
+                 * sides stay unbounded). Clamp flags are unchanged. */
                 float lo = op->u.range.min[i], hi = op->u.range.max[i];
-                /* output bounds become input bounds; recompute via new map */
+                float a = lo <= -3.0e38f ? lo : lo * ns[i] + no[i];
+                float b = hi >= 3.0e38f ? hi : hi * ns[i] + no[i];
                 op->u.range.scale[i] = ns[i];
                 op->u.range.offset[i] = no[i];
-                op->u.range.min[i] = lo; /* clamp range is symmetric for [0,1] */
-                op->u.range.max[i] = hi;
+                op->u.range.min[i] = a < b ? a : b;
+                op->u.range.max[i] = a < b ? b : a;
             }
-            { int t = op->u.range.clamp_lo; op->u.range.clamp_lo =
-                  op->u.range.clamp_hi; op->u.range.clamp_hi = t; }
             return TOC_SUCCESS;
         }
         case TOC_OP_EXPONENT:
@@ -645,8 +704,27 @@ static toc_result walk_node(const toc_config *cfg, toc_op_list *list,
         if (++list->build_files > TOC_MAX_FILE_LOADS) return TOC_ERROR_PARSE;
         rc = cfg->reader(cfg->reader_user, src, &cfg->alloc, &data, &len);
         if (!TOC_OK(rc)) return rc;
-        rc = toc_load_lutfile(list, src, data, len, dir_inv);
-        toc_free(&cfg->alloc, data);
+        {
+            size_t first = list->count, k;
+            const char *in = toc_node_scalar(toc_node_map_get(node, "interpolation"));
+            rc = toc_load_lutfile(list, src, data, len, dir_inv);
+            toc_free(&cfg->alloc, data);
+            /* FileTransform interpolation overrides the file's default, as in
+             * OCIO: nearest | linear | tetrahedral | best (3D tetrahedral). */
+            if (TOC_OK(rc) && in && strcmp(in, "default") != 0) {
+                int nearest = strcmp(in, "nearest") == 0;
+                int tetra = strcmp(in, "tetrahedral") == 0 || strcmp(in, "best") == 0;
+                for (k = first; k < list->count; ++k) {
+                    toc_op *o = &list->ops[k];
+                    if (o->kind == TOC_OP_LUT1D)
+                        o->u.lut1d.interp = nearest ? TOC_INTERP_NEAREST : TOC_INTERP_LINEAR;
+                    else if (o->kind == TOC_OP_LUT3D)
+                        /* no 3D nearest kernel (CPU or GPU): use trilinear */
+                        o->u.lut3d.interp = tetra ? TOC_INTERP_TETRAHEDRAL
+                                                  : TOC_INTERP_TRILINEAR;
+                }
+            }
+        }
         return rc;
     }
     if (strcmp(tag, "BuiltinTransform") == 0) {

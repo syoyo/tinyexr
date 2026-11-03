@@ -411,7 +411,13 @@ static void make_reach_m_table(float *reach, const toc_jmh *reachp, float limJ) 
     reach[A2_UPPER + 1] = reach[A2_BASE + 1];
 }
 static float reach_m_from_table(float h, const float *rt) {
-    unsigned base = (unsigned)h;
+    unsigned base;
+    /* NaN / out-of-range hue (e.g. NaN pixels) must not index outside the
+     * table: the cast would be undefined and the index unbounded. In-range
+     * hues [0, A2_NOMINAL) are unchanged. */
+    if (!(h >= 0.0f)) h = 0.0f;
+    if (h > (float)A2_NOMINAL - 0.001f) h = (float)A2_NOMINAL - 0.001f;
+    base = (unsigned)h;
     float t = h - (float)base;
     unsigned lo = base + A2_BASE;
     return a2_lerpf(rt[lo], rt[lo + 1], t);

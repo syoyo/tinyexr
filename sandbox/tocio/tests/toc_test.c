@@ -630,7 +630,7 @@ static void test_lutfile(void) {
         "<?xml version=\"1.0\"?>\n"
         "<ProcessList compCLFversion=\"3\" id=\"id\">\n"
         "  <LUT1D>\n"
-        "    <Array dim=\"3 4\">\n"
+        "    <Array dim=\"4 3\">\n"
         "      0 0 0\n"
         "      0.3333 0.3333 0.3333\n"
         "      0.6667 0.6667 0.6667\n"
@@ -643,14 +643,14 @@ static void test_lutfile(void) {
         "id3.clf",
         "<ProcessList compCLFversion=\"3\" id=\"id3\">\n"
         "  <LUT3D>\n"
-        "    <Array dim=\"3 2 2 2\">\n"
+        "    <Array dim=\"2 2 2 3\">\n"
         "      0 0 0\n"
-        "      1 0 0\n"
-        "      0 1 0\n"
-        "      1 1 0\n"
         "      0 0 1\n"
-        "      1 0 1\n"
+        "      0 1 0\n"
         "      0 1 1\n"
+        "      1 0 0\n"
+        "      1 0 1\n"
+        "      1 1 0\n"
         "      1 1 1\n"
         "    </Array>\n"
         "  </LUT3D>\n"
@@ -712,8 +712,8 @@ static void test_lutfile(void) {
     {
         static const char *clf =
             "<ProcessList>\n"
-            "  <Exponent>\n"
-            "    <ExponentParams style=\"basicFwd\">2.2 2.2 2.2</ExponentParams>\n"
+            "  <Exponent style=\"basicFwd\">\n"
+            "    <ExponentParams exponent=\"2.2\"/>\n"
             "  </Exponent>\n"
             "</ProcessList>\n";
         load_and_check("gamma.clf", clf, 0.5f, powf(0.5f, 2.2f), ".clf Exponent");
@@ -755,7 +755,7 @@ static void test_lutfile(void) {
     load_and_check(NULL,
                    "<?xml version=\"1.0\"?>\n<ProcessList>\n"
                    "  <LUT1D>\n"
-                   "    <Array dim=\"3 2\">0 0 0 1 1 1</Array>\n"
+                   "    <Array dim=\"2 3\">0 0 0 1 1 1</Array>\n"
                    "  </LUT1D>\n"
                    "</ProcessList>\n",
                    0.5f, 0.5f, ".clf sniff by <?xml");
@@ -763,102 +763,58 @@ static void test_lutfile(void) {
     load_and_check(NULL,
                    "<ProcessList>\n"
                    "  <LUT1D>\n"
-                   "    <Array dim=\"3 2\">0 0 0 1 1 1</Array>\n"
+                   "    <Array dim=\"2 3\">0 0 0 1 1 1</Array>\n"
                    "  </LUT1D>\n"
                    "</ProcessList>\n",
                    0.5f, 0.5f, ".clf sniff by <ProcessList");
-    /* ---- CSP (ColorSpace Process) ----------------------------------------- */
-    /* 3D mesh identity N=2 */
-    load_and_check(
-        "id.csp",
-        "CSPLUTV1.0\n"
-        "3DMESH 2\n"
-        "3D\n"
-        "0 0 0\n1 0 0\n0 1 0\n1 1 0\n"
-        "0 0 1\n1 0 1\n0 1 1\n1 1 1\n",
-        0.4f, 0.4f, ".csp 3D identity");
-    /* PRE_1D + 3D identity */
-    load_and_check(
-        "pre.csp",
-        "CSPLUTV1.0\n"
-        "PRE_1D 2\n"
-        "0 0 0\n1 1 1\n"
-        "3DMESH 2\n"
-        "3D\n"
-        "0 0 0\n1 0 0\n0 1 0\n1 1 0\n"
-        "0 0 1\n1 0 1\n0 1 1\n1 1 1\n",
-        0.3f, 0.3f, ".csp PRE_1D + 3D identity");
-    /* POST_1D + 3D identity */
-    load_and_check(
-        "post.csp",
-        "CSPLUTV1.0\n"
-        "3DMESH 2\n"
-        "3D\n"
-        "0 0 0\n1 0 0\n0 1 0\n1 1 0\n"
-        "0 0 1\n1 0 1\n0 1 1\n1 1 1\n"
-        "POST_1D 2\n"
-        "0 0 0\n1 1 1\n",
-        0.3f, 0.3f, ".csp 3D + POST_1D identity");
-    /* full pipeline: PRE_1D + 3D + POST_1D */
-    load_and_check(
-        "full.csp",
-        "CSPLUTV1.0\n"
-        "POST_1D 2\n"
-        "0 0 0\n1 1 1\n"
-        "3DMESH 2 2 2\n"
-        "PRE_1D 2\n"
-        "0 0 0\n1 1 1\n"
-        "3D\n"
-        "0 0 0\n1 0 0\n0 1 0\n1 1 0\n"
-        "0 0 1\n1 0 1\n0 1 1\n1 1 1\n",
-        0.3f, 0.3f, ".csp full pipeline identity");
-    /* CSPLUT0001 header */
-    load_and_check(
-        "alt.csp",
-        "CSPLUT0001\n"
-        "3DMESH 2\n"
-        "3D\n"
-        "0 0 0\n1 0 0\n0 1 0\n1 1 0\n"
-        "0 0 1\n1 0 1\n0 1 1\n1 1 1\n",
-        0.4f, 0.4f, ".csp CSPLUT0001 header");
+    /* ---- CSP (Cinespace "CSPLUTV100", OCIO FileFormatCSP layout) -------- */
+#define CSP_ID3 "0 0 0\n1 0 0\n0 1 0\n1 1 0\n0 0 1\n1 0 1\n0 1 1\n1 1 1\n"
+#define CSP_NOPRE "2\n0 1\n0 1\n2\n0 1\n0 1\n2\n0 1\n0 1\n"
+    /* 3D identity N=2 (red fastest), identity preluts */
+    load_and_check("id.csp", "CSPLUTV100\n3D\n\n" CSP_NOPRE "\n2 2 2\n" CSP_ID3,
+                   0.4f, 0.4f, ".csp 3D identity");
+    /* metadata block, blank lines, CRLF and lower-case keywords */
+    load_and_check("meta.csp",
+                   "CSPLUTV100\r\n3d\r\nBEGIN METADATA\r\nsome text\r\n"
+                   "END METADATA\r\n\r\n" CSP_NOPRE "\r\n2 2 2\r\n" CSP_ID3,
+                   0.4f, 0.4f, ".csp metadata + CRLF");
+    /* preluts with count 0 are identity channels */
+    load_and_check("zero.csp", "CSPLUTV100\n3D\n0\n0\n0\n2 2 2\n" CSP_ID3,
+                   0.4f, 0.4f, ".csp zero-length preluts");
+    /* 1D LUT (squares) */
+    load_and_check("sq.csp",
+                   "CSPLUTV100\n1D\n" CSP_NOPRE "3\n0 0 0\n0.25 0.25 0.25\n1 1 1\n",
+                   0.5f, 0.25f, ".csp 1D LUT");
     /* content sniffing (no extension) */
-    load_and_check(NULL,
-                   "CSPLUTV1.0\n"
-                   "3DMESH 2\n"
-                   "3D\n"
-                   "0 0 0\n1 0 0\n0 1 0\n1 1 0\n"
-                   "0 0 1\n1 0 1\n0 1 1\n1 1 1\n",
-                   0.4f, 0.4f, ".csp sniff by content");
-    /* multi-op count check for full pipeline */
+    load_and_check(NULL, "CSPLUTV100\n3D\n" CSP_NOPRE "2 2 2\n" CSP_ID3, 0.4f, 0.4f,
+                   ".csp sniff by content");
+    /* non-identity prelut over [0,2]: in 0..2 -> out 0..1 (linear spline),
+     * so the pipeline maps 0.8 -> 0.4 through an identity cube. Ops are the
+     * [min,max]->[0,1] matrix, the 65536-sample prelut LUT1D and the LUT3D. */
     {
         static const char *csp =
-            "CSPLUTV1.0\n"
-            "PRE_1D 2\n0 0 0\n0.5 0.5 0.5\n"
-            "3DMESH 2\n"
-            "3D\n"
-            "0 0 0\n1 0 0\n0 1 0\n1 1 0\n"
-            "0 0 1\n1 0 1\n0 1 1\n1 1 1\n"
-            "POST_1D 2\n0 0 0\n1 1 1\n";
+            "CSPLUTV100\n3D\n2\n0 2\n0 1\n2\n0 2\n0 1\n2\n0 2\n0 1\n2 2 2\n" CSP_ID3;
         toc_op_list *l = newlist();
-        toc_result rc = toc_load_lutfile(l, "full.csp", csp, strlen(csp), 0);
-        CHECK(TOC_OK(rc) && l->count == 3, ".csp 3-op pipeline");
-        CHECK(TOC_OK(rc) && l->count >= 3 &&
-                  l->ops[0].kind == TOC_OP_LUT1D &&
-                  l->ops[1].kind == TOC_OP_LUT3D &&
-                  l->ops[2].kind == TOC_OP_LUT1D,
-              ".csp 3-op types (LUT1D->LUT3D->LUT1D)");
+        toc_result rc = toc_load_lutfile(l, "pre.csp", csp, strlen(csp), 0);
+        CHECK(TOC_OK(rc) && l->count == 3 && l->ops[0].kind == TOC_OP_MATRIX &&
+                  l->ops[1].kind == TOC_OP_LUT1D && l->ops[1].u.lut1d.length == 65536 &&
+                  l->ops[2].kind == TOC_OP_LUT3D,
+              ".csp prelut -> matrix + LUT1D + LUT3D");
+        if (TOC_OK(rc)) {
+            float px[3] = {0.8f, 0.8f, 0.8f};
+            toc_apply(l, px, 1, 3);
+            CHECK(approx(px[0], 0.4f, 1e-4f), ".csp prelut value");
+        }
         toc_op_list_free(l);
     }
-    /* non-identity PRE_1D: scales by 0.5 */
-    load_and_check(
-        "scale.csp",
-        "CSPLUTV1.0\n"
-        "PRE_1D 2\n0 0 0\n0.5 0.5 0.5\n"
-        "3DMESH 2\n"
-        "3D\n"
-        "0 0 0\n1 0 0\n0 1 0\n1 1 0\n"
-        "0 0 1\n1 0 1\n0 1 1\n1 1 1\n",
-        0.4f, 0.2f, ".csp PRE_1D scale 0.5");
+    /* invented legacy syntax is not CSP */
+    {
+        static const char *bad = "CSPLUTV1.0\n3DMESH 2\n3D\n" CSP_ID3;
+        toc_op_list *l = newlist();
+        CHECK(!TOC_OK(toc_load_lutfile(l, "old.csp", bad, strlen(bad), 0)),
+              ".csp non-standard header rejected");
+        toc_op_list_free(l);
+    }
 }
 
 /* file reader returning a baked identity .spi1d for any name */
@@ -1013,9 +969,9 @@ static void test_hostile(void) {
     {
         const char *cube = "LUT_3D_SIZE 256\n0 0 0\n";
         const char *spi3 = "SPILUT 1.0\n3 3\n256 256 256\n0 0 0 0 0 0\n";
-        const char *clf = "<ProcessList><LUT3D><Array dim=\"3 256 256 256\">0 0 0"
+        const char *clf = "<ProcessList><LUT3D><Array dim=\"256 256 256 3\">0 0 0"
                           "</Array></LUT3D></ProcessList>";
-        const char *csp = "CSPLUTV1.0\n3DMESH 256\n3D\n0 0 0\n";
+        const char *csp = "CSPLUTV100\n3D\n0\n0\n0\n129 129 129\n0 0 0\n";
         toc_op_list *l = newlist();
         CHECK(toc_load_lutfile(l, "big.cube", cube, strlen(cube), 0) == TOC_ERROR_PARSE,
               "oversized .cube header rejected");
@@ -1033,14 +989,14 @@ static void test_hostile(void) {
         const char *cube = "LUT_1D_SIZE 2\nLUT_1D_SIZE 2\n0 0 0\n1 1 1\n";
         const char *clf = "<ProcessList><LUT1D><Array dim=\"2 3\">0 0 0 1 1 1</Array>"
                           "<Array dim=\"2 3\">0 0 0 1 1 1</Array></LUT1D></ProcessList>";
-        const char *csp = "CSPLUTV1.0\nPRE_1D 2\n0 0 0 1 1 1\nPRE_1D 2\n0 0 0 1 1 1\n";
+        const char *csp = "CSPLUTV100\n3D\n3\n0 0.5 1\n0 1\n0\n0\n2 2 2\n" CSP_ID3;
         toc_op_list *l = newlist();
         CHECK(!TOC_OK(toc_load_lutfile(l, "dup.cube", cube, strlen(cube), 0)),
               "duplicate .cube size rejected");
         CHECK(!TOC_OK(toc_load_lutfile(l, "dup.clf", clf, strlen(clf), 0)),
               "duplicate .clf Array rejected");
         CHECK(!TOC_OK(toc_load_lutfile(l, "dup.csp", csp, strlen(csp), 0)),
-              "duplicate .csp PRE_1D rejected");
+              "mismatched .csp prelut rejected");
         toc_op_list_free(l);
     }
     /* CLF LUT1D must supply every channel value (no uninitialized reads). */
@@ -1064,6 +1020,45 @@ static void test_hostile(void) {
         }
         toc_op_list_free(l);
         CHECK(1, "unterminated <? stays in bounds");
+    }
+    /* ACES 2.0 output transform on non-finite / huge pixels: table lookups
+     * must stay in range (UBSan aborts on the float->index cast otherwise). */
+    {
+        static const float v[6] = {0.0f, 1.0f, -1.0f, 1e30f, -1e30f, 3e38f};
+        toc_op_list *l = newlist();
+        float px[4 * 8];
+        union { uint32_t u; float f; } nan_u, inf_u;
+        int i;
+        nan_u.u = 0x7fc00000u; inf_u.u = 0x7f800000u;
+        if (TOC_OK(toc_builtin_expand(
+                l, "ACES-OUTPUT - ACES2065-1_to_CIE-XYZ-D65 - SDR-100nit-REC709_2.0", 0))) {
+            for (i = 0; i < 4 * 8; ++i) px[i] = v[(i * 7 + i / 4) % 6];
+            px[0] = nan_u.f; px[5] = inf_u.f; px[10] = -inf_u.f; px[13] = nan_u.f;
+            px[16] = 0.5f; px[17] = nan_u.f; px[18] = 0.5f; /* NaN hue, finite J */
+            toc_apply(l, px, 8, 4);
+            /* The op itself, unshielded by the preceding range clamps (the JIT
+             * and single-pixel helper paths apply ops one at a time). */
+            for (i = 0; i < (int)l->count; ++i) {
+                if (l->ops[i].kind == TOC_OP_ACES_OUTPUT) {
+                    /* every combination of special values over R, G, B */
+                    float sv[9];
+                    int r, g, b;
+                    memcpy(sv, v, sizeof(v));
+                    sv[6] = nan_u.f; sv[7] = inf_u.f; sv[8] = -inf_u.f;
+                    for (r = 0; r < 9; ++r)
+                        for (g = 0; g < 9; ++g)
+                            for (b = 0; b < 9; ++b) {
+                                float q[4];
+                                q[0] = sv[r]; q[1] = sv[g]; q[2] = sv[b]; q[3] = 1.0f;
+                                toc_apply_op_pixel(&l->ops[i], q, 4);
+                            }
+                }
+            }
+            CHECK(1, "ACES2 output on NaN/Inf pixels stays in bounds");
+        } else {
+            CHECK(0, "ACES2 builtin expand");
+        }
+        toc_op_list_free(l);
     }
     /* Huge exponents/integers saturate (no int overflow, no 2^31-step loop). */
     {
@@ -1124,6 +1119,170 @@ static void test_hostile(void) {
     }
 }
 
+/* ---- CLF conformance (dim order, bit depth, styles; checked vs PyOCIO) --- */
+static toc_op_list *clf_load(const char *body, toc_result *rc) {
+    static char buf[4096];
+    toc_op_list *l = newlist();
+    snprintf(buf, sizeof(buf),
+             "<?xml version=\"1.0\"?>\n<ProcessList id=\"t\" compCLFversion=\"3\">\n%s"
+             "</ProcessList>\n", body);
+    *rc = toc_load_lutfile(l, "t.clf", buf, strlen(buf), 0);
+    return l;
+}
+
+static int clf_px(const char *body, const float in[4], const float want[4],
+                  float eps) {
+    toc_result rc;
+    toc_op_list *l = clf_load(body, &rc);
+    float px[4];
+    int ok = TOC_OK(rc), c;
+    memcpy(px, in, sizeof(px));
+    if (ok) {
+        toc_apply(l, px, 1, 4);
+        for (c = 0; c < 4; ++c) ok = ok && approx(px[c], want[c], eps);
+    }
+    toc_op_list_free(l);
+    return ok;
+}
+
+static void test_clf_conformance(void) {
+    /* LUT3D: dim="N N N 3", entries blue-fastest. f(r,g,b)=(r, g/2, b/4) is
+     * affine, so any interpolation is exact; a red-fastest misread swaps r/b. */
+    static const char *lut3 =
+        "<LUT3D inBitDepth=\"32f\" outBitDepth=\"32f\"><Array dim=\"2 2 2 3\">\n"
+        "0 0 0  0 0 0.25  0 0.5 0  0 0.5 0.25\n"
+        "1 0 0  1 0 0.25  1 0.5 0  1 0.5 0.25\n</Array></LUT3D>\n";
+    float in[4], want[4];
+    in[0] = 1; in[1] = 0; in[2] = 0; in[3] = 0.7f;
+    want[0] = 1; want[1] = 0; want[2] = 0; want[3] = 0.7f;
+    CHECK(clf_px(lut3, in, want, 1e-5f), "clf LUT3D blue-fastest red axis");
+    in[0] = 0; in[2] = 1; want[0] = 0; want[2] = 0.25f;
+    CHECK(clf_px(lut3, in, want, 1e-5f), "clf LUT3D blue-fastest blue axis");
+    {
+        toc_result rc;
+        toc_op_list *l = clf_load("<LUT3D><Array dim=\"3 2 2 2\">0 0 0 1 1 1 0 0 0 1 1 1 "
+                                  "0 0 0 1 1 1 0 0 0 1 1 1</Array></LUT3D>\n", &rc);
+        CHECK(!TOC_OK(rc), "clf LUT3D legacy dim=\"3 N N N\" rejected (as OCIO)");
+        toc_op_list_free(l);
+        l = clf_load(lut3, &rc);
+        CHECK(TOC_OK(rc) && l->ops[0].u.lut3d.interp == TOC_INTERP_TRILINEAR,
+              "clf LUT3D default interpolation trilinear (CLF/OCIO default)");
+        toc_op_list_free(l);
+    }
+    {
+        static char tet[1024];
+        toc_result rc;
+        toc_op_list *l;
+        snprintf(tet, sizeof(tet), "<LUT3D interpolation=\"tetrahedral\">%s",
+                 strstr(lut3, "<Array"));
+        l = clf_load(tet, &rc);
+        CHECK(TOC_OK(rc) && l->ops[0].u.lut3d.interp == TOC_INTERP_TETRAHEDRAL,
+              "clf LUT3D interpolation=\"tetrahedral\" honoured");
+        toc_op_list_free(l);
+    }
+    /* LUT1D: dim="length components"; components 1 replicates. */
+    in[0] = in[1] = in[2] = 0.5f; in[3] = 0.3f;
+    want[0] = want[1] = want[2] = 0.25f; want[3] = 0.3f;
+    CHECK(clf_px("<LUT1D><Array dim=\"3 1\">0 0.25 1</Array></LUT1D>\n", in, want, 1e-5f),
+          "clf LUT1D dim=\"3 1\"");
+    /* Bit depth: 10i output codes are normalized by 1023. */
+    want[0] = want[1] = want[2] = 0.5f;
+    CHECK(clf_px("<LUT1D inBitDepth=\"32f\" outBitDepth=\"10i\"><Array dim=\"2 3\">"
+                 "0 0 0 1023 1023 1023</Array></LUT1D>\n", in, want, 1e-5f),
+          "clf LUT1D outBitDepth 10i normalized");
+    /* Matrix 3x4 (offset column) with a <Description> child, which used to
+     * end the child loop and silently yield identity. */
+    in[0] = in[1] = in[2] = 0.1f; in[3] = 0.6f;
+    want[0] = 0.3f; want[1] = 0.5f; want[2] = 0.7f; want[3] = 0.6f;
+    CHECK(clf_px("<Matrix><Description>3x4 with offsets</Description>"
+                 "<Array dim=\"3 4\">2 0 0 0.1  0 3 0 0.2  0 0 4 0.3</Array></Matrix>\n",
+                 in, want, 1e-5f), "clf Matrix 3x4 offsets + Description child");
+    /* Matrix 4x4 is row-major (a column-major copy would transpose it). */
+    in[0] = 0.2f; in[1] = 0.4f; in[2] = 0.0f; in[3] = 1.0f;
+    want[0] = 0.4f; want[1] = 0.4f; want[2] = 0.0f; want[3] = 1.0f;
+    CHECK(clf_px("<Matrix><Array dim=\"4 4\">1 0.5 0 0  0 1 0 0  0 0 1 0  0 0 0 1"
+                 "</Array></Matrix>\n", in, want, 1e-5f), "clf Matrix 4x4 row-major");
+    /* Matrix bit depths: M * in/out, offsets / out. */
+    in[0] = in[1] = in[2] = 0.5f; in[3] = 1.0f;
+    want[0] = want[1] = want[2] = 0.5f * 1023.0f / 4095.0f;
+    CHECK(clf_px("<Matrix inBitDepth=\"10i\" outBitDepth=\"12i\"><Array dim=\"3 3\">"
+                 "1 0 0 0 1 0 0 0 1</Array></Matrix>\n", in, want, 1e-5f),
+          "clf Matrix 10i->12i normalized");
+    /* Range: min pair only = offset + low clamp; alpha untouched. */
+    in[0] = 0.05f; in[1] = 0.5f; in[2] = 2.0f; in[3] = 0.7f;
+    want[0] = 0.1f; want[1] = 0.4f; want[2] = 1.9f; want[3] = 0.7f;
+    CHECK(clf_px("<Range><minInValue>0.2</minInValue><minOutValue>0.1</minOutValue>"
+                 "</Range>\n", in, want, 1e-5f), "clf Range min-only, alpha untouched");
+    /* Range noClamp extrapolates. */
+    in[0] = 1.5f; in[1] = -0.5f; in[2] = 0.5f;
+    want[0] = 3.0f; want[1] = -1.0f; want[2] = 1.0f;
+    CHECK(clf_px("<Range style=\"noClamp\"><minInValue>0</minInValue><maxInValue>1"
+                 "</maxInValue><minOutValue>0</minOutValue><maxOutValue>2</maxOutValue>"
+                 "</Range>\n", in, want, 1e-5f), "clf Range noClamp");
+    /* Log: self-closing log10. */
+    in[0] = 100.0f; in[1] = 10.0f; in[2] = 1.0f; in[3] = 0.5f;
+    want[0] = 2.0f; want[1] = 1.0f; want[2] = 0.0f; want[3] = 0.5f;
+    CHECK(clf_px("<Log style=\"log10\"/>\n", in, want, 1e-4f), "clf Log log10 self-closing");
+    /* Exponent monCurveFwd (attributes, not text). */
+    in[0] = in[1] = in[2] = 0.5f; in[3] = 1.0f;
+    want[0] = want[1] = want[2] = powf((0.5f + 0.055f) / 1.055f, 2.4f);
+    want[3] = 1.0f;
+    CHECK(clf_px("<Exponent style=\"monCurveFwd\"><ExponentParams exponent=\"2.4\" "
+                 "offset=\"0.055\"/></Exponent>\n", in, want, 1e-4f),
+          "clf Exponent monCurveFwd");
+    /* ASC_CDL Fwd: slope 2 then clamp. */
+    in[0] = 0.25f; in[1] = 0.75f; in[2] = 0.0f; in[3] = 1.0f;
+    want[0] = 0.5f; want[1] = 1.0f; want[2] = 0.0f; want[3] = 1.0f;
+    CHECK(clf_px("<ASC_CDL style=\"Fwd\"><SOPNode><Slope>2 2 2</Slope><Offset>0 0 0"
+                 "</Offset><Power>1 1 1</Power></SOPNode><SatNode><Saturation>1"
+                 "</Saturation></SatNode></ASC_CDL>\n", in, want, 1e-5f),
+          "clf ASC_CDL Fwd");
+    /* Unquoted attribute value (dim=3) used to leave the value buffer unset
+     * and strlen ran off the stack (fuzz finding). */
+    {
+        toc_result rc;
+        toc_op_list *l = clf_load("<Matrix><Array dim=3 3>1 0 0 0 1 0 0 0 1</Array>"
+                                  "</Matrix>\n", &rc);
+        CHECK(!TOC_OK(rc), "clf unquoted dim attribute rejected safely");
+        toc_op_list_free(l);
+    }
+    /* Real nodes tocio cannot run fail loudly instead of being dropped. */
+    {
+        toc_result rc;
+        toc_op_list *l = clf_load("<ExposureContrast style=\"linear\"><ECParams "
+                                  "exposure=\"1\"/></ExposureContrast>\n", &rc);
+        CHECK(rc == TOC_ERROR_UNSUPPORTED, "clf ExposureContrast unsupported");
+        toc_op_list_free(l);
+        l = clf_load("<LUT1D halfDomain=\"true\"><Array dim=\"2 1\">0 1</Array></LUT1D>\n", &rc);
+        CHECK(rc == TOC_ERROR_UNSUPPORTED, "clf halfDomain LUT1D unsupported");
+        toc_op_list_free(l);
+        l = clf_load("<Exponent style=\"basicPassThruFwd\"><ExponentParams exponent=\"2\"/>"
+                     "</Exponent>\n", &rc);
+        CHECK(rc == TOC_ERROR_UNSUPPORTED, "clf Exponent passThru unsupported");
+        toc_op_list_free(l);
+    }
+    /* FileTransform interpolation overrides the file default. */
+    {
+        static const char *cfg_txt =
+            "ocio_profile_version: 2\ncolorspaces:\n  - !<ColorSpace>\n    name: a\n"
+            "    to_reference: !<FileTransform> {src: t.cube, interpolation: tetrahedral}\n"
+            "  - !<ColorSpace>\n    name: b\n";
+        toc_config *cfg = NULL;
+        toc_op_list *ops = NULL;
+        if (TOC_OK(toc_config_parse(cfg_txt, strlen(cfg_txt), NULL, &cfg))) {
+            toc_config_set_file_reader(cfg, spi2_reader,
+                                       (void *)"LUT_3D_SIZE 2\n0 0 0\n1 0 0\n0 1 0\n1 1 0\n"
+                                               "0 0 1\n1 0 1\n0 1 1\n1 1 1\n");
+            CHECK(TOC_OK(toc_processor_from_colorspaces(cfg, "a", "b", NULL, &ops)) &&
+                      ops && ops->count == 1 &&
+                      ops->ops[0].u.lut3d.interp == TOC_INTERP_TETRAHEDRAL,
+                  "FileTransform interpolation: tetrahedral");
+            toc_op_list_free(ops);
+            toc_config_free(cfg);
+        }
+    }
+}
+
 /* ---- edge-case hardening ------------------------------------------------ */
 static void test_edge_cases(void) {
     /* ---- CLF edge cases ---- */
@@ -1147,7 +1306,7 @@ static void test_edge_cases(void) {
     {
         const char *s =
             "<ProcessList>\n<UnknownNode/>\n<Garbage></Garbage>\n"
-            "<LUT1D>\n<Array dim=\"3 2\">0 0 0 1 1 1</Array>\n</LUT1D>\n"
+            "<LUT1D>\n<Array dim=\"2 3\">0 0 0 1 1 1</Array>\n</LUT1D>\n"
             "</ProcessList>\n";
         toc_op_list *l = newlist();
         toc_result rc = toc_load_lutfile(l, "skip.clf", s, strlen(s), 0);
@@ -1158,7 +1317,7 @@ static void test_edge_cases(void) {
     /* insane LUT dimensions rejected */
     {
         const char *s =
-            "<ProcessList>\n<LUT3D>\n<Array dim=\"3 9999 9999 9999\">\n"
+            "<ProcessList>\n<LUT3D>\n<Array dim=\"9999 9999 9999 3\">\n"
             "0 0 0</Array>\n</LUT3D>\n</ProcessList>\n";
         toc_op_list *l = newlist();
         toc_result rc = toc_load_lutfile(l, "big.clf", s, strlen(s), 0);
@@ -1173,25 +1332,19 @@ static void test_edge_cases(void) {
         CHECK(!TOC_OK(rc), ".clf only comments");
         toc_op_list_free(l);
     }
-    /* CLF: Range with no child elements (should produce identity range) */
+    /* CLF: Range with no child elements is invalid (OpenColorIO rejects it) */
     {
         const char *s =
             "<ProcessList>\n<Range>\n</Range>\n</ProcessList>\n";
         toc_op_list *l = newlist();
         toc_result rc = toc_load_lutfile(l, "rnge.clf", s, strlen(s), 0);
-        CHECK(TOC_OK(rc) && l->count == 1 && l->ops[0].kind == TOC_OP_RANGE,
-              ".clf empty Range");
-        if (TOC_OK(rc)) {
-            float px[3] = {2.0f, 2.0f, 2.0f};
-            toc_apply(l, px, 1, 3);
-            CHECK(approx(px[0], 2.0f, 1e-4f), ".clf empty Range identity");
-        }
+        CHECK(!TOC_OK(rc) && l->count == 0, ".clf empty Range rejected");
         toc_op_list_free(l);
     }
     /* ---- CSP edge cases ---- */
     /* missing 3D section */
     {
-        const char *s = "CSPLUTV1.0\n3DMESH 2\n";
+        const char *s = "CSPLUTV100\n3D\n" CSP_NOPRE "2 2 2\n";
         toc_op_list *l = newlist();
         toc_result rc = toc_load_lutfile(l, "bad.csp", s, strlen(s), 0);
         CHECK(!TOC_OK(rc), ".csp missing 3D");
@@ -1199,7 +1352,7 @@ static void test_edge_cases(void) {
     }
     /* truncated 3D data */
     {
-        const char *s = "CSPLUTV1.0\n3DMESH 2\n3D\n0 0 0\n1 0 0\n";
+        const char *s = "CSPLUTV100\n3D\n" CSP_NOPRE "2 2 2\n0 0 0\n1 0 0\n";
         toc_op_list *l = newlist();
         toc_result rc = toc_load_lutfile(l, "trunc.csp", s, strlen(s), 0);
         CHECK(!TOC_OK(rc), ".csp truncated 3D");
@@ -1208,7 +1361,7 @@ static void test_edge_cases(void) {
     /* malformed header (not CSP, not CLF, not cube — falls through to cube parser) */
     {
         const char *s =
-            "NOTCSP\n3DMESH 2\n3D\n0 0 0\n1 0 0\n0 1 0\n1 1 0\n"
+            "NOTCSP\n3D\n0 0 0\n1 0 0\n0 1 0\n1 1 0\n"
             "0 0 1\n1 1 1\n";
         toc_op_list *l = newlist();
         toc_result rc = toc_load_lutfile(l, "bad.csp", s, strlen(s), 0);
@@ -1217,18 +1370,18 @@ static void test_edge_cases(void) {
     }
     /* insane mesh size */
     {
-        const char *s = "CSPLUTV1.0\n3DMESH 9999\n3D\n0 0 0\n";
+        const char *s = "CSPLUTV100\n3D\n0\n0\n0\n9999 9999 9999\n0 0 0\n";
         toc_op_list *l = newlist();
         toc_result rc = toc_load_lutfile(l, "huge.csp", s, strlen(s), 0);
         CHECK(!TOC_OK(rc), ".csp insane size");
         toc_op_list_free(l);
     }
-    /* PRE_1D with missing data */
+    /* prelut with missing data */
     {
-        const char *s = "CSPLUTV1.0\nPRE_1D 10\n0 0 0\n1 1 1\n";
+        const char *s = "CSPLUTV100\n3D\n10\n0 0 0\n1 1 1\n";
         toc_op_list *l = newlist();
         toc_result rc = toc_load_lutfile(l, "badpre.csp", s, strlen(s), 0);
-        CHECK(!TOC_OK(rc), ".csp PRE_1D truncated");
+        CHECK(!TOC_OK(rc), ".csp prelut truncated");
         toc_op_list_free(l);
     }
     /* ---- general edge cases ---- */
@@ -1257,9 +1410,7 @@ static void test_edge_cases(void) {
     }
     {
         const char *csp =
-            "CSPLUTV1.0\n3DMESH 2\n3D\n"
-            "0 0 0\n1 0 0\n0 1 0\n1 1 0\n"
-            "0 0 1\n1 0 1\n0 1 1\n1 1 1\n";
+            "CSPLUTV100\n3D\n" CSP_NOPRE "2 2 2\n" CSP_ID3;
         toc_op_list *l = newlist();
         toc_result rc = toc_load_lutfile(l, "inv.csp", csp, strlen(csp), 1);
         CHECK(rc == TOC_ERROR_NONINVERTIBLE, "invert CSP -> NONINVERTIBLE");
@@ -1267,7 +1418,7 @@ static void test_edge_cases(void) {
     }
     {
         const char *clf =
-            "<ProcessList>\n<LUT1D>\n<Array dim=\"3 2\">0 0 0 1 1 1</Array>\n"
+            "<ProcessList>\n<LUT1D>\n<Array dim=\"2 3\">0 0 0 1 1 1</Array>\n"
             "</LUT1D>\n</ProcessList>\n";
         toc_op_list *l = newlist();
         toc_result rc = toc_load_lutfile(l, "inv.clf", clf, strlen(clf), 1);
@@ -2596,6 +2747,7 @@ int main(void) {
     printf("== tocio edge cases ==\n");
     test_edge_cases();
     test_hostile();
+    test_clf_conformance();
     printf("== tocio AOT-C codegen ==\n");
     test_codegen_c();
     test_codegen_c_hdr();

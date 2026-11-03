@@ -93,7 +93,9 @@ V3_CORE_SRC = $(filter-out src/exr_stdio.c src/exr_freestanding.c src/exr_spectr
 ZSTD_SRC = deps/zstd/tinyexr_zstd.c
 ZSTD_OBJ = build/tinyexr_zstd.o
 V3_TEST_OBJ = $(patsubst src/%.c,build/test-%.o,$(V3_SRC))
-SAN      = -fsanitize=address,undefined -fno-sanitize-recover=all
+# float-cast-overflow is spelled out: GCC's "undefined" group omits it, so
+# out-of-range float->int casts (e.g. NaN pixels indexing a table) went unseen.
+SAN      = -fsanitize=address,undefined,float-cast-overflow -fno-sanitize-recover=all
 
 # ---- zlib (DEFLATE) backend for ZIP/ZIPS/PXR24 ----------------------------
 # DEFLATE = auto | libdeflate | intree    (default: auto)

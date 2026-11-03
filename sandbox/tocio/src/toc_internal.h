@@ -281,11 +281,25 @@ toc_result toc_invert_op(toc_op_list *list, toc_op *op);
 
 /* Parse a LUT file blob by extension hint into a freshly-allocated op (LUT1D or
  * LUT3D). The sample array is added to `list->owned`. */
+/* Shared op builders (toc_processor.c), used by YAML lowering and file LUTs. */
+toc_result toc_push_range(toc_op_list *list, int has_min, float min_in,
+                          float min_out, int has_max, float max_in,
+                          float max_out, int noclamp);
+toc_result toc_push_exp_linear(toc_op_list *list, const float gamma[4],
+                               const float offset[4], int inverse, int mirror);
+toc_result toc_push_logcam(toc_op_list *list, float base, const float ls[3],
+                           const float lo[3], const float ns[3],
+                           const float no[3], const float brk[3],
+                           const float *lslope, int inverse);
+toc_result toc_push_cdl(toc_op_list *list, const float sl[3], const float of[3],
+                        const float pw[3], float sat, int clamp_val, int invert);
+
 toc_result toc_load_lutfile(toc_op_list *list, const char *name,
                             const char *data, size_t len, int invert);
 /* Parse a CLF (Common LUT Format) XML blob into a sequence of ops. */
 toc_result toc_load_clf(toc_op_list *list, const char *data, size_t len);
-/* Parse a CSP (ColorSpace Process) LUT blob into PRE_1D -> 3D -> POST_1D ops. */
+/* Parse a Cinespace CSP ("CSPLUTV100") LUT: optional prelut (scale/offset +
+ * resampled LUT1D) followed by the 1D or 3D LUT, as OpenColorIO does. */
 toc_result toc_load_csp(toc_op_list *list, const char *data, size_t len);
 
 /* Expand a BuiltinTransform style into primitive ops (toc_builtins.c). */

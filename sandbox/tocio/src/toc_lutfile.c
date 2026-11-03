@@ -131,7 +131,7 @@ static toc_result load_cube(toc_op_list *list, cur *c) {
         memcpy(op->u.lut3d.domain_min, dmin, sizeof(dmin));
         memcpy(op->u.lut3d.domain_max, dmax, sizeof(dmax));
         op->u.lut3d.data = arr;
-        op->u.lut3d.interp = TOC_INTERP_TETRAHEDRAL;
+        op->u.lut3d.interp = TOC_INTERP_TRILINEAR; /* OCIO default */
     }
     return TOC_SUCCESS;
 parse_fail:
@@ -245,7 +245,7 @@ static toc_result load_spi3d(toc_op_list *list, cur *c) {
     op->u.lut3d.domain_max[0] = op->u.lut3d.domain_max[1] =
         op->u.lut3d.domain_max[2] = 1.0f;
     op->u.lut3d.data = arr;
-    op->u.lut3d.interp = TOC_INTERP_TETRAHEDRAL;
+    op->u.lut3d.interp = TOC_INTERP_TRILINEAR; /* OCIO default */
     return TOC_SUCCESS;
 }
 
@@ -281,7 +281,7 @@ toc_result toc_load_lutfile(toc_op_list *list, const char *name,
             if (kweq(w, "Version")) return load_spi1d(list, &c);
         }
     }
-    /* sniff for CSP: CSPLUTV1.0 or CSPLUT0001 */
+    /* sniff for CSP: "CSPLUTV100" header */
     if (len > 9) {
         const char *p = data;
         while (p < data + len && (unsigned char)*p <= 0x20) ++p;
