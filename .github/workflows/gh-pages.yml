@@ -54,6 +54,17 @@ jobs:
           mkdir -p _site/texcomp
           cp -r web/texcomp/. _site/texcomp/
 
+      - name: Write build info (commit hash shown on the viewer page)
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          jq -n --arg commit "$GITHUB_SHA" --arg ref "$REF_NAME" \
+                --arg repo "$GITHUB_REPOSITORY" \
+                --arg date "$(git log -1 --format=%cI "$GITHUB_SHA")" \
+                '{commit: $commit, ref: $ref, repo: $repo, date: $date}' \
+                > _site/build-info.json
+          cat _site/build-info.json
+
       - name: Upload site as Pages artifact
         uses: actions/upload-pages-artifact@v5
         with:

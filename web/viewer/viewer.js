@@ -14,6 +14,34 @@
 import createModule from "./exr_viewer.mjs";
 import { unzipSync } from "./fflate.module.js";
 
+/* --------------------------------------------------------------- build info */
+// build-info.json is written by .github/workflows/gh-pages.yml at deploy time.
+// It is absent when the viewer is served from a local checkout.
+async function showBuildInfo() {
+  const el = document.getElementById("buildInfo");
+  if (!el) return;
+  let info = null;
+  try {
+    const r = await fetch("build-info.json", { cache: "no-store" });
+    if (r.ok) info = await r.json();
+  } catch (_) { /* local / offline: fall through */ }
+  const sha = info && typeof info.commit === "string" ? info.commit : "";
+  if (/^[0-9a-f]{40}$/.test(sha)) {
+    const repo = typeof info.repo === "string" && /^[\w.-]+\/[\w.-]+$/.test(info.repo)
+      ? info.repo : "syoyo/tinyexr";
+    const date = typeof info.date === "string" ? info.date.slice(0, 10) : "";
+    el.textContent = "commit " + sha.slice(0, 7) + (date ? " \u00b7 " + date : "");
+    el.href = "https://github.com/" + repo + "/commit/" + sha;
+    el.title = "Deployed from " + sha + (typeof info.ref === "string" ? " (" + info.ref + ")" : "");
+  } else {
+    el.textContent = "local build";
+    el.removeAttribute("href");
+    el.title = "build-info.json not found (not a Pages deployment)";
+  }
+  el.classList.remove("hidden");
+}
+showBuildInfo();
+
 /* ------------------------------------------------------------------ globals */
 let M = null;             // emscripten module
 let handle = 0;           // current exrv session handle

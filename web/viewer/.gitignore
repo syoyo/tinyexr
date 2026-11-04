@@ -10,3 +10,6 @@ build/
 
 # Local generator binary
 gen_sample
+
+# Written by the Pages workflow at deploy time (commit hash for the page)
+build-info.json
