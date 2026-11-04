@@ -54,7 +54,7 @@ jobs:
           mkdir -p _site/texcomp
           cp -r web/texcomp/. _site/texcomp/
 
-      - name: Write build info (commit hash shown on the viewer page)
+      - name: Write build info (commit hash shown on the viewer and tocio pages)
         env:
           REF_NAME: ${{ github.ref_name }}
         run: |

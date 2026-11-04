@@ -9,7 +9,11 @@ body {
   font: 13px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   display: flex; flex-direction: column;
 }
-header { padding: 10px 16px; border-bottom: 1px solid var(--line); }
+header { padding: 10px 16px; border-bottom: 1px solid var(--line);
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+#buildInfo { color: var(--mut); text-decoration: none; font-size: 11px; white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+#buildInfo[href]:hover { color: var(--fg); text-decoration: underline; }
 h1 { font-size: 16px; margin: 0; font-weight: 600; }
 h1 .sub { color: var(--mut); font-weight: 400; font-size: 12px; margin-left: 8px; }
 main { flex: 1; display: flex; min-height: 0; }
