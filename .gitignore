@@ -48,3 +48,6 @@ test/unit/tester-*
 
 # external OpenEXR test-image corpus (cloned locally, not part of this repo)
 /openexr-images/
+
+# local agent handoff notes (machine-specific paths; not published)
+resume.md
