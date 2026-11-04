@@ -1,4 +1,7 @@
 #!/bin/sh
+# Copyright (c) 2014-2026 Syoyo Fujita and TinyEXR authors
+# SPDX-License-Identifier: BSD-3-Clause
+#
 # A/B repeated whole-image load benchmark: current tree vs a baseline revision.
 #
 # Builds the baseline library in a detached git worktree, builds the same
