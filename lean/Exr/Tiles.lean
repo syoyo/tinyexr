@@ -479,6 +479,164 @@ theorem tileIndex_ripmap_lt {up : TypedAttr.RoundingMode} {tw th w h tx ty lx ly
     _ = sumRange (ly + 1) (fun yy => rowTiles up tw th w h yy) := hrow
     _ ≤ sumRange (numLevels up h) (fun yy => rowTiles up tw th w h yy) := hle
 
+/-- The row prefix is below a RIPMAP tile's index. -/
+theorem tileIndex_ripmap_ge_row {up : TypedAttr.RoundingMode} {tw th w h tx ty lx ly : Nat} :
+    sumRange ly (fun yy => rowTiles up tw th w h yy) ≤
+      tileIndex .ripmap up tw th w h tx ty lx ly := by
+  show sumRange ly (fun yy => rowTiles up tw th w h yy) ≤
+    (sumRange ly (fun yy => rowTiles up tw th w h yy) +
+      sumRange lx (fun xx => levelTiles2 up tw th w h xx ly)) +
+      ty * tilesIn (levelSize up w lx) tw + tx
+  omega
+
+/-- A RIPMAP tile's index stays inside its row (below the next row's prefix). -/
+theorem tileIndex_ripmap_lt_rowSucc {up : TypedAttr.RoundingMode}
+    {tw th w h tx ty lx ly : Nat}
+    (htw : 1 ≤ tw) (hw : 1 ≤ w)
+    (hx : tx < tilesIn (levelSize up w lx) tw)
+    (hy : ty < tilesIn (levelSize up h ly) th)
+    (hlx : lx < numLevels up w) :
+    tileIndex .ripmap up tw th w h tx ty lx ly <
+      sumRange (ly + 1) (fun yy => rowTiles up tw th w h yy) := by
+  have hq : ty * tilesIn (levelSize up w lx) tw + tx <
+      levelTiles2 up tw th w h lx ly := by
+    unfold levelTiles2
+    exact tileOffset_lt (tilesIn_pos (levelSize_pos hw lx) htw) hx hy
+  have hsuccB : sumRange lx (fun xx => levelTiles2 up tw th w h xx ly) +
+      levelTiles2 up tw th w h lx ly =
+      sumRange (lx + 1) (fun xx => levelTiles2 up tw th w h xx ly) := by
+    rw [sumRange_succ]
+  have hleB : sumRange (lx + 1) (fun xx => levelTiles2 up tw th w h xx ly) ≤
+      rowTiles up tw th w h ly := by
+    unfold rowTiles
+    exact sumRange_le_of_le (by omega)
+  have hsuccA : sumRange ly (fun yy => rowTiles up tw th w h yy) +
+      rowTiles up tw th w h ly =
+      sumRange (ly + 1) (fun yy => rowTiles up tw th w h yy) := by
+    rw [sumRange_succ]
+  show (sumRange ly (fun yy => rowTiles up tw th w h yy) +
+      sumRange lx (fun xx => levelTiles2 up tw th w h xx ly)) +
+      ty * tilesIn (levelSize up w lx) tw + tx <
+      sumRange (ly + 1) (fun yy => rowTiles up tw th w h yy)
+  calc (sumRange ly (fun yy => rowTiles up tw th w h yy) +
+        sumRange lx (fun xx => levelTiles2 up tw th w h xx ly)) +
+        ty * tilesIn (levelSize up w lx) tw + tx
+      = sumRange ly (fun yy => rowTiles up tw th w h yy) +
+          (sumRange lx (fun xx => levelTiles2 up tw th w h xx ly) +
+            (ty * tilesIn (levelSize up w lx) tw + tx)) := by omega
+    _ < sumRange ly (fun yy => rowTiles up tw th w h yy) +
+          (sumRange lx (fun xx => levelTiles2 up tw th w h xx ly) +
+            levelTiles2 up tw th w h lx ly) := by omega
+    _ = sumRange ly (fun yy => rowTiles up tw th w h yy) +
+          sumRange (lx + 1) (fun xx => levelTiles2 up tw th w h xx ly) := by rw [hsuccB]
+    _ ≤ sumRange ly (fun yy => rowTiles up tw th w h yy) +
+          rowTiles up tw th w h ly := by omega
+    _ = sumRange (ly + 1) (fun yy => rowTiles up tw th w h yy) := hsuccA
+
+/-- A `RIPMAP` tile index determines the tile position and both level indices. -/
+theorem tileIndex_ripmap_injective {up : TypedAttr.RoundingMode}
+    {tw th w h tx1 ty1 tx2 ty2 lx1 ly1 lx2 ly2 : Nat}
+    (htw : 1 ≤ tw) (_hth : 1 ≤ th) (hw : 1 ≤ w) (_hh : 1 ≤ h)
+    (hx1 : tx1 < tilesIn (levelSize up w lx1) tw)
+    (hy1 : ty1 < tilesIn (levelSize up h ly1) th)
+    (hx2 : tx2 < tilesIn (levelSize up w lx2) tw)
+    (hy2 : ty2 < tilesIn (levelSize up h ly2) th)
+    (hlx1 : lx1 < numLevels up w) (_hly1 : ly1 < numLevels up h)
+    (hlx2 : lx2 < numLevels up w) (hly2 : ly2 < numLevels up h)
+    (hidx : tileIndex .ripmap up tw th w h tx1 ty1 lx1 ly1 =
+            tileIndex .ripmap up tw th w h tx2 ty2 lx2 ly2) :
+    tx1 = tx2 ∧ ty1 = ty2 ∧ lx1 = lx2 ∧ ly1 = ly2 := by
+  have hly : ly1 = ly2 := by
+    rcases Nat.lt_trichotomy ly1 ly2 with hlt | heq | hgt
+    · exfalso
+      have h1 := tileIndex_ripmap_lt_rowSucc (up := up) (tw := tw) (w := w)
+        (tx := tx1) (ty := ty1) (lx := lx1) (ly := ly1) htw hw hx1 hy1 hlx1
+      have hle : sumRange (ly1 + 1) (fun yy => rowTiles up tw th w h yy) ≤
+          sumRange ly2 (fun yy => rowTiles up tw th w h yy) :=
+        sumRange_le_of_le (by omega)
+      have h2 : sumRange ly2 (fun yy => rowTiles up tw th w h yy) ≤
+          tileIndex .ripmap up tw th w h tx2 ty2 lx2 ly2 :=
+        tileIndex_ripmap_ge_row
+      omega
+    · exact heq
+    · exfalso
+      have h2 := tileIndex_ripmap_lt_rowSucc (up := up) (tw := tw) (w := w)
+        (tx := tx2) (ty := ty2) (lx := lx2) (ly := ly2) htw hw hx2 hy2 hlx2
+      have hle : sumRange (ly2 + 1) (fun yy => rowTiles up tw th w h yy) ≤
+          sumRange ly1 (fun yy => rowTiles up tw th w h yy) :=
+        sumRange_le_of_le (by omega)
+      have h1 : sumRange ly1 (fun yy => rowTiles up tw th w h yy) ≤
+          tileIndex .ripmap up tw th w h tx1 ty1 lx1 ly1 :=
+        tileIndex_ripmap_ge_row
+      omega
+  subst hly
+  have hB : sumRange lx1 (fun xx => levelTiles2 up tw th w h xx ly1) +
+      (ty1 * tilesIn (levelSize up w lx1) tw + tx1) =
+      sumRange lx2 (fun xx => levelTiles2 up tw th w h xx ly1) +
+      (ty2 * tilesIn (levelSize up w lx2) tw + tx2) := by
+    have h' := hidx
+    simp only [tileIndex] at h'
+    omega
+  have hlx : lx1 = lx2 := by
+    rcases Nat.lt_trichotomy lx1 lx2 with hlt | heq | hgt
+    · exfalso
+      have hq1 : ty1 * tilesIn (levelSize up w lx1) tw + tx1 <
+          levelTiles2 up tw th w h lx1 ly1 := by
+        unfold levelTiles2
+        exact tileOffset_lt (tilesIn_pos (levelSize_pos hw lx1) htw) hx1 hy1
+      have hsucc : sumRange lx1 (fun xx => levelTiles2 up tw th w h xx ly1) +
+          levelTiles2 up tw th w h lx1 ly1 =
+          sumRange (lx1 + 1) (fun xx => levelTiles2 up tw th w h xx ly1) := by
+        rw [sumRange_succ]
+      have hle : sumRange (lx1 + 1) (fun xx => levelTiles2 up tw th w h xx ly1) ≤
+          sumRange lx2 (fun xx => levelTiles2 up tw th w h xx ly1) :=
+        sumRange_le_of_le (by omega)
+      have hge : sumRange lx2 (fun xx => levelTiles2 up tw th w h xx ly1) ≤
+          sumRange lx2 (fun xx => levelTiles2 up tw th w h xx ly1) +
+            (ty2 * tilesIn (levelSize up w lx2) tw + tx2) := by omega
+      omega
+    · exact heq
+    · exfalso
+      have hq2 : ty2 * tilesIn (levelSize up w lx2) tw + tx2 <
+          levelTiles2 up tw th w h lx2 ly1 := by
+        unfold levelTiles2
+        exact tileOffset_lt (tilesIn_pos (levelSize_pos hw lx2) htw) hx2 hy2
+      have hsucc : sumRange lx2 (fun xx => levelTiles2 up tw th w h xx ly1) +
+          levelTiles2 up tw th w h lx2 ly1 =
+          sumRange (lx2 + 1) (fun xx => levelTiles2 up tw th w h xx ly1) := by
+        rw [sumRange_succ]
+      have hle : sumRange (lx2 + 1) (fun xx => levelTiles2 up tw th w h xx ly1) ≤
+          sumRange lx1 (fun xx => levelTiles2 up tw th w h xx ly1) :=
+        sumRange_le_of_le (by omega)
+      have hge : sumRange lx1 (fun xx => levelTiles2 up tw th w h xx ly1) ≤
+          sumRange lx1 (fun xx => levelTiles2 up tw th w h xx ly1) +
+            (ty1 * tilesIn (levelSize up w lx1) tw + tx1) := by omega
+      omega
+  subst hlx
+  have hn : 0 < tilesIn (levelSize up w lx1) tw :=
+    tilesIn_pos (levelSize_pos hw lx1) htw
+  have hq : ty1 * tilesIn (levelSize up w lx1) tw + tx1 =
+      ty2 * tilesIn (levelSize up w lx1) tw + tx2 := by omega
+  constructor
+  · have e1 : (ty1 * tilesIn (levelSize up w lx1) tw + tx1) %
+        tilesIn (levelSize up w lx1) tw = tx1 := by
+      rw [Nat.add_comm, Nat.add_mul_mod_self_right, Nat.mod_eq_of_lt hx1]
+    have e2 : (ty2 * tilesIn (levelSize up w lx1) tw + tx2) %
+        tilesIn (levelSize up w lx1) tw = tx2 := by
+      rw [Nat.add_comm, Nat.add_mul_mod_self_right, Nat.mod_eq_of_lt hx2]
+    rw [← e1, ← e2, hq]
+  · constructor
+    · have d1 : (ty1 * tilesIn (levelSize up w lx1) tw + tx1) /
+          tilesIn (levelSize up w lx1) tw = ty1 := by
+        rw [Nat.add_comm, Nat.add_mul_div_right tx1 ty1 hn,
+          Nat.div_eq_of_lt hx1, Nat.zero_add]
+      have d2 : (ty2 * tilesIn (levelSize up w lx1) tw + tx2) /
+          tilesIn (levelSize up w lx1) tw = ty2 := by
+        rw [Nat.add_comm, Nat.add_mul_div_right tx2 ty2 hn,
+          Nat.div_eq_of_lt hx2, Nat.zero_add]
+      rw [← d1, ← d2, hq]
+    · exact ⟨rfl, rfl⟩
+
 end Tiles
 
 end Exr

@@ -49,7 +49,7 @@ make codec-diff     # Lean codec vectors vs tinyexr v3 PXR24/B44 codecs
 | scan-line blocks = ceil(height / linesPerBlock) | `Exr/Tiles.lean` | `scanlineChunks_pos`, `scanlineChunks_covers` | `lean-diff` |
 | tiled levels (ONE/MIP/RIP, ROUND_DOWN/UP) | `Exr/Tiles.lean` | `levelSize_antitone`, `tiledChunks_pos` | `lean-diff` (tiled fixtures) |
 | offset table: one entry/chunk, `dataStart ≤ off < fileSize` | `Exr/Parse.lean` | `parseTables_bounds`, `parseFile_bounds` | `lean-diff` (issue-238 fixtures) |
-| tile offset index inside `[0, chunkCount)` (+ injective for ONE/MIPMAP) | `Exr/Tiles.lean` | `tileIndex_oneLevel_lt`, `tileIndex_mipmap_lt`, `tileIndex_ripmap_lt`, `tileIndex_oneLevel_injective`, `tileIndex_mipmap_injective` | `lean-diff` (tile counts) |
+| tile offset index inside `[0, chunkCount)` and injective (all modes) | `Exr/Tiles.lean` | `tileIndex_{oneLevel,mipmap,ripmap}_lt`, `tileIndex_{oneLevel,mipmap,ripmap}_injective` | `lean-diff` (tile counts) |
 | multi-part shared attributes (OpenEXR-strict mode) | `Exr/File.lean`, `Exr/Parse.lean` | `sharesAttrs_spec`, `checkPartsOpenEXR_implies_checkParts` | `exrcheck --strict` on the generated multipart fixture |
 | PXR24: 4/2/3 byte planes, delta rows, plane-major order | `Exr/Pxr24.lean` | `uint_roundtrip`, `half_roundtrip`, `float_roundtrip`, `float_decode_eq`, `packPlanes_length` | `codec-diff` (bit-exact) |
 | PXR24 `float24`: RN truncation, Inf→Inf, NaN stays NaN, finite≠Inf | `Exr/Pxr24.lean` | `float24_lt`, `float24_inf`, `float24_nan_nonzero`, `float24_finite_not_inf` | `codec-diff` |
@@ -108,10 +108,6 @@ formats are untouched (the PXR24/B44 fixes were model-side).
   `float24`); the plane-major stream (`packPlanes`) is executable and pinned
   byte-exactly by `codec-diff`. A full transpose-involution proof was attempted
   and set aside as disproportionately costly for the value.
-* **RIPMAP tile-index injectivity is not mechanised.** The bounds (`tileIndex_ripmap_lt`)
-  and the ONE_LEVEL/MIPMAP injectivity proofs are complete; the RIPMAP
-  lexicographic argument is the same prefix-sum separation but has not been
-  written out yet. Counts are differential-validated on the ripmap fixtures.
 * **B44 perceptual tables (`p_linear` channels) are not re-modelled.** The
   t-transform, quantization, block packing and reconstruction are proven and
   bit-exact; the two 65536-entry `exp`/`log` double tables are validated by the
@@ -144,7 +140,8 @@ generated-file self-checks still use `native_decide`
 (`*_native.native_decide.ax_*`). The B44/PXR24/Tiles results above
 (`fitsAt_12`, `chooseShift_*`, `packBlock_*`, `float24_shift_stable`,
 `tileIndex_*`) use only `propext`/`Classical.choice`/`Quot.sound` except where
-they call `bv_decide`. No `sorryAx` anywhere.
+they call `bv_decide`. No `sorryAx` anywhere, and no remaining tile-index
+injectivity gaps: ONE_LEVEL, MIPMAP and RIPMAP indices are all proven injective.
 
 ## Fixtures added
 
