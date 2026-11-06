@@ -386,6 +386,18 @@ def checkParts (fileSize : Nat) (f : ParsedFile) : Bool :=
     t.offsets.length == h.computedChunks &&
     t.offsets.all (fun o => f.dataStart ≤ o && o < fileSize))
 
+/-- OpenEXR-strict variant of `checkParts`: multi-part files must also agree on
+    the shared attributes (`displayWindow`, `pixelAspectRatio`). This models
+    OpenEXRCore's `internal_exr_validate_shared_attrs`; tinyexr does not enforce
+    it, so the lenient `checkParts` remains the default for the differ. -/
+def checkPartsOpenEXR (fileSize : Nat) (f : ParsedFile) : Bool :=
+  checkParts fileSize f && Header.sharedAttrsOK f.parts
+
+theorem checkPartsOpenEXR_implies_checkParts {fileSize : Nat} {f : ParsedFile}
+    (h : checkPartsOpenEXR fileSize f = true) : checkParts fileSize f = true := by
+  unfold checkPartsOpenEXR at h
+  exact (Bool.and_eq_true_iff.mp h).1
+
 theorem checkParts_parts_valid {f : ParsedFile} {fileSize : Nat}
     (hc : checkParts fileSize f = true) :
     ∀ h ∈ f.parts, h.validate = true ∧ h.chunkCountConsistent = true := by

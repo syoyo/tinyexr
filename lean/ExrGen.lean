@@ -324,4 +324,12 @@ theorem generate_multipart_valid :
       (Exr.Parse.parseFile b).map (fun f => Exr.Parse.checkParts b.size f)) = some true := by
   native_decide
 
+/-- The multi-part fixture also passes the OpenEXR-strict shared-attribute
+    check (both parts share `displayWindow` and `pixelAspectRatio`). -/
+theorem generate_multipart_valid_openexr :
+    (generate "multipart").bind (fun b =>
+      (Exr.Parse.parseFile b).map (fun f => Exr.Parse.checkPartsOpenEXR b.size f)) = some true := by
+  native_decide
+
 end ExrGen
+

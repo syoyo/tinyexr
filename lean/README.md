@@ -49,10 +49,15 @@ make codec-diff     # Lean codec vectors vs tinyexr v3 PXR24/B44 codecs
 | scan-line blocks = ceil(height / linesPerBlock) | `Exr/Tiles.lean` | `scanlineChunks_pos`, `scanlineChunks_covers` | `lean-diff` |
 | tiled levels (ONE/MIP/RIP, ROUND_DOWN/UP) | `Exr/Tiles.lean` | `levelSize_antitone`, `tiledChunks_pos` | `lean-diff` (tiled fixtures) |
 | offset table: one entry/chunk, `dataStart ≤ off < fileSize` | `Exr/Parse.lean` | `parseTables_bounds`, `parseFile_bounds` | `lean-diff` (issue-238 fixtures) |
+| tile offset index inside `[0, chunkCount)` (+ injective for ONE/MIPMAP) | `Exr/Tiles.lean` | `tileIndex_oneLevel_lt`, `tileIndex_mipmap_lt`, `tileIndex_ripmap_lt`, `tileIndex_oneLevel_injective`, `tileIndex_mipmap_injective` | `lean-diff` (tile counts) |
+| multi-part shared attributes (OpenEXR-strict mode) | `Exr/File.lean`, `Exr/Parse.lean` | `sharesAttrs_spec`, `checkPartsOpenEXR_implies_checkParts` | `exrcheck --strict` on the generated multipart fixture |
 | PXR24: 4/2/3 byte planes, delta rows, plane-major order | `Exr/Pxr24.lean` | `uint_roundtrip`, `half_roundtrip`, `float_roundtrip`, `float_decode_eq`, `packPlanes_length` | `codec-diff` (bit-exact) |
 | PXR24 `float24`: RN truncation, Inf→Inf, NaN stays NaN, finite≠Inf | `Exr/Pxr24.lean` | `float24_lt`, `float24_inf`, `float24_nan_nonzero`, `float24_finite_not_inf` | `codec-diff` |
+| PXR24 decode/encode stability | `Exr/Pxr24.lean` | `float24_shift_stable`, `float24_stable` | `codec-diff` |
 | B44 t-transform is a bijection on non-NaN halves | `Exr/B44.lean` | `unt8_t8` (exhaustive over 65536 patterns), `t8_nan` | `codec-diff` (all blocks) |
-| B44 shift search terminates (shift ≤ 16) | `Exr/B44.lean` | `chooseShift_le` | `codec-diff` |
+| B44 shift search terminates and never needs its 16 fallback | `Exr/B44.lean` | `chooseShift_le`, `chooseShift_le_12`, `chooseShift_fits` | `codec-diff` |
+| B44 14-byte blocks stay below the `s[2] >= 52` flat marker | `Exr/B44.lean` | `packBlock_third_lt_52`, `packBlock_flat_byte2` | `codec-diff` |
+| B44A flat form iff every residual equals the bias | `Exr/B44.lean` | `packBlock_flat_iff` | `codec-diff` |
 | B44 14-byte block decodes exactly to the quantized values | `Exr/B44.lean` | `decode14_telescopes` (16 explicit path proofs over ℤ) | `codec-diff` (pack + unpack) |
 | B44A flat block → constant, 3 vs 14 byte accounting | `Exr/B44.lean` | `decode3_constant`, `packBlock_length`, `blockBytes_mem` | `codec-diff` (constant/NaN/Inf/±0 blocks) |
 
@@ -103,6 +108,10 @@ formats are untouched (the PXR24/B44 fixes were model-side).
   `float24`); the plane-major stream (`packPlanes`) is executable and pinned
   byte-exactly by `codec-diff`. A full transpose-involution proof was attempted
   and set aside as disproportionately costly for the value.
+* **RIPMAP tile-index injectivity is not mechanised.** The bounds (`tileIndex_ripmap_lt`)
+  and the ONE_LEVEL/MIPMAP injectivity proofs are complete; the RIPMAP
+  lexicographic argument is the same prefix-sum separation but has not been
+  written out yet. Counts are differential-validated on the ripmap fixtures.
 * **B44 perceptual tables (`p_linear` channels) are not re-modelled.** The
   t-transform, quantization, block packing and reconstruction are proven and
   bit-exact; the two 65536-entry `exp`/`log` double tables are validated by the
@@ -129,9 +138,13 @@ formats are untouched (the PXR24/B44 fixes were model-side).
 
 Small-step proofs use only `propext`, `Classical.choice`, `Quot.sound`.
 Bit-vector goals go through `bv_decide`, which adds one LRAT axiom per goal
-(`*_native.bv_decide.ax_*`). Exhaustive checks over the 65536-pattern half domain
-(`unt8_t8`, `t8_nan`-adjacent enumeration) and the generator self-checks use
-`native_decide` (`*_native.native_decide.ax_*`). No `sorryAx` anywhere.
+(`*_native.bv_decide.ax_*`). `unt8_t8` is now a case analysis over the sign of
+the t-code with `bv_decide` leaves (no more exhaustive `native_decide`); the six
+generated-file self-checks still use `native_decide`
+(`*_native.native_decide.ax_*`). The B44/PXR24/Tiles results above
+(`fitsAt_12`, `chooseShift_*`, `packBlock_*`, `float24_shift_stable`,
+`tileIndex_*`) use only `propext`/`Classical.choice`/`Quot.sound` except where
+they call `bv_decide`. No `sorryAx` anywhere.
 
 ## Fixtures added
 

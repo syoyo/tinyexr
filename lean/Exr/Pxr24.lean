@@ -87,6 +87,48 @@ theorem float24_lt (u : UInt32) : float24 u < 0x1000000 := by
     · simp only [h4, ite_true]; bv_decide
     · simp only [h4, ite_false]; bv_decide
 
+/-- Re-encoding a canonical 24-bit value (stored left-aligned in a float bit
+    pattern) reproduces it. The 24-bit layout is `sign | exponent (8) |
+    mantissa (15)`; shifting it into a float places the exponent in bits
+    23..30, so only the all-ones (Inf/NaN) exponent can reach the outer
+    special-value branch, where the NaN/Inf sub-branches keep the value. -/
+theorem float24_shift_stable (v : UInt32) (hv : v < 0x1000000) :
+    float24 (v <<< 8) = v := by
+  unfold float24
+  by_cases he : (v <<< 8) &&& 0x7f800000 = 0x7f800000
+  · simp only [beq_iff_eq.mpr he, ite_true]
+    by_cases hm : (v <<< 8) &&& 0x007fffff = 0
+    · have hb : ((v <<< 8) &&& 0x007fffff != 0) = false := by rw [hm]; rfl
+      simp only [hb, Bool.false_eq_true, ite_false]
+      bv_decide
+    · have hb : ((v <<< 8) &&& 0x007fffff != 0) = true := by
+        rw [bne_iff_ne]; exact hm
+      simp only [hb, ite_true]
+      by_cases hz : ((v <<< 8) &&& 0x007fffff) >>> 8 = 0
+      · have hzb : (((v <<< 8) &&& 0x007fffff) >>> 8 == 0) = true := by rw [hz]; rfl
+        simp only [hzb, ite_true]
+        bv_decide
+      · have hzb : (((v <<< 8) &&& 0x007fffff) >>> 8 == 0) = false := by
+          rw [beq_eq_false_iff_ne]; exact hz
+        simp only [hzb, Bool.false_eq_true, ite_false]
+        bv_decide
+  · have hben : (((v <<< 8) &&& 0x7f800000) == 0x7f800000) = false :=
+      beq_eq_false_iff_ne.mpr he
+    simp only [hben, Bool.false_eq_true, ite_false]
+    by_cases hs : (((((v <<< 8) &&& (0x7f800000 : UInt32)) |||
+          ((v <<< 8) &&& (0x007fffff : UInt32))) +
+        (((v <<< 8) &&& (0x007fffff : UInt32)) &&& (0x80 : UInt32))) >>> 8) >=
+          (0x7f8000 : UInt32)
+    · simp [hs]
+      bv_decide
+    · simp [hs]
+      bv_decide
+
+/-- `float24` is idempotent with respect to its own decode side: encoding the
+    shifted 24-bit value yields the same 24-bit value. -/
+theorem float24_stable (u : UInt32) : float24 (float24 u <<< 8) = float24 u :=
+  float24_shift_stable (float24 u) (float24_lt u)
+
 /-- Infinities encode to infinities. -/
 theorem float24_inf (s : UInt32) (h : s = 0 ∨ s = 0x80000000) :
     float24 (s ||| 0x7f800000) = (s >>> 8) ||| 0x7f8000 := by

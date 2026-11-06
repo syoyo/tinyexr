@@ -231,6 +231,47 @@ theorem computedChunks_pos {h : Header} (hw : WellFormed h) (ht : h.isTiled = tr
   simp only [ht, hd]
   exact Tiles.tiledChunks_pos t.levelMode t.roundingMode hdim.1 hdim.2 hw1 hh1
 
+/-- Structural equality of two windows (the model has no `BEq` on `Box2i`). -/
+def sameBox (a b : Box2i) : Bool :=
+  a.minX == b.minX && a.minY == b.minY && a.maxX == b.maxX && a.maxY == b.maxY
+
+/-- The attributes OpenEXRCore requires to be identical across the parts of a
+    multi-part file (`internal_exr_validate_shared_attrs`). The file-layout
+    document does not state this requirement; it is OpenEXR's stricter reading.
+    `chromaticities`/`timecode` are not typed fields of `Header`, so the check
+    covers the two attributes the model stores. -/
+def sharesAttrs (base h : Header) : Bool :=
+  sameBox base.displayWindow h.displayWindow &&
+    (base.pixelAspectRatio == h.pixelAspectRatio)
+
+/-- OpenEXR-style shared-attribute check for a part list (part 0 is the base). -/
+def sharedAttrsOK : List Header → Bool
+  | [] => true
+  | base :: rest => rest.all (fun h => sharesAttrs base h)
+
+theorem sharesAttrs_self (h : Header) : sharesAttrs h h = true := by
+  unfold sharesAttrs sameBox
+  simp
+
+theorem sharesAttrs_spec {base h : Header} :
+    sharesAttrs base h = true ↔
+      sameBox base.displayWindow h.displayWindow = true ∧
+      base.pixelAspectRatio = h.pixelAspectRatio := by
+  unfold sharesAttrs
+  simp [Bool.and_eq_true, beq_iff_eq]
+
+theorem sharedAttrsOK_singleton (h : Header) : sharedAttrsOK [h] = true := by
+  simp [sharedAttrsOK]
+
+theorem sharedAttrsOK_cons_of_false {base h : Header} {rest : List Header}
+    (hne : sharesAttrs base h = false) : sharedAttrsOK (base :: h :: rest) = false := by
+  simp [sharedAttrsOK, hne]
+
+theorem sharedAttrsOK_cons_of_true {base h : Header} {rest : List Header}
+    (heq : sharesAttrs base h = true) :
+    sharedAttrsOK (base :: h :: rest) = sharedAttrsOK (base :: rest) := by
+  simp [sharedAttrsOK, heq]
+
 end Header
 
 /-- The offset table of one part: one absolute file offset per chunk. -/

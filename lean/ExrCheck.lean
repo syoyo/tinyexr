@@ -61,7 +61,7 @@ def reportPart (idx : Nat) (h : Exr.Header) (t : Option Exr.OffsetTable) : IO Un
   IO.println s!"part-channels {idx} {h.channels.length} \
       {decide (Exr.Channel.StrictlySorted h.channels)}"
 
-def run (path : String) : IO UInt32 := do
+def run (path : String) (strictShared : Bool) : IO UInt32 := do
   let bytes ← IO.FS.readBinFile path
   IO.println s!"file {path}"
   match Exr.Parse.parseFile bytes with
@@ -70,7 +70,9 @@ def run (path : String) : IO UInt32 := do
     IO.println "file-error parse"
     return 1
   | some f =>
-    let ok := Exr.Parse.checkParts bytes.size f
+    let ok :=
+      if strictShared then Exr.Parse.checkPartsOpenEXR bytes.size f
+      else Exr.Parse.checkParts bytes.size f
     IO.println s!"file-ok {ok} {f.parts.length}"
     let mut idx := 0
     for (h, t) in f.parts.zip f.offsetTables do
@@ -85,7 +87,8 @@ end ExrCheck
 
 def main (args : List String) : IO UInt32 := do
   match args with
-  | [path] => ExrCheck.run path
+  | [path] => ExrCheck.run path false
+  | ["--strict", path] => ExrCheck.run path true
   | _ =>
-    IO.eprintln "usage: exrcheck <file.exr>"
+    IO.eprintln "usage: exrcheck [--strict] <file.exr>  (--strict = OpenEXR shared-attribute rule)"
     return 2

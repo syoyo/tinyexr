@@ -154,6 +154,17 @@ theorem levelTiles_pos (up : TypedAttr.RoundingMode) {tx ty w h : Nat} (hw : 1 �
     (tilesIn_pos (levelSize_pos hw l) htx)
     (tilesIn_pos (levelSize_pos hh l) hty)
 
+/-- Tiles of one resolution level, with independent x/y level indices (RIPMAP). -/
+def levelTiles2 (up : TypedAttr.RoundingMode) (tw th w h lx ly : Nat) : Nat :=
+  tilesIn (levelSize up w lx) tw * tilesIn (levelSize up h ly) th
+
+theorem levelTiles2_pos (up : TypedAttr.RoundingMode) {tw th w h lx ly : Nat}
+    (hw : 1 ≤ w) (hh : 1 ≤ h) (htw : 1 ≤ tw) (hth : 1 ≤ th) :
+    0 < levelTiles2 up tw th w h lx ly := by
+  unfold levelTiles2
+  exact Nat.mul_pos (tilesIn_pos (levelSize_pos hw lx) htw)
+    (tilesIn_pos (levelSize_pos hh ly) hth)
+
 /-- Sum of `f` over `List.range n`. -/
 def sumRange (n : Nat) (f : Nat → Nat) : Nat := ((List.range n).map f).sum
 
@@ -180,9 +191,9 @@ def tiledChunks (mode : TypedAttr.LevelMode) (up : TypedAttr.RoundingMode) (tx t
   | .mipmap =>
     sumRange (mipmapLevelCount up w h) (fun l => levelTiles up tx ty w h l)
   | .ripmap =>
-    sumRange (numLevels up w) (fun lx =>
-      sumRange (numLevels up h) (fun ly =>
-        tilesIn (levelSize up w lx) tx * tilesIn (levelSize up h ly) ty))
+    sumRange (numLevels up h) (fun ly =>
+      sumRange (numLevels up w) (fun lx =>
+        levelTiles2 up tx ty w h lx ly))
 
 theorem tiledChunks_pos (mode : TypedAttr.LevelMode) (up : TypedAttr.RoundingMode) {tx ty w h : Nat}
     (htx : 1 ≤ tx) (hty : 1 ≤ ty) (hw : 1 ≤ w) (hh : 1 ≤ h) :
@@ -192,11 +203,281 @@ theorem tiledChunks_pos (mode : TypedAttr.LevelMode) (up : TypedAttr.RoundingMod
   · exact Nat.mul_pos (tilesIn_pos hw htx) (tilesIn_pos hh hty)
   · exact sumRange_pos (mipmapLevelCount_pos up w h)
       (fun l => levelTiles_pos up hw hh htx hty l)
-  · exact sumRange_pos (numLevels_pos up w)
-      (fun lx => sumRange_pos (numLevels_pos up h)
-        (fun ly => Nat.mul_pos
+  · exact sumRange_pos (numLevels_pos up h)
+      (fun ly => sumRange_pos (numLevels_pos up w)
+        (fun lx => Nat.mul_pos
           (tilesIn_pos (levelSize_pos hw lx) htx)
           (tilesIn_pos (levelSize_pos hh ly) hty)))
+
+/-! ### Tile index ordering (offset-table order)
+
+OpenEXR's reader computes the offset-table index of a tile as a prefix sum over
+resolution levels (and, for RIPMAP, over y-levels then x-levels). The model
+below mirrors `tile_index()` in `src/exr_reader.c`; the lemmas show the index
+stays inside the part's chunk range, so the reader can never index the offset
+table out of bounds. -/
+
+/-- Sum of the tile counts of levels `0 .. l-1` (the offset-table prefix). -/
+def prefixTiles (up : TypedAttr.RoundingMode) (tw th w h l : Nat) : Nat :=
+  sumRange l (fun i => levelTiles up tw th w h i)
+
+/-- One RIPMAP row: all x-levels at a fixed y-level. -/
+def rowTiles (up : TypedAttr.RoundingMode) (tw th w h ly : Nat) : Nat :=
+  sumRange (numLevels up w) (fun xx => levelTiles2 up tw th w h xx ly)
+
+/-- Offset-table index of a tile, matching the C reader's `tile_index()`.
+    `tx`/`ty` are tile indices within the level, `lx`/`ly` are level indices;
+    `tw`/`th` are the tile dimensions. -/
+def tileIndex : TypedAttr.LevelMode → TypedAttr.RoundingMode →
+    Nat → Nat → Nat → Nat → Nat → Nat → Nat → Nat → Nat
+  | .oneLevel, _, tw, _, w, _, tx, ty, _, _ => ty * tilesIn w tw + tx
+  | .mipmap, up, tw, th, w, h, tx, ty, lx, _ =>
+      prefixTiles up tw th w h lx + ty * tilesIn (levelSize up w lx) tw + tx
+  | .ripmap, up, tw, th, w, h, tx, ty, lx, ly =>
+      sumRange ly (fun yy => rowTiles up tw th w h yy)
+        + sumRange lx (fun xx => levelTiles2 up tw th w h xx ly)
+        + ty * tilesIn (levelSize up w lx) tw + tx
+
+theorem sumRange_succ (n : Nat) (f : Nat → Nat) :
+    sumRange (n + 1) f = sumRange n f + f n := by
+  unfold sumRange
+  rw [List.range_succ, List.map_append, List.sum_append]
+  simp
+
+theorem sumRange_le_of_le {f : Nat → Nat} {n m : Nat} (h : n ≤ m) :
+    sumRange n f ≤ sumRange m f := by
+  obtain ⟨k, rfl⟩ := Nat.exists_eq_add_of_le h
+  clear h
+  induction k with
+  | zero => simp
+  | succ k ih =>
+    have : n + (k + 1) = (n + k) + 1 := by omega
+    rw [this, sumRange_succ]
+    exact Nat.le_trans ih (Nat.le_add_right _ _)
+
+theorem sumRange_lt_succ {f : Nat → Nat} (hf : ∀ i, 0 < f i) (n : Nat) :
+    sumRange n f < sumRange (n + 1) f := by
+  rw [sumRange_succ]
+  have := hf n
+  omega
+
+/-- A valid tile position `(tx, ty)` is below the level's tile count. -/
+theorem tileOffset_lt {nxt nyt tx ty : Nat} (_hnxt : 0 < nxt)
+    (htx : tx < nxt) (hty : ty < nyt) :
+    ty * nxt + tx < nxt * nyt := by
+  have h1 : ty * nxt + tx < (ty + 1) * nxt := by
+    rw [Nat.succ_mul]; omega
+  calc ty * nxt + tx < (ty + 1) * nxt := h1
+    _ = nxt * (ty + 1) := Nat.mul_comm _ _
+    _ ≤ nxt * nyt := Nat.mul_le_mul_left nxt (by omega)
+
+/-- The tile index of a `ONE_LEVEL` part is below the part's chunk count. -/
+theorem tileIndex_oneLevel_lt {up : TypedAttr.RoundingMode} {tw th w h tx ty lx ly : Nat}
+    (htw : 1 ≤ tw) (_hth : 1 ≤ th)
+    (hw : 1 ≤ w) (_hh : 1 ≤ h)
+    (hx : tx < tilesIn w tw) (hy : ty < tilesIn h th) :
+    tileIndex .oneLevel up tw th w h tx ty lx ly <
+      tiledChunks .oneLevel up tw th w h := by
+  unfold tileIndex tiledChunks
+  exact tileOffset_lt (tilesIn_pos hw htw) hx hy
+
+/-- The tile index of a `MIPMAP` part is below the part's chunk count. -/
+theorem tileIndex_mipmap_lt {up : TypedAttr.RoundingMode} {tw th w h tx ty lx ly : Nat}
+    (htw : 1 ≤ tw) (_hth : 1 ≤ th) (hw : 1 ≤ w) (_hh : 1 ≤ h)
+    (hx : tx < tilesIn (levelSize up w lx) tw)
+    (hy : ty < tilesIn (levelSize up h lx) th)
+    (hlx : lx < mipmapLevelCount up w h) :
+    tileIndex .mipmap up tw th w h tx ty lx ly <
+      tiledChunks .mipmap up tw th w h := by
+  unfold tileIndex tiledChunks prefixTiles
+  have hq : ty * tilesIn (levelSize up w lx) tw + tx < levelTiles up tw th w h lx := by
+    unfold levelTiles
+    exact tileOffset_lt (tilesIn_pos (levelSize_pos hw lx) htw) hx hy
+  have hsucc : sumRange lx (fun i => levelTiles up tw th w h i) +
+      levelTiles up tw th w h lx =
+      sumRange (lx + 1) (fun i => levelTiles up tw th w h i) := by
+    rw [sumRange_succ]
+  have hle : sumRange (lx + 1) (fun i => levelTiles up tw th w h i) ≤
+      sumRange (mipmapLevelCount up w h) (fun i => levelTiles up tw th w h i) :=
+    sumRange_le_of_le (by omega)
+  calc sumRange lx (fun i => levelTiles up tw th w h i) +
+        ty * tilesIn (levelSize up w lx) tw + tx
+      = sumRange lx (fun i => levelTiles up tw th w h i) +
+          (ty * tilesIn (levelSize up w lx) tw + tx) := by rw [Nat.add_assoc]
+    _ < sumRange lx (fun i => levelTiles up tw th w h i) +
+          levelTiles up tw th w h lx := by omega
+    _ = sumRange (lx + 1) (fun i => levelTiles up tw th w h i) := hsucc
+    _ ≤ sumRange (mipmapLevelCount up w h) (fun i => levelTiles up tw th w h i) := hle
+
+/-- The prefix sum is strictly increasing in the level index. -/
+theorem prefixTiles_lt_of_lt (up : TypedAttr.RoundingMode) (tw th w h l1 l2 : Nat)
+    (htw : 1 ≤ tw) (hth : 1 ≤ th) (hw : 1 ≤ w) (hh : 1 ≤ h) (hl : l1 < l2) :
+    prefixTiles up tw th w h l1 < prefixTiles up tw th w h l2 := by
+  have hstep : prefixTiles up tw th w h l1 < prefixTiles up tw th w h (l1 + 1) := by
+    unfold prefixTiles
+    exact sumRange_lt_succ (fun i => levelTiles_pos up hw hh htw hth i) l1
+  have hle : prefixTiles up tw th w h (l1 + 1) ≤ prefixTiles up tw th w h l2 := by
+    unfold prefixTiles
+    exact sumRange_le_of_le (by omega)
+  exact lt_of_lt_of_le hstep hle
+
+theorem tileIndex_mipmap_ge_prefix {up : TypedAttr.RoundingMode} {tw th w h tx ty lx ly : Nat} :
+    prefixTiles up tw th w h lx ≤
+      tileIndex .mipmap up tw th w h tx ty lx ly := by
+  show prefixTiles up tw th w h lx ≤
+    prefixTiles up tw th w h lx + ty * tilesIn (levelSize up w lx) tw + tx
+  omega
+
+theorem tileIndex_mipmap_lt_prefix {up : TypedAttr.RoundingMode} {tw th w h tx ty lx ly : Nat}
+    (htw : 1 ≤ tw) (hw : 1 ≤ w)
+    (hx : tx < tilesIn (levelSize up w lx) tw)
+    (hy : ty < tilesIn (levelSize up h lx) th) :
+    tileIndex .mipmap up tw th w h tx ty lx ly < prefixTiles up tw th w h (lx + 1) := by
+  unfold tileIndex prefixTiles
+  have hq : ty * tilesIn (levelSize up w lx) tw + tx < levelTiles up tw th w h lx := by
+    unfold levelTiles
+    exact tileOffset_lt (tilesIn_pos (levelSize_pos hw lx) htw) hx hy
+  have hsucc : sumRange lx (fun i => levelTiles up tw th w h i) +
+      levelTiles up tw th w h lx =
+      sumRange (lx + 1) (fun i => levelTiles up tw th w h i) := by
+    rw [sumRange_succ]
+  calc sumRange lx (fun i => levelTiles up tw th w h i) +
+        ty * tilesIn (levelSize up w lx) tw + tx
+      = sumRange lx (fun i => levelTiles up tw th w h i) +
+          (ty * tilesIn (levelSize up w lx) tw + tx) := by rw [Nat.add_assoc]
+    _ < sumRange lx (fun i => levelTiles up tw th w h i) +
+          levelTiles up tw th w h lx := by omega
+    _ = sumRange (lx + 1) (fun i => levelTiles up tw th w h i) := hsucc
+
+/-- A `ONE_LEVEL` tile index determines the tile position. -/
+theorem tileIndex_oneLevel_injective {up : TypedAttr.RoundingMode} {tw th w h tx1 ty1 tx2 ty2 lx ly : Nat}
+    (hw : 1 ≤ w) (htw : 1 ≤ tw)
+    (hx1 : tx1 < tilesIn w tw) (hx2 : tx2 < tilesIn w tw)
+    (hidx : tileIndex .oneLevel up tw th w h tx1 ty1 lx ly =
+         tileIndex .oneLevel up tw th w h tx2 ty2 lx ly) :
+    tx1 = tx2 ∧ ty1 = ty2 := by
+  have hn : 0 < tilesIn w tw := tilesIn_pos hw htw
+  simp only [tileIndex] at hidx
+  have hq : ty1 * tilesIn w tw + tx1 = ty2 * tilesIn w tw + tx2 := by omega
+  constructor
+  · have e1 : (ty1 * tilesIn w tw + tx1) % tilesIn w tw = tx1 := by
+      rw [Nat.add_comm, Nat.add_mul_mod_self_right, Nat.mod_eq_of_lt hx1]
+    have e2 : (ty2 * tilesIn w tw + tx2) % tilesIn w tw = tx2 := by
+      rw [Nat.add_comm, Nat.add_mul_mod_self_right, Nat.mod_eq_of_lt hx2]
+    rw [← e1, ← e2, hq]
+  · have d1 : (ty1 * tilesIn w tw + tx1) / tilesIn w tw = ty1 := by
+      rw [Nat.add_comm, Nat.add_mul_div_right tx1 ty1 hn, Nat.div_eq_of_lt hx1, Nat.zero_add]
+    have d2 : (ty2 * tilesIn w tw + tx2) / tilesIn w tw = ty2 := by
+      rw [Nat.add_comm, Nat.add_mul_div_right tx2 ty2 hn, Nat.div_eq_of_lt hx2, Nat.zero_add]
+    rw [← d1, ← d2, hq]
+
+/-- A `MIPMAP` tile index determines the tile position and the level. -/
+theorem tileIndex_mipmap_injective {up : TypedAttr.RoundingMode}
+    {tw th w h tx1 ty1 tx2 ty2 lx1 lx2 : Nat}
+    (htw : 1 ≤ tw) (hth : 1 ≤ th) (hw : 1 ≤ w) (hh : 1 ≤ h)
+    (hx1 : tx1 < tilesIn (levelSize up w lx1) tw)
+    (hy1 : ty1 < tilesIn (levelSize up h lx1) th)
+    (hx2 : tx2 < tilesIn (levelSize up w lx2) tw)
+    (hy2 : ty2 < tilesIn (levelSize up h lx2) th)
+    (hidx : tileIndex .mipmap up tw th w h tx1 ty1 lx1 lx1 =
+         tileIndex .mipmap up tw th w h tx2 ty2 lx2 lx2) :
+    tx1 = tx2 ∧ ty1 = ty2 ∧ lx1 = lx2 := by
+  have hlx : lx1 = lx2 := by
+    rcases Nat.lt_trichotomy lx1 lx2 with hlt | heq | hgt
+    · exfalso
+      have hP := prefixTiles_lt_of_lt up tw th w h lx1 lx2 htw hth hw hh hlt
+      have hstep : prefixTiles up tw th w h (lx1 + 1) ≤
+          prefixTiles up tw th w h lx2 := by
+        unfold prefixTiles
+        exact sumRange_le_of_le (by omega)
+      have hi1 := tileIndex_mipmap_lt_prefix (up := up) htw hw hx1 hy1 (lx := lx1) (ly := lx1)
+      have hi2 := tileIndex_mipmap_ge_prefix (up := up) (tw := tw) (th := th) (w := w) (h := h)
+        (tx := tx2) (ty := ty2) (lx := lx2) (ly := lx2)
+      omega
+    · exact heq
+    · exfalso
+      have hP := prefixTiles_lt_of_lt up tw th w h lx2 lx1 htw hth hw hh hgt
+      have hstep : prefixTiles up tw th w h (lx2 + 1) ≤
+          prefixTiles up tw th w h lx1 := by
+        unfold prefixTiles
+        exact sumRange_le_of_le (by omega)
+      have hi2 := tileIndex_mipmap_lt_prefix (up := up) htw hw hx2 hy2 (lx := lx2) (ly := lx2)
+      have hi1 := tileIndex_mipmap_ge_prefix (up := up) (tw := tw) (th := th) (w := w) (h := h)
+        (tx := tx1) (ty := ty1) (lx := lx1) (ly := lx1)
+      omega
+  subst hlx
+  have hn : 0 < tilesIn (levelSize up w lx1) tw :=
+    tilesIn_pos (levelSize_pos hw lx1) htw
+  simp only [tileIndex] at hidx
+  have hq : ty1 * tilesIn (levelSize up w lx1) tw + tx1 =
+      ty2 * tilesIn (levelSize up w lx1) tw + tx2 := by omega
+  constructor
+  · have e1 : (ty1 * tilesIn (levelSize up w lx1) tw + tx1) %
+        tilesIn (levelSize up w lx1) tw = tx1 := by
+      rw [Nat.add_comm, Nat.add_mul_mod_self_right, Nat.mod_eq_of_lt hx1]
+    have e2 : (ty2 * tilesIn (levelSize up w lx1) tw + tx2) %
+        tilesIn (levelSize up w lx1) tw = tx2 := by
+      rw [Nat.add_comm, Nat.add_mul_mod_self_right, Nat.mod_eq_of_lt hx2]
+    rw [← e1, ← e2, hq]
+  · constructor
+    · have d1 : (ty1 * tilesIn (levelSize up w lx1) tw + tx1) /
+          tilesIn (levelSize up w lx1) tw = ty1 := by
+        rw [Nat.add_comm, Nat.add_mul_div_right tx1 ty1 hn,
+          Nat.div_eq_of_lt hx1, Nat.zero_add]
+      have d2 : (ty2 * tilesIn (levelSize up w lx1) tw + tx2) /
+          tilesIn (levelSize up w lx1) tw = ty2 := by
+        rw [Nat.add_comm, Nat.add_mul_div_right tx2 ty2 hn,
+          Nat.div_eq_of_lt hx2, Nat.zero_add]
+      rw [← d1, ← d2, hq]
+    · rfl
+
+/-- The tile index of a `RIPMAP` part is below the part's chunk count. -/
+theorem tileIndex_ripmap_lt {up : TypedAttr.RoundingMode} {tw th w h tx ty lx ly : Nat}
+    (htw : 1 ≤ tw) (_hth : 1 ≤ th) (hw : 1 ≤ w) (_hh : 1 ≤ h)
+    (hx : tx < tilesIn (levelSize up w lx) tw)
+    (hy : ty < tilesIn (levelSize up h ly) th)
+    (hlx : lx < numLevels up w) (hly : ly < numLevels up h) :
+    tileIndex .ripmap up tw th w h tx ty lx ly <
+      tiledChunks .ripmap up tw th w h := by
+  unfold tileIndex tiledChunks rowTiles
+  have hq : ty * tilesIn (levelSize up w lx) tw + tx <
+      levelTiles2 up tw th w h lx ly := by
+    unfold levelTiles2
+    exact tileOffset_lt (tilesIn_pos (levelSize_pos hw lx) htw) hx hy
+  have hcol : sumRange lx (fun xx => levelTiles2 up tw th w h xx ly) +
+      (ty * tilesIn (levelSize up w lx) tw + tx) <
+      sumRange (numLevels up w) (fun xx => levelTiles2 up tw th w h xx ly) := by
+    have hsucc : sumRange lx (fun xx => levelTiles2 up tw th w h xx ly) +
+        levelTiles2 up tw th w h lx ly =
+        sumRange (lx + 1) (fun xx => levelTiles2 up tw th w h xx ly) := by
+      rw [sumRange_succ]
+    have hle : sumRange (lx + 1) (fun xx => levelTiles2 up tw th w h xx ly) ≤
+        sumRange (numLevels up w) (fun xx => levelTiles2 up tw th w h xx ly) :=
+      sumRange_le_of_le (by omega)
+    calc sumRange lx (fun xx => levelTiles2 up tw th w h xx ly) +
+          (ty * tilesIn (levelSize up w lx) tw + tx)
+        < sumRange lx (fun xx => levelTiles2 up tw th w h xx ly) +
+            levelTiles2 up tw th w h lx ly := by omega
+      _ = sumRange (lx + 1) (fun xx => levelTiles2 up tw th w h xx ly) := hsucc
+      _ ≤ sumRange (numLevels up w) (fun xx => levelTiles2 up tw th w h xx ly) := hle
+  have hrow : sumRange ly (fun yy => rowTiles up tw th w h yy) +
+      sumRange (numLevels up w) (fun xx => levelTiles2 up tw th w h xx ly) =
+      sumRange (ly + 1) (fun yy => rowTiles up tw th w h yy) := by
+    rw [sumRange_succ]
+    rfl
+  have hle : sumRange (ly + 1) (fun yy => rowTiles up tw th w h yy) ≤
+      sumRange (numLevels up h) (fun yy => rowTiles up tw th w h yy) :=
+    sumRange_le_of_le (by omega)
+  calc (sumRange ly (fun yy => rowTiles up tw th w h yy) +
+        sumRange lx (fun xx => levelTiles2 up tw th w h xx ly)) +
+        ty * tilesIn (levelSize up w lx) tw + tx
+      = sumRange ly (fun yy => rowTiles up tw th w h yy) +
+          (sumRange lx (fun xx => levelTiles2 up tw th w h xx ly) +
+            (ty * tilesIn (levelSize up w lx) tw + tx)) := by omega
+    _ < sumRange ly (fun yy => rowTiles up tw th w h yy) +
+          sumRange (numLevels up w) (fun xx => levelTiles2 up tw th w h xx ly) := by omega
+    _ = sumRange (ly + 1) (fun yy => rowTiles up tw th w h yy) := hrow
+    _ ≤ sumRange (numLevels up h) (fun yy => rowTiles up tw th w h yy) := hle
 
 end Tiles
 

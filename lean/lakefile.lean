@@ -23,13 +23,16 @@ lean_lib ExrSpec where
   globs := #[`ExrSpec, `Exr.+]
 
 /-- Structural conformance checker (machine-readable report). -/
+@[default_target]
 lean_exe exrcheck where
   root := `ExrCheck
 
 /-- Seeded generator of well-formed structural EXR files. -/
+@[default_target]
 lean_exe exrgen where
   root := `ExrGen
 
 /-- Codec test-vector generator for the differential harness. -/
+@[default_target]
 lean_exe codecgen where
   root := `CodecGen
