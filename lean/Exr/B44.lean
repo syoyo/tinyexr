@@ -234,6 +234,36 @@ theorem chooseShift_le_12 (t : Fin 16 → Nat) (tmax : Nat) (ht : ∀ i, t i ≤
   chooseShiftAux_le_of_fits t tmax (fitsAt_12 t tmax ht htm) 0 17
     (by omega) (by omega) (by omega)
 
+/-! ### Reconstruction error bound
+
+For a block that fits at shift 12 (`fitsAt_12`), the encoder quantizes to
+multiples of `2^12` with round-to-nearest, so the decoded value is within half
+a quantization step (plus the odd tie rule) of the source t-code. -/
+
+/-- The rounding error of `shiftRound` at shift 12: the quantized value is
+    within `2049` (half a `2^12` unit plus the tie rule) of its argument. -/
+theorem shiftRound_12_abs_error (y : Nat) :
+    (y : Int) - (shiftRound y 12 : Int) * 2 ^ 12 ∈ Set.Icc (-2049) 2049 := by
+  unfold shiftRound
+  norm_num
+  omega
+
+/-- An encoded-and-decoded B44 block reproduces each t-code within ±2049. -/
+theorem dvals_12_within (t : Fin 16 → Nat) (tmax : Nat) (ht : ∀ i, t i ≤ tmax)
+    (i : Fin 16) :
+    |(tmax : Int) - (dvals t tmax 12 i : Int) * 2 ^ 12 - (t i : Int)| ≤ 2049 := by
+  unfold dvals
+  have h := shiftRound_12_abs_error (tmax - t i)
+  rw [Set.mem_Icc] at h
+  have hstep : (tmax : Int) - (shiftRound (tmax - t i) 12 : Int) * 2 ^ 12 - (t i : Int)
+      = (tmax - t i : Int) - (shiftRound (tmax - t i) 12 : Int) * 2 ^ 12 := by
+    have hti := ht i
+    omega
+  rw [hstep]
+  have hti := ht i
+  rw [abs_le']
+  constructor <;> omega
+
 /-! ### Residuals of a fitting block -/
 
 /-- The first residual of a fitting block is in `[0, 0x3f]`. -/

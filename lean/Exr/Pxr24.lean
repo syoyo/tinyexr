@@ -373,6 +373,151 @@ theorem packPlanes_length (vals : List UInt32) (bytes : Nat)
   rcases hb with rfl | rfl | rfl <;>
     (simp [packPlanes, hg, List.range, List.range.loop]; omega)
 
+theorem sum_range_const (n c : Nat) :
+    ((List.range n).map (fun _ => c)).sum = n * c := by
+  induction n with
+  | zero => simp
+  | succ n ih =>
+    rw [List.range_succ, List.map_append, List.sum_append, ih]
+    simp
+    rw [Nat.add_mul, Nat.one_mul]
+
+theorem length_flatMap_range_eq {f : Nat → List UInt32} {count : Nat} (n : Nat)
+    (hlen : ∀ k < n, (f k).length = count) :
+    ((List.range n).flatMap f).length = n * count := by
+  rw [List.length_flatMap]
+  have hmap : (List.range n).map (fun k => (f k).length)
+      = (List.range n).map (fun _ => count) := by
+    apply List.map_congr_left
+    intro k hk
+    rw [List.mem_range] at hk
+    exact hlen k hk
+  rw [hmap, sum_range_const]
+
+theorem getElem?_flatMap_range {f : Nat → List UInt32} {count : Nat} (n : Nat)
+    (hlen : ∀ k < n, (f k).length = count) :
+    ∀ k i : Nat, k < n → i < count →
+      ((List.range n).flatMap f)[k * count + i]? = (f k)[i]? := by
+  induction n with
+  | zero =>
+    intro k i hk _
+    exact (Nat.not_lt_zero k hk).elim
+  | succ n ih =>
+    intro k i hk hi
+    have hlen' : ∀ k < n, (f k).length = count := fun k hk' => hlen k (by omega)
+    rw [List.range_succ, List.flatMap_append, List.getElem?_append]
+    have hleftlen : (List.flatMap f (List.range n)).length = n * count :=
+      length_flatMap_range_eq n hlen'
+    rw [hleftlen]
+    by_cases hkn : k < n
+    · have hlt : k * count + i < n * count := by
+        have hle : k * count + count ≤ n * count := by
+          have h2 : (k + 1) * count ≤ n * count :=
+            Nat.mul_le_mul_right count (by omega)
+          rw [Nat.add_mul, Nat.one_mul] at h2
+          exact h2
+        rcases Nat.eq_zero_or_pos count with rfl | _
+        · exact absurd hi (Nat.not_lt_zero i)
+        · omega
+      rw [ite_eq_left hlt, ih hlen' k i hkn hi]
+    · have hkeq : k = n := by omega
+      subst hkeq
+      rw [ite_eq_right (by omega), List.flatMap_singleton]
+      congr 1
+      omega
+
+theorem getD_range_reconstruct (gs : List (List UInt32)) :
+    (List.range gs.length).map (fun i => gs.getD i []) = gs := by
+  apply List.ext_getElem?
+  intro i
+  rw [List.getElem?_map]
+  by_cases hi : i < gs.length
+  · rw [List.getElem?_range hi, Option.map_some, List.getElem?_eq_getElem hi]
+    congr 1
+    rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hi, Option.getD_some]
+  · rw [List.getElem?_eq_none (by rw [List.length_range]; exact Nat.le_of_not_lt hi),
+        List.getElem?_eq_none (Nat.le_of_not_lt hi), Option.map_none]
+
+theorem plane_reconstruct (gs : List (List UInt32)) (bytes : Nat)
+    (hlen : ∀ g ∈ gs, g.length = bytes)
+    (i : Nat) (hi : i < gs.length) :
+    (List.range bytes).map (fun k =>
+        ((List.range bytes).flatMap (fun k' => gs.map (fun g => g.getD k' 0))).getD
+          (k * gs.length + i) 0)
+      = gs.getD i [] := by
+  have hgi : (gs.getD i []).length = bytes := by
+    rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hi, Option.getD_some]
+    exact hlen (gs[i]) (List.getElem_mem hi)
+  have hgsi : gs.getD i [] = gs[i] := by
+    rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hi, Option.getD_some]
+  have hgi2 : (gs[i]).length = bytes := by
+    rw [← hgsi]
+    exact hgi
+  have hlen_plane : ∀ k < bytes, (gs.map (fun g => g.getD k 0)).length = gs.length :=
+    fun k _ => List.length_map _
+  apply List.ext_getElem?
+  intro k
+  rw [List.getElem?_map]
+  by_cases hk : k < bytes
+  · rw [List.getElem?_range hk, Option.map_some, hgsi]
+    rw [List.getElem?_eq_getElem (by rw [hgi2]; exact hk)]
+    congr 1
+    rw [List.getD_eq_getElem?_getD,
+      getElem?_flatMap_range bytes hlen_plane k i hk hi,
+      List.getElem?_map, List.getElem?_eq_getElem hi, Option.map_some,
+      Option.getD_some]
+    rw [List.getD_eq_getElem?_getD]
+    rw [List.getElem?_eq_getElem (by rw [hgi2]; exact hk), Option.getD_some]
+  · have hknone : (List.range bytes)[k]? = none :=
+      List.getElem?_eq_none (by rw [List.length_range]; exact Nat.le_of_not_lt hk)
+    rw [hknone, Option.map_none, List.getElem?_eq_none (by rw [hgi]; exact Nat.le_of_not_lt hk)]
+
+/-- Plane transposition involution, stated for arbitrary groups. -/
+theorem unpackPlanesToGroups_flatMap (gs : List (List UInt32)) (bytes : Nat)
+    (hlen : ∀ g ∈ gs, g.length = bytes) :
+    unpackPlanesToGroups ((List.range bytes).flatMap (fun k => gs.map (fun g => g.getD k 0)))
+      gs.length bytes = gs := by
+  have hmap : (List.range gs.length).map (fun i => (List.range bytes).map (fun k =>
+        ((List.range bytes).flatMap (fun k' => gs.map (fun g => g.getD k' 0))).getD
+          (k * gs.length + i) 0))
+      = (List.range gs.length).map (fun i => gs.getD i []) := by
+    apply List.map_congr_left
+    intro i hi
+    rw [List.mem_range] at hi
+    exact plane_reconstruct gs bytes hlen i hi
+  unfold unpackPlanesToGroups
+  rw [hmap]
+  exact getD_range_reconstruct gs
+
+/-- Plane transposition involution: unpacking the plane-major stream of a
+    row rebuilds its per-sample groups exactly. -/
+theorem unpackPlanesToGroups_packPlanes (vals : List UInt32) (bytes : Nat)
+    (hb : bytes = 2 ∨ bytes = 3 ∨ bytes = 4) :
+    unpackPlanesToGroups (packPlanes vals bytes) vals.length bytes = packGroups vals bytes := by
+  have hgsize := packGroups_size vals bytes hb
+  have hcount : (packGroups vals bytes).length = vals.length := by
+    have h := congrArg List.length hgsize
+    simpa [List.length_map] using h
+  have hlen : ∀ g ∈ packGroups vals bytes, g.length = bytes := by
+    intro g hg
+    have hmem : g.length ∈ ((packGroups vals bytes).map List.length) :=
+      List.mem_map.mpr ⟨g, hg, rfl⟩
+    rw [hgsize] at hmem
+    obtain ⟨x, _, hx⟩ := List.mem_map.mp hmem
+    exact hx.symm
+  rw [← hcount]
+  exact unpackPlanesToGroups_flatMap _ _ hlen
+
+/-- Row-level round trip: decoding a packed plane-major row returns the
+    original values. -/
+theorem unpackRowPlanes_packPlanes (vals : List UInt32) (bytes : Nat)
+    (hb : bytes = 2 ∨ bytes = 3 ∨ bytes = 4)
+    (hbound : ∀ v ∈ vals, v ≤ boundOf bytes) :
+    unpackRowPlanes (packPlanes vals bytes) vals.length bytes = vals := by
+  unfold unpackRowPlanes
+  rw [unpackPlanesToGroups_packPlanes vals bytes hb]
+  exact unpackGroups_packGroups vals bytes hb hbound
+
 end Pxr24
 
 end Exr

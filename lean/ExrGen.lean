@@ -28,65 +28,6 @@ def channel (name : String) (pt : Exr.PixelType) : Exr.Channel :=
 def bytesPerPixel (cs : List Exr.Channel) : Nat :=
   cs.foldl (fun acc c => acc + c.pixelType.sizeBytes) 0
 
-/-- Build the attribute list of a part header. -/
-def headerAttrs (h : Exr.Header) (multipart : Bool) : List Exr.RawAttr :=
-  let chlist :=
-    (h.channels.foldl (fun acc c =>
-        acc ++ c.name ++ Exr.Emit.nulByte ++ Exr.Emit.u32Bytes c.pixelType.toBits.toNat
-          ++ ByteArray.mk #[0, 0, 0, 0]
-          ++ Exr.Emit.u32Bytes c.xSampling.toInt.toNat
-          ++ Exr.Emit.u32Bytes c.ySampling.toInt.toNat) ByteArray.empty)
-      ++ Exr.Emit.nulByte
-  let box (b : Exr.Box2i) : Exr.Bytes :=
-    Exr.Emit.u32Bytes b.minX.toInt.toNat ++ Exr.Emit.u32Bytes b.minY.toInt.toNat
-      ++ Exr.Emit.u32Bytes b.maxX.toInt.toNat ++ Exr.Emit.u32Bytes b.maxY.toInt.toNat
-  let a (name ty : String) (v : Exr.Bytes) : Exr.RawAttr :=
-    { name := chanBytes name, typeName := chanBytes ty, value := v }
-  let base :=
-    [ a "channels" "chlist" chlist,
-      a "compression" "compression" (ByteArray.mk #[h.compression.toBits]),
-      a "dataWindow" "box2i" (box h.dataWindow),
-      a "displayWindow" "box2i" (box h.displayWindow),
-      a "lineOrder" "lineOrder" (ByteArray.mk #[h.lineOrder.toBits]),
-      a "pixelAspectRatio" "float" (Exr.Emit.u32Bytes h.pixelAspectRatio.toNat),
-      a "screenWindowCenter" "v2f"
-        (Exr.Emit.u32Bytes h.screenWindowCenterX.toNat
-          ++ Exr.Emit.u32Bytes h.screenWindowCenterY.toNat),
-      a "screenWindowWidth" "float" (Exr.Emit.u32Bytes h.screenWindowWidth.toNat) ]
-  let withTiles :=
-    match h.tileDesc with
-    | some td =>
-      let lm : Nat := match td.levelMode with
-        | .oneLevel => 0
-        | .mipmap => 1
-        | .ripmap => 2
-      let rm : Nat := match td.roundingMode with
-        | .roundDown => 0
-        | .roundUp => 1
-      base ++ [ a "tiles" "tiledesc"
-        (Exr.Emit.u32Bytes td.xSize ++ Exr.Emit.u32Bytes td.ySize
-          ++ ByteArray.mk #[UInt8.ofNat (lm ||| rm <<< 4)]) ]
-    | none => base
-  let withChunkCount :=
-    match h.chunkCount with
-    | some n => withTiles ++ [ a "chunkCount" "int" (Exr.Emit.u32Bytes n) ]
-    | none => withTiles
-  let withName :=
-    match h.name with
-    | some n => withChunkCount ++ [ a "name" "string" n ]
-    | none => withChunkCount
-  let withVersion :=
-    if h.partType.isDeep then withName ++ [ a "version" "int" (Exr.Emit.u32Bytes 1) ]
-    else withName
-  let withMaxSamples :=
-    match h.maxSamplesPerPixel with
-    | some m =>
-      withVersion ++ [ a "maxSamplesPerPixel" "int" (Exr.Emit.u32Bytes m.toInt.toNat) ]
-    | none => withVersion
-  if multipart || h.partType.isDeep then
-    withMaxSamples ++ [ a "type" "string" (chanBytes h.partType.wireName) ]
-  else withMaxSamples
-
 structure GenPart where
   header : Exr.Header
   chunks : Nat
@@ -228,7 +169,7 @@ def generate (kind : String) : Option Exr.Bytes :=
   | some (parts, version) =>
     let multipart := version.multipart
     let headerChunks : List Exr.Bytes :=
-      parts.map fun p => Exr.Emit.headerBytes (headerAttrs p.header multipart)
+      parts.map fun p => Exr.Emit.headerBytes (Exr.Emit.headerAttrs p.header multipart)
     let headers := headerChunks.foldl (· ++ ·) ByteArray.empty
     let headers := if multipart then headers ++ Exr.Emit.nulByte else headers
     let tableTotal := parts.foldl (fun acc p => acc + 8 * p.chunks) 0

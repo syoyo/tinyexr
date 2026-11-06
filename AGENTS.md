@@ -72,7 +72,37 @@ Keep first-party code out of the allowlist.
   everything compiles at baseline; scalar fallback is always present and is the
   source of truth (SIMD must be bit-identical).
 
-## tocio (sandbox/tocio) — pure-C11 OCIO Config Processor
+## lean/ — Lean 4 formalization of the OpenEXR format
+
+`lean/` holds the machine-checked model: the structural encode/decode
+inverse theorems (`parseFile_emit` for arbitrary well-formed files), the
+container/parser-emitter layout, and the PXR24/B44/RLE/ADLER32/Deep codec
+models. It is validated differentially against this C library and the
+OpenEXR corpus — no Lean change is "done" until its gate is green.
+
+Build / test:
+- `make lean-check`   — full `lake build` of `ExrSpec` + the exes (must stay green).
+- `make lean-diff`    — structural differential: Lean model vs tinyexr v3 +
+  corpus (`test/v3/lean_diff.py`, `build/lean-gen/*`, `~/work/openexr-images`).
+- `make codec-diff`   — codec differential (`test/v3/codec_diff.c` vs
+  `CodecGen.lean` vectors): PXR24, B44/B44A, RLE and ADLER32 bit-exact.
+- `make lean-gen`     — regenerate the Lean structural fixtures
+  (`build/lean-gen/*.exr`); `make lean-gen-update` commits them;
+  `make lean-gen-check` fails if the committed fixtures go stale.
+
+Conventions (matching the C side):
+- Same scope exclusions as the C implementation: DWA is not supported and
+  the DEFLATE payload bitstream is not modelled (wrapper checksum/structure
+  only — see `Exr/Zip.lean` and `lean/README.md` for documented boundaries).
+- The Lean model follows OpenEXR's library where the spec text is stricter
+  (e.g. missing `maxSamplesPerPixel` on deep parts is accepted) — note such
+  leniency in `lean/README.md` rather than silently diverging.
+- Codec models aim for bit-exactness with the C codecs (byte-identical);
+  encoder-side disagreements are found by `codec-diff`, structural ones by
+  `lean-diff` — fixing the model, not breaking the C, unless the C is proven
+  wrong (then record the bug in `lean/README.md`).
+
+### tocio (sandbox/tocio) — pure-C11 OCIO Config Processor
 
 Build / test:
 - `make tocio-c11-gate`   — C11 strict gate for all `sandbox/tocio/src/*.c`

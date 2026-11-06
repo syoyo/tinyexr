@@ -458,6 +458,58 @@ theorem getU8?_append_right {a b : Bytes} {i : Nat} (h : a.size ≤ i) :
       rw [ByteArray.size_append] at hlt; omega
     rw [getU8?_of_ge hlt, getU8?_of_ge hb]
 
+/-- A 32-bit read at an offset past the left operand of an append. -/
+theorem getU32LE_append_right' {a b : Bytes} (j : Nat) :
+    getU32LE (a ++ b) (a.size + j) = getU32LE b j := by
+  have e : ∀ k, k < 4 → getU8? (a ++ b) (a.size + j + k) = getU8? b (j + k) := by
+    intro k hk
+    rw [getU8?_append_right (a := a) (b := b) (i := a.size + j + k) (by omega)]
+    rw [show a.size + j + k - a.size = j + k by omega]
+  unfold getU32LE
+  simp only [getU8]
+  have h0 := e 0 (by omega)
+  simp only [Nat.add_zero] at h0
+  rw [h0, e 1 (by omega), e 2 (by omega), e 3 (by omega)]
+
+/-- An 8-byte read at an offset past the left operand of an append. -/
+theorem getU64LE_append_right' {a b : Bytes} (j : Nat) :
+    getU64LE (a ++ b) (a.size + j) = getU64LE b j := by
+  have e : ∀ k, k < 8 → getU8? (a ++ b) (a.size + j + k) = getU8? b (j + k) := by
+    intro k hk
+    rw [getU8?_append_right (a := a) (b := b) (i := a.size + j + k) (by omega)]
+    rw [show a.size + j + k - a.size = j + k by omega]
+  unfold getU64LE
+  simp only [getU8]
+  have h0 := e 0 (by omega)
+  simp only [Nat.add_zero] at h0
+  rw [h0, e 1 (by omega), e 2 (by omega), e 3 (by omega),
+      e 4 (by omega), e 5 (by omega), e 6 (by omega), e 7 (by omega)]
+
+/-- An 8-byte read entirely inside the left operand of an append. -/
+theorem getU64LE_append_left {a b : Bytes} {i : Nat} (h : i + 8 ≤ a.size) :
+    getU64LE (a ++ b) i = getU64LE a i := by
+  have e : ∀ k < 8, getU8? (a ++ b) (i + k) = getU8? a (i + k) := by
+    intro k hk
+    exact getU8?_append_left (a := a) (b := b) (i := i + k) (by omega)
+  unfold getU64LE
+  simp only [getU8]
+  have h0 := e 0 (by omega)
+  simp only [Nat.add_zero] at h0
+  rw [h0, e 1 (by omega), e 2 (by omega), e 3 (by omega),
+      e 4 (by omega), e 5 (by omega), e 6 (by omega), e 7 (by omega)]
+
+/-- A 32-bit read entirely inside the left operand of an append. -/
+theorem getU32LE_append_left {a b : Bytes} {i : Nat} (h : i + 4 ≤ a.size) :
+    getU32LE (a ++ b) i = getU32LE a i := by
+  have e : ∀ k < 4, getU8? (a ++ b) (i + k) = getU8? a (i + k) := by
+    intro k hk
+    exact getU8?_append_left (a := a) (b := b) (i := i + k) (by omega)
+  unfold getU32LE
+  simp only [getU8]
+  have h0 := e 0 (by omega)
+  simp only [Nat.add_zero] at h0
+  rw [h0, e 1 (by omega), e 2 (by omega), e 3 (by omega)]
+
 /-- A 32-bit read starting exactly at the right operand of an append. -/
 theorem getU32LE_append_right {a b : Bytes} :
     getU32LE (a ++ b) a.size = getU32LE b 0 := by
@@ -494,6 +546,13 @@ theorem getU32LE_u32Bytes_append (x : UInt32) (v : Bytes) :
   simp only [getU8, e 0 (by omega), e 1 (by omega), e 2 (by omega), e 3 (by omega)]
   exact getU32LE_putU32LE (acc := ByteArray.empty) x
 
+/-- Extracting exactly the head of the appended array. -/
+theorem extract_append_size_head {a b : Bytes} {k : Nat} (_hk : k ≤ b.size) :
+    (a ++ b).extract a.size (a.size + k) = b.extract 0 k := by
+  rw [show a.size = a.size + 0 from by omega,
+      show a.size + 0 + k = a.size + k from by omega]
+  rw [ByteArray.extract_append_size_add]
+
 /-- Extracting `0 .. i+1` is the prefix up to `i` plus byte `i`. -/
 theorem extract_zero_succ {a : Bytes} {i : Nat} (hi : i + 1 ≤ a.size) :
     a.extract 0 (i + 1) = (a.extract 0 i).push (a[i]'(by omega)) := by
@@ -501,10 +560,85 @@ theorem extract_zero_succ {a : Bytes} {i : Nat} (hi : i + 1 ≤ a.size) :
   rw [ByteArray.extract_add_one (by omega)]
   rw [ByteArray.append_toByteArray_singleton]
 
+/-- A left fold of appends equals the initial bytes followed by the right
+    fold (associativity of `++`). -/
+theorem foldl_append_eq_foldr {α : Type} (l : List α) (f : α → Bytes) (acc : Bytes) :
+    l.foldl (fun acc' a => acc' ++ f a) acc = acc ++ l.foldr (fun a acc' => f a ++ acc') ByteArray.empty := by
+  induction l generalizing acc with
+  | nil => simp
+  | cons b l ih =>
+    rw [List.foldl_cons, ih]
+    rw [List.foldr_cons]
+    rw [← ByteArray.append_assoc]
+
 /-- Extracting a suffix that starts at `a.size` gives the right operand. -/
 theorem extract_append_right_eq {a b : Bytes} :
     (a ++ b).extract a.size (a.size + b.size) = b := by
   exact ByteArray.extract_append_eq_right (i := a.size) (j := a.size + b.size)
     (by omega) (by omega)
+
+
+/-- Round trip of a positive `Int32` through `u32Bytes`/`getI32LE` (the
+    `xSampling`/`ySampling` round trip of a `chlist` entry). -/
+theorem Int32_ofNat_toNat_toInt32 (x : Int32) (hx : 1 ≤ x.toInt) :
+    (UInt32.ofNat x.toInt.toNat).toInt32 = x := by
+  obtain ⟨u, rfl⟩ : ∃ u : UInt32, x = ⟨u⟩ := ⟨x.toUInt32, rfl⟩
+  have h3 : u.toNat < 2 ^ 31 := by
+    by_cases hcon : u.toNat < 2 ^ 31
+    · exact hcon
+    · exfalso
+      have hlt : (⟨u⟩ : Int32).toInt < 0 := by
+        show (if 2 * u.toNat < 2 ^ 32 then (u.toNat : Int) else (u.toNat : Int) - (2 ^ 32 : Nat)) < 0
+        rw [ite_eq_right (by omega)]
+        have hut : u.toNat < 2 ^ 32 := UInt32.toNat_lt u
+        omega
+      omega
+  have h2 : (⟨u⟩ : Int32).toInt = (u.toNat : Int) := by
+    show (if 2 * u.toNat < 2 ^ 32 then (u.toNat : Int) else (u.toNat : Int) - (2 ^ 32 : Nat)) = (u.toNat : Int)
+    rw [ite_eq_left (by omega)]
+  have h4 : (⟨u⟩ : Int32).toInt.toNat = u.toNat := by rw [h2]; simp
+  rw [h4]
+  show (UInt32.ofNat u.toNat).toInt32 = ⟨u⟩
+  have h5 : (UInt32.ofNat u.toNat).toInt32 = ⟨UInt32.ofNat u.toNat⟩ := rfl
+  rw [h5]
+  congr 1
+  apply UInt32.toNat_inj.mp
+  simp
+
+
+/-- A byte read at an offset past the left operand of an append. -/
+theorem getU8?_append_right' {a b : Bytes} (k : Nat) :
+    getU8? (a ++ b) (a.size + k) = getU8? b k := by
+  rw [getU8?_append_right (a := a) (b := b) (i := a.size + k) (by omega),
+    show a.size + k - a.size = k by omega]
+
+/-- A 32-bit read at an offset past two nested left operands. -/
+theorem getU32LE_nested {p s rest : Bytes} (k : Nat) :
+    getU32LE (p ++ (s ++ rest)) (p.size + s.size + k) = getU32LE rest k := by
+  rw [show p.size + s.size + k = p.size + (s.size + k) by omega,
+    getU32LE_append_right', getU32LE_append_right']
+
+/-- A byte read at an offset past two nested left operands. -/
+theorem getU8?_nested {p s rest : Bytes} (k : Nat) :
+    getU8? (p ++ (s ++ rest)) (p.size + s.size + k) = getU8? rest k := by
+  rw [show p.size + s.size + k = p.size + (s.size + k) by omega,
+    getU8?_append_right' (a := p) (b := s ++ rest) (k := s.size + k),
+    getU8?_append_right' (a := s) (b := rest) (k := k)]
+
+
+/-- The `ofNat` form of the positive-Int32 round trip (same constructor). -/
+theorem Int32_ofNat_toNat (x : Int32) (hx : 1 ≤ x.toInt) :
+    Int32.ofNat x.toInt.toNat = x :=
+  Int32_ofNat_toNat_toInt32 x hx
+
+
+/-- The integer value of `Int32.ofNat n` for small `n`. -/
+theorem Int32_ofNat_toInt (n : Nat) (hn : n < 2 ^ 31) :
+    (Int32.ofNat n).toInt = (n : Int) := by
+  show (OfNat.ofNat n : Int32).toInt = (n : Int)
+  rw [Int32.toInt_ofNat]
+  simp only [Int.bmod, Int32.size]
+  rw [ite_eq_left (by omega)]
+  rw [Int.emod_eq_of_lt (by omega) (by omega)]
 
 end Exr

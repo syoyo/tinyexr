@@ -25,6 +25,8 @@
 -/
 
 import Exr.B44
+import Exr.Rle
+import Exr.Zip
 
 namespace CodecGen
 
@@ -103,6 +105,25 @@ def b44Record (kind : Nat) (vals : List UInt32) : Exr.Bytes :=
     u32le enc.length ++ ByteArray.mk enc.toArray ++
     u32le decBytes.size ++ decBytes
 
+/-- One RLE record (kind 5): raw row bytes (each as a u32), the Lean
+    `rleCompress` output, and the raw bytes as the expected decode. -/
+def rleRecord (vals : List UInt8) : Exr.Bytes :=
+  let enc := Exr.Rle.rleCompress vals
+  u8 5 ++ u8 0 ++ u32le vals.length ++
+    (vals.map (fun v => u32le v.toNat)).foldl (· ++ ·) ByteArray.empty ++
+    u32le enc.length ++ ByteArray.mk enc.toArray ++
+    u32le vals.length ++ ByteArray.mk vals.toArray
+
+/-- One ADLER32 record (kind 6): raw bytes, the Lean `adler32` value
+    (little-endian) in the encoded slot, and the raw bytes decoded. -/
+def adlerRecord (vals : List UInt8) : Exr.Bytes :=
+  let v := Exr.Zip.adler32 vals
+  u8 6 ++ u8 0 ++ u32le vals.length ++
+    (vals.map (fun v => u32le v.toNat)).foldl (· ++ ·) ByteArray.empty ++
+    u32le 4 ++ ByteArray.mk ([v.toUInt8, ((v >>> 8)).toUInt8,
+      ((v >>> 16)).toUInt8, ((v >>> 24)).toUInt8] : List UInt8).toArray ++
+    u32le vals.length ++ ByteArray.mk vals.toArray
+
 /-- Build the vector file for a seed. -/
 def build (seed : UInt64) : Exr.Bytes :=
   let r0 : Rng := ⟨seed * 2654435761 + 1⟩
@@ -156,8 +177,58 @@ def build (seed : UInt64) : Exr.Bytes :=
     | b :: tl => genE flat tl (acc ++ b44Record (if flat then 4 else 3) b)
   let body := genE false edgeBlocks body
   let body := genE true edgeBlocks body
+  -- RLE records: random byte streams plus edge run structures.
+  let rec genR (k : Nat) (r : Rng) (acc : Exr.Bytes) : Exr.Bytes :=
+    match k with
+    | 0 => acc
+    | k + 1 =>
+      let len := 1 + (k * 13) % 200
+      let (vals, r') := genValues r len 8
+      genR k r' (acc ++ rleRecord (vals.map (fun v => v.toUInt8)))
+  let body := genR 60 r0 body
+  let rleEdge : List (List UInt8) :=
+    [ List.replicate 4 0x41,                                  -- 4-run
+      List.replicate 3 0x41,                                  -- 3-run (min run)
+      List.replicate 128 0x41,                                -- 128-run (max run)
+      List.replicate 129 0x41,                                -- 129-run (capped)
+      List.replicate 300 0x00,                                -- long run
+      List.replicate 2 0x05,                                  -- 2-run (stays literal)
+      List.replicate 5 0x91,                                  -- 5-run
+      ([0x10] : List UInt8) ++ List.replicate 4 0x42 ++ [0x20],
+      [0x01, 0x02, 0x03, 0x04, 0x04, 0x04, 0x04, 0x06, 0x07],
+      (List.range 128).map UInt8.ofNat,                       -- 128 distinct (max lit)
+      (List.range 130).map UInt8.ofNat,                       -- 130 distinct (split lit)
+      List.replicate 127 0x30 ++ [0x31] ++ List.replicate 127 0x30,
+      ([0xAA] : List UInt8) ++ List.replicate 2 0xAA ++ [0xBB] ++ List.replicate 3 0xAA ++ [0xBB, 0xBB] ]
+  let rec genRE (bs : List (List UInt8)) (acc : Exr.Bytes) : Exr.Bytes :=
+    match bs with
+    | [] => acc
+    | b :: tl => genRE tl (acc ++ rleRecord b)
+  let body := genRE rleEdge body
+  -- ADLER32 records: random byte streams plus long streams that cross the
+  -- C's deferred-modulo boundary (5552 bytes).
+  let rec genA (k : Nat) (r : Rng) (acc : Exr.Bytes) : Exr.Bytes :=
+    match k with
+    | 0 => acc
+    | k + 1 =>
+      let len := 1 + (k * 17) % 200
+      let (vals, r') := genValues r len 8
+      genA k r' (acc ++ adlerRecord (vals.map (fun v => v.toUInt8)))
+  let body := genA 12 r0 body
+  let longA : List (List UInt8) :=
+    [ (List.range 5552).map UInt8.ofNat,
+      (List.range 5553).map UInt8.ofNat,
+      (List.range 1105).map UInt8.ofNat,
+      List.replicate 6000 0xFF,
+      List.replicate 11107 0x00 ]
+  let rec genLA (bs : List (List UInt8)) (acc : Exr.Bytes) : Exr.Bytes :=
+    match bs with
+    | [] => acc
+    | b :: tl => genLA tl (acc ++ adlerRecord b)
+  let body := genLA longA body
   -- magic + record count
-  ByteArray.mk #[84, 69, 88, 86] ++ u32le (120 + 120 + 2 * edgeBlocks.length) ++ body
+  ByteArray.mk #[84, 69, 88, 86] ++
+    u32le (120 + 120 + 2 * edgeBlocks.length + 60 + rleEdge.length + 12 + longA.length) ++ body
 
 end CodecGen
 

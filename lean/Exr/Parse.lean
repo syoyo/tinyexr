@@ -181,6 +181,37 @@ theorem parseOffsetTable_bounds {b : Bytes} {count i : Nat} {t : OffsetTable} {j
     j = i + 8 * count ∧ (0 < count → j ≤ b.size) :=
   parseOffsetTableGo_bounds h
 
+/-- The table built by the parser has exactly `count` entries. -/
+theorem parseOffsetTableGo_length {b : Bytes} {count i : Nat} {t : OffsetTable} {j : Nat}
+    (h : parseOffsetTableGo b count i = some (t, j)) :
+    t.offsets.length = count := by
+  induction count generalizing i t j with
+  | zero =>
+    simp only [parseOffsetTableGo, Option.some.injEq, Prod.mk.injEq] at h
+    obtain ⟨h01, rfl⟩ := h
+    subst h01
+    rfl
+  | succ count ih =>
+    simp only [parseOffsetTableGo] at h
+    cases ho : offsetOf b i with
+    | none => simp [ho] at h
+    | some o =>
+      simp only [ho] at h
+      cases hrec : parseOffsetTableGo b count (i + 8) with
+      | none => simp [hrec] at h
+      | some p =>
+        obtain ⟨rest, j⟩ := p
+        simp only [hrec] at h
+        obtain ⟨_, rfl⟩ := h
+        show (o :: rest.offsets).length = count + 1
+        rw [List.length_cons, ih hrec]
+
+/-- The table built by the parser has exactly `count` entries. -/
+theorem parseOffsetTable_length {b : Bytes} {count i : Nat} {t : OffsetTable} {j : Nat}
+    (h : parseOffsetTable b count i = some (t, j)) :
+    t.offsets.length = count :=
+  parseOffsetTableGo_length h
+
 /-- The zero byte terminating a header section. -/
 def headerTerminator : Bytes := ByteArray.mk #[0]
 
@@ -257,6 +288,64 @@ theorem parseTables_bounds {b : Bytes} {parts : List Header} {i : Nat}
           · exact Nat.le_trans (hpos hp) (Nat.le_max_right ..)
         exact Nat.le_trans hrec (by omega)
 
+/-- One offset table per part. -/
+theorem parseTables_length {b : Bytes} {parts : List Header} {i : Nat}
+    {ts : List OffsetTable} {j : Nat}
+    (h : parseTables b parts i = some (ts, j)) :
+    ts.length = parts.length := by
+  induction parts generalizing i ts j with
+  | nil =>
+    simp only [parseTables, Option.some.injEq, Prod.mk.injEq] at h
+    obtain ⟨h01, rfl⟩ := h
+    subst h01
+    rfl
+  | cons hd tl ih =>
+    simp only [parseTables] at h
+    cases ht : parseOffsetTable b (chunkCountOf hd) i with
+    | none => simp [ht] at h
+    | some p =>
+      obtain ⟨t, j₁⟩ := p
+      simp only [ht] at h
+      cases hr : parseTables b tl j₁ with
+      | none => simp [hr] at h
+      | some p₂ =>
+        obtain ⟨ts', j₂⟩ := p₂
+        simp only [hr] at h
+        obtain ⟨_, rfl⟩ := h
+        show (t :: ts').length = (hd :: tl).length
+        rw [List.length_cons, List.length_cons, ih hr]
+
+/-- The offset tables consume exactly `8 × (total chunk count)` bytes; this is
+    the equation the writer relies on to lay out the payload area. -/
+theorem parseTables_end {b : Bytes} {parts : List Header} {i : Nat}
+    {ts : List OffsetTable} {j : Nat}
+    (h : parseTables b parts i = some (ts, j)) :
+    j = i + 8 * (parts.map chunkCountOf).sum := by
+  induction parts generalizing i ts j with
+  | nil =>
+    simp only [parseTables, Option.some.injEq, Prod.mk.injEq] at h
+    obtain ⟨h01, rfl⟩ := h
+    subst h01
+    simp
+  | cons hd tl ih =>
+    simp only [parseTables] at h
+    cases ht : parseOffsetTable b (chunkCountOf hd) i with
+    | none => simp [ht] at h
+    | some p =>
+      obtain ⟨t, j₁⟩ := p
+      simp only [ht] at h
+      cases hr : parseTables b tl j₁ with
+      | none => simp [hr] at h
+      | some p₂ =>
+        obtain ⟨ts', j₂⟩ := p₂
+        simp only [hr] at h
+        obtain ⟨_, rfl⟩ := h
+        have h1 := (parseOffsetTable_bounds ht).1
+        have h2 := ih hr
+        simp only [List.map_cons, List.sum_cons]
+        rw [h2, h1]
+        omega
+
 /-- Parse headers stay in bounds. -/
 theorem parsePartHeaders_bounds {b : Bytes} {longNames multipart deep singleTile : Bool}
     {i fuel : Nat} {ps : List Header} {j : Nat}
@@ -303,7 +392,6 @@ theorem parsePartHeaders_bounds {b : Bytes} {longNames multipart deep singleTile
             obtain ⟨_, rfl⟩ := h
             exact hb
 
-/-- Parse the whole file structure (no pixel payload decoding). -/
 def parseFile (b : Bytes) : Option ParsedFile :=
   match getU32LE b 0 with
   | none => none

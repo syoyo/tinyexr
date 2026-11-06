@@ -11,6 +11,8 @@
  *   1  PXR24 HALF  (2-byte planes, lossless)
  *   2  PXR24 FLOAT (3-byte planes, lossy via float24)
  *   3  B44 4x4 block (14- or 3-byte block, HALF channels)
+ *   5  RLE byte-run block (interleave + predictor + run codec)
+ *   6  ADLER32 checksum over byte streams
  *
  * The PXR24 decoder is fed the plane bytes directly: when the source size
  * equals the intermediate size the C decoder takes its memcpy fast path and
@@ -182,6 +184,126 @@ static int run_b44(const uint8_t *rec, size_t len, int kind) {
     return mismatch ? 1 : 0;
 }
 
+/* RLE (kind 5): compare the C run-length codec byte-exactly with the Lean
+ * model. The Lean record carries the raw row bytes, the compressed bytes and
+ * the expected decoded output (the raw bytes).
+ *
+ * 1) decode: C(decode)(Lean compressed bytes) == raw bytes.  The C reader's
+ *    equal-size memcpy fast path reproduces the raw-fallback records.
+ * 2) encode: C(compress)(raw bytes) == Lean compressed bytes. */
+static int run_rle(const uint8_t *rec, size_t len, uint32_t count) {
+    size_t off = 2 + 4 + (size_t)count * 4;
+    if (off + 4 > len) return 2;
+    const uint32_t enc_len = rd_u32(rec + off);
+    off += 4;
+    const uint8_t *enc = rec + off;
+    off += enc_len;
+    if (off + 4 > len) return 2;
+    const uint32_t dec_len = rd_u32(rec + off);
+    off += 4;
+    const uint8_t *dec = rec + off;
+    if (dec_len != count) return 2;
+
+    /* raw bytes live in the input values (low byte of each u32) */
+    uint8_t *raw = (uint8_t *)malloc(count ? count : 1);
+    if (!raw) return 2;
+    {
+        uint32_t i;
+        for (i = 0; i < count; i++) raw[i] = (uint8_t)(rd_u32(rec + 6 + (size_t)i * 4) & 0xff);
+    }
+
+    /* 1) decode: reader semantics (memcpy fast path on equal sizes, then
+     *    run expansion + predictor + deinterleave). */
+    uint8_t *dst = (uint8_t *)malloc(count ? count : 1);
+    if (!dst) { free(raw); return 2; }
+    const exr_allocator *a = exr_default_allocator();
+    exr_result rc;
+    if (enc_len == count) {
+        if (count > 0) memcpy(dst, enc, count);
+        rc = EXR_SUCCESS;
+    } else {
+        rc = exr_rle_decompress(a, enc, enc_len, dst, count);
+    }
+    if (!EXR_OK(rc)) {
+        fprintf(stderr, "rle decode failed rc=%d count=%u\n", (int)rc, count);
+        free(raw);
+        free(dst);
+        return 1;
+    }
+    if (memcmp(dst, raw, count) != 0) {
+        uint32_t i;
+        fprintf(stderr, "RLE decode mismatch count=%u\n  c:", count);
+        for (i = 0; i < count; i++) fprintf(stderr, " %02x", dst[i]);
+        fprintf(stderr, "\n  lean:");
+        for (i = 0; i < count; i++) fprintf(stderr, " %02x", raw[i]);
+        fprintf(stderr, "\n");
+        free(raw);
+        free(dst);
+        return 1;
+    }
+    free(dst);
+
+    /* 2) encode: C(compress)(raw bytes) == Lean compressed bytes */
+    uint8_t *out = NULL;
+    size_t outsz = 0;
+    rc = exr_rle_compress(a, raw, count, &out, &outsz);
+    if (!EXR_OK(rc)) {
+        fprintf(stderr, "rle encode failed rc=%d count=%u\n", (int)rc, count);
+        free(raw);
+        return 1;
+    }
+    int mismatch = 0;
+    if (outsz != enc_len) {
+        fprintf(stderr, "RLE encode size mismatch count=%u c=%zu lean=%u\n",
+                count, outsz, enc_len);
+        mismatch = 1;
+    } else if (enc_len > 0 && memcmp(out, enc, enc_len) != 0) {
+        size_t i;
+        fprintf(stderr, "RLE encode mismatch count=%u\n  c:", count);
+        for (i = 0; i < outsz; i++) fprintf(stderr, " %02x", out[i]);
+        fprintf(stderr, "\n  lean:");
+        for (i = 0; i < enc_len; i++) fprintf(stderr, " %02x", enc[i]);
+        fprintf(stderr, "\n");
+        mismatch = 1;
+    }
+    free(out);
+    free(raw);
+    return mismatch ? 1 : 0;
+}
+
+/* ADLER32 (kind 6): compare the Lean checksum byte-exactly with the C
+ * `exr_adler32` over the raw bytes (fresh stream, initial value 1). */
+static int run_adler(const uint8_t *rec, size_t len, uint32_t count) {
+    size_t off = 2 + 4 + (size_t)count * 4;
+    if (off + 4 > len) return 2;
+    const uint32_t enc_len = rd_u32(rec + off);
+    off += 4;
+    const uint8_t *enc = rec + off;
+    off += enc_len;
+    if (off + 4 > len) return 2;
+    const uint32_t dec_len = rd_u32(rec + off);
+    off += 4;
+    const uint8_t *dec = rec + off;
+    if (enc_len != 4 || dec_len != count) return 2;
+    const uint32_t lean = rd_u32(enc);
+
+    uint8_t *raw = (uint8_t *)malloc(count ? count : 1);
+    if (!raw) return 2;
+    {
+        uint32_t i;
+        for (i = 0; i < count; i++) raw[i] = (uint8_t)(rd_u32(rec + 6 + (size_t)i * 4) & 0xff);
+    }
+    if (memcmp(raw, dec, count) != 0) { free(raw); return 2; }
+    const uint32_t c = exr_adler32(raw, count, 1);
+    if (c != lean) {
+        fprintf(stderr, "adler32 mismatch count=%u c=%08x lean=%08x\n", count, c, lean);
+        free(raw);
+        return 1;
+    }
+    free(raw);
+    return 0;
+}
+
 int main(int argc, char **argv) {
     if (argc != 2) {
         fprintf(stderr, "usage: %s <vectors.bin>\n", argv[0]);
@@ -229,6 +351,10 @@ int main(int argc, char **argv) {
             rc = run_pxr24(buf + rec_start, cursor - rec_start, kind, count);
         } else if (kind == 3 || kind == 4) {
             rc = run_b44(buf + rec_start, cursor - rec_start, kind);
+        } else if (kind == 5) {
+            rc = run_rle(buf + rec_start, cursor - rec_start, count);
+        } else if (kind == 6) {
+            rc = run_adler(buf + rec_start, cursor - rec_start, count);
         } else {
             rc = 0;
         }

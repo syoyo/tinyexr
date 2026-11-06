@@ -450,7 +450,7 @@ namespace TypedAttr
     0x00 byte. Entries: name (cstring), pixelType (i32: 0/1/2), pLinear
     (u8: 0/1), reserved (3 bytes, must be 0), xSampling (i32 >= 1),
     ySampling (i32 >= 1). Channels must be strictly sorted by name. -/
-private def decodeChlistFuel (b : Bytes) (i fuel : Nat) (acc : List Channel) :
+def decodeChlistFuel (b : Bytes) (i fuel : Nat) (acc : List Channel) :
     Option (List Channel × Nat) :=
   match fuel with
   | 0 => none
@@ -921,6 +921,16 @@ namespace RawAttr
 /-- A byte array contains no NUL byte. -/
 def NoNul (b : Bytes) : Prop := ∀ i, getU8? b i ≠ some 0
 
+/-- A byte string with no zero byte in bounds has no zero byte anywhere. -/
+theorem NoNul.of_bound {b : Bytes} (h : ∀ i < b.size, getU8? b i ≠ some 0) : NoNul b := by
+  intro i
+  by_cases hi : i < b.size
+  · exact h i hi
+  · have hg : getU8? b i = none := getU8?_of_ge hi
+    intro hc
+    rw [hg] at hc
+    cases hc
+
 /-- The zero byte used to terminate names and headers. -/
 def nulByte : Bytes := ByteArray.mk #[0]
 
@@ -1024,6 +1034,13 @@ theorem readCString_emit_at (p s rest : Bytes) (hn : NoNul s) :
       (by omega) hfuel
   simpa using hmain
 
+/-- Emitting a NUL-terminated string parses back to exactly that string
+    (the round trip for attribute and type names). -/
+theorem readCString_emit (s : Bytes) (hn : NoNul s) :
+    readCString (s ++ nulByte) 0 = some (s, s.size + 1) := by
+  have h := readCString_emit_at ByteArray.empty s ByteArray.empty hn
+  simpa using h
+
 end RawAttr
 
 namespace RawAttr
@@ -1050,6 +1067,17 @@ structure Emittable (a : RawAttr) (maxLen : Nat) : Prop where
   typeNoNul : NoNul a.typeName
   valueSize : a.value.size < 2 ^ 31
 
+/-- Weakening the name-length bound preserves emittability. -/
+theorem Emittable.mono {a : RawAttr} {m n : Nat} (h : Emittable a m) (hmn : m ≤ n) :
+    Emittable a n where
+  nameNonempty := h.nameNonempty
+  nameLen := Nat.le_trans h.nameLen hmn
+  nameNoNul := h.nameNoNul
+  typeNonempty := h.typeNonempty
+  typeLen := Nat.le_trans h.typeLen hmn
+  typeNoNul := h.typeNoNul
+  valueSize := h.valueSize
+
 /-- Emitted attribute bytes (name NUL type NUL size value). -/
 def wire (a : RawAttr) : Bytes :=
   a.name ++ (nulByte ++ (a.typeName ++ (nulByte ++
@@ -1062,20 +1090,36 @@ theorem ite_or_decide_false {x y n : Nat} {α : Type} {A B : Option α}
     (if (decide (x > n) || decide (y > n)) = true then A else B) = B := by
   simp [decide_eq_false hx, decide_eq_false hy]
 
-/-- Parsing the emitted bytes yields the original attribute. -/
-theorem parse_wire (a : RawAttr) (maxLen : Nat) (hw : Emittable a maxLen) :
-    parse (wire a) maxLen 0
-      = some (a, a.name.size + 1 + a.typeName.size + 1 + 4 + a.value.size) := by
+/-- Parsing the emitted attribute after an arbitrary prefix and before an
+    arbitrary suffix yields the attribute and the offset past its wire form.
+    This is the prefix-aware form of `parse_wire` (`p = rest = empty`). -/
+theorem parse_emit_at (p rest : Bytes) (a : RawAttr) (maxLen : Nat)
+    (hw : Emittable a maxLen) :
+    parse (p ++ (wire a ++ rest)) maxLen p.size
+      = some (a, p.size + a.name.size + 1 + a.typeName.size + 1 + 4 + a.value.size) := by
   obtain ⟨hn1, hn2, hnn, ht1, ht2, htt, hv⟩ := hw
-  unfold wire
-  -- name
-  have hname := readCString_emit_at (p := ByteArray.empty) (s := a.name)
-    (rest := a.typeName ++ (nulByte ++
-      (putU32LE (UInt32.ofNat a.value.size) ByteArray.empty ++ a.value))) hnn
-  simp only [ByteArray.empty_append, ByteArray.size_empty, Nat.zero_add] at hname
+  have hpi : ¬ (p.size > (p ++ (wire a ++ rest)).size) := by
+    simp only [ByteArray.size_append]
+    omega
+  have hss1 : (p ++ a.name ++ nulByte).size = p.size + a.name.size + 1 := by
+    simp only [ByteArray.size_append, nulByte_size]
   unfold parse
-  split <;> (try omega)
+  rw [ite_eq_right hpi]
+  unfold wire
+  -- normalize append nesting to the right
+  have hstep : (a.name ++ (nulByte ++ (a.typeName ++ (nulByte ++
+        (putU32LE (UInt32.ofNat a.value.size) ByteArray.empty ++ a.value))))) ++ rest
+      = a.name ++ (nulByte ++ (a.typeName ++ (nulByte ++
+        (putU32LE (UInt32.ofNat a.value.size) ByteArray.empty ++ (a.value ++ rest))))) := by
+    simp only [ByteArray.append_assoc]
+  rw [hstep]
+  -- name
+  have hname := readCString_emit_at (p := p) (s := a.name)
+    (rest := a.typeName ++ (nulByte ++
+      (putU32LE (UInt32.ofNat a.value.size) ByteArray.empty ++ (a.value ++ rest)))) hnn
   simp only [hname]
+  -- the cursor after the name read, in canonical prefix form
+  rw [show p.size + a.name.size + 1 = (p ++ a.name ++ nulByte).size by rw [hss1]]
   -- name length guard is false
   have hng : ¬ (a.name.size == 0 || decide (a.name.size > maxLen)) = true := by
     intro hc
@@ -1085,19 +1129,23 @@ theorem parse_wire (a : RawAttr) (maxLen : Nat) (hw : Emittable a maxLen) :
     · have : a.name.size > maxLen := of_decide_eq_true hgt
       omega
   rw [ite_eq_right hng]
-  -- type name
-  have hassoc : a.name ++ (nulByte ++ (a.typeName ++ (nulByte ++
-        (putU32LE (UInt32.ofNat a.value.size) ByteArray.empty ++ a.value))))
-      = (a.name ++ nulByte) ++ (a.typeName ++ (nulByte ++
-        (putU32LE (UInt32.ofNat a.value.size) ByteArray.empty ++ a.value))) :=
-    (ByteArray.append_assoc (a := a.name) (b := nulByte)
-      (c := a.typeName ++ (nulByte ++
-        (putU32LE (UInt32.ofNat a.value.size) ByteArray.empty ++ a.value)))).symm
+  -- type name: reassociate so the reader sees `(p ++ name NUL) ++ (tname NUL ...)`
+  have hassoc : p ++ (a.name ++ (nulByte ++ (a.typeName ++ (nulByte ++
+        (putU32LE (UInt32.ofNat a.value.size) ByteArray.empty ++ (a.value ++ rest))))))
+      = (p ++ a.name ++ nulByte) ++ (a.typeName ++ (nulByte ++
+        (putU32LE (UInt32.ofNat a.value.size) ByteArray.empty ++ (a.value ++ rest)))) := by
+    simp only [ByteArray.append_assoc]
   rw [hassoc]
-  have htype := readCString_emit_at (p := a.name ++ nulByte) (s := a.typeName)
-    (rest := (putU32LE (UInt32.ofNat a.value.size) ByteArray.empty ++ a.value)) htt
-  simp only [ByteArray.size_append, nulByte_size] at htype
+  have htype := readCString_emit_at (p := p ++ a.name ++ nulByte) (s := a.typeName)
+    (rest := (putU32LE (UInt32.ofNat a.value.size) ByteArray.empty
+      ++ (a.value ++ rest))) htt
   simp only [htype]
+  -- the cursor after the type-name read, in canonical prefix form
+  have hss2 : ((p ++ a.name ++ nulByte) ++ (a.typeName ++ nulByte)).size
+      = (p ++ a.name ++ nulByte).size + a.typeName.size + 1 := by
+    simp only [ByteArray.size_append, nulByte_size]
+    omega
+  rw [← hss2]
   have htng : ¬ (a.typeName.size == 0 || decide (a.typeName.size > maxLen)) = true := by
     intro hc
     rcases Bool.or_eq_true .. |>.mp hc with h0 | hgt
@@ -1106,24 +1154,17 @@ theorem parse_wire (a : RawAttr) (maxLen : Nat) (hw : Emittable a maxLen) :
     · have : a.typeName.size > maxLen := of_decide_eq_true hgt
       omega
   rw [ite_eq_right htng]
-  -- size field
-  have hszoff : ((a.name ++ nulByte) ++ (a.typeName ++ (nulByte ++
-        (putU32LE (UInt32.ofNat a.value.size) ByteArray.empty ++ a.value))))
-      = ((a.name ++ nulByte) ++ (a.typeName ++ nulByte)) ++
-        (putU32LE (UInt32.ofNat a.value.size) ByteArray.empty ++ a.value) := by
-    rw [← ByteArray.append_assoc (a := a.typeName) (b := nulByte)
-      (c := putU32LE (UInt32.ofNat a.value.size) ByteArray.empty ++ a.value)]
-    rw [← ByteArray.append_assoc (a := a.name ++ nulByte) (b := a.typeName ++ nulByte)
-      (c := putU32LE (UInt32.ofNat a.value.size) ByteArray.empty ++ a.value)]
+  -- size field: reassociate so the reader sees the u32 at the boundary
+  have hszoff : (p ++ a.name ++ nulByte) ++ (a.typeName ++ (nulByte ++
+        (putU32LE (UInt32.ofNat a.value.size) ByteArray.empty ++ (a.value ++ rest))))
+      = ((p ++ a.name ++ nulByte) ++ (a.typeName ++ nulByte)) ++
+        (putU32LE (UInt32.ofNat a.value.size) ByteArray.empty ++ (a.value ++ rest)) := by
+    simp only [ByteArray.append_assoc]
   rw [hszoff]
-  have hszread : getU32LE (((a.name ++ nulByte) ++ (a.typeName ++ nulByte)) ++
-        (putU32LE (UInt32.ofNat a.value.size) ByteArray.empty ++ a.value))
-        (a.name.size + 1 + a.typeName.size + 1)
+  have hszread : getU32LE (((p ++ a.name ++ nulByte) ++ (a.typeName ++ nulByte)) ++
+        (putU32LE (UInt32.ofNat a.value.size) ByteArray.empty ++ (a.value ++ rest)))
+        ((p ++ a.name ++ nulByte) ++ (a.typeName ++ nulByte)).size
       = some (UInt32.ofNat a.value.size) := by
-    have hpre : ((a.name ++ nulByte) ++ (a.typeName ++ nulByte)).size
-        = a.name.size + 1 + a.typeName.size + 1 := by
-      simp only [ByteArray.size_append, nulByte_size]; omega
-    rw [← hpre]
     rw [getU32LE_append_right]
     exact getU32LE_u32Bytes_append _ _
   simp only [hszread]
@@ -1147,11 +1188,11 @@ theorem parse_wire (a : RawAttr) (maxLen : Nat) (hw : Emittable a maxLen) :
     exact hb hz
   rw [ite_eq_right hsign]
   -- bounds guard false
-  have hbnd : ¬ (decide ((UInt32.ofNat a.value.size).toNat > ((a.name ++ nulByte) ++
-        (a.typeName ++ nulByte) ++ (putU32LE (UInt32.ofNat a.value.size) ByteArray.empty ++ a.value)).size) ||
-      decide (((a.name ++ nulByte) ++ (a.typeName ++ nulByte)).size + 4 +
-        (UInt32.ofNat a.value.size).toNat > ((a.name ++ nulByte) ++
-        (a.typeName ++ nulByte) ++ (putU32LE (UInt32.ofNat a.value.size) ByteArray.empty ++ a.value)).size)) = true := by
+  have hbnd : ¬ (decide ((UInt32.ofNat a.value.size).toNat > ((p ++ a.name ++ nulByte) ++
+        (a.typeName ++ nulByte) ++ (putU32LE (UInt32.ofNat a.value.size) ByteArray.empty ++ (a.value ++ rest))).size) ||
+      decide (((p ++ a.name ++ nulByte) ++ (a.typeName ++ nulByte)).size + 4 +
+        (UInt32.ofNat a.value.size).toNat > ((p ++ a.name ++ nulByte) ++
+        (a.typeName ++ nulByte) ++ (putU32LE (UInt32.ofNat a.value.size) ByteArray.empty ++ (a.value ++ rest))).size)) = true := by
     intro hc
     rcases Bool.or_eq_true .. |>.mp hc with hg1 | hg2
     · have h1 := of_decide_eq_true hg1
@@ -1163,30 +1204,32 @@ theorem parse_wire (a : RawAttr) (maxLen : Nat) (hw : Emittable a maxLen) :
       simp only [ByteArray.size_append, nulByte_size, u32Bytes_size] at h2
       omega
   -- extract the value and compare
-  have hval : ((a.name ++ nulByte ++ (a.typeName ++ nulByte)) ++
-        (putU32LE (UInt32.ofNat a.value.size) ByteArray.empty ++ a.value)).extract
-        ((a.name ++ nulByte ++ (a.typeName ++ nulByte)).size + 4)
-        ((a.name ++ nulByte ++ (a.typeName ++ nulByte)).size + 4 +
-          (UInt32.ofNat a.value.size).toNat)
+  have hval : ((p ++ a.name ++ nulByte ++ (a.typeName ++ nulByte)) ++
+        (putU32LE (UInt32.ofNat a.value.size) ByteArray.empty ++ (a.value ++ rest))).extract
+        ((p ++ a.name ++ nulByte ++ (a.typeName ++ nulByte)).size + 4)
+        ((p ++ a.name ++ nulByte ++ (a.typeName ++ nulByte)).size + 4 +
+          a.value.size)
       = a.value := by
-    rw [u32Bytes_toNat (by omega)]
+    have hA : ((p ++ a.name ++ nulByte ++ (a.typeName ++ nulByte)) ++
+          putU32LE (UInt32.ofNat a.value.size) ByteArray.empty).size
+        = (p ++ a.name ++ nulByte ++ (a.typeName ++ nulByte)).size + 4 := by
+      simp only [ByteArray.size_append, u32Bytes_size]
     rw [← ByteArray.append_assoc]
-    rw [show (a.name ++ nulByte ++ (a.typeName ++ nulByte)).size + 4
-          = ((a.name ++ nulByte ++ (a.typeName ++ nulByte)) ++
-              putU32LE (UInt32.ofNat a.value.size) ByteArray.empty).size by
-        simp only [ByteArray.size_append, u32Bytes_size]]
-    exact extract_append_right_eq
+    rw [← hA]
+    rw [extract_append_size_head (a := ((p ++ a.name ++ nulByte ++ (a.typeName ++ nulByte)) ++
+          putU32LE (UInt32.ofNat a.value.size) ByteArray.empty))
+        (b := a.value ++ rest) (k := a.value.size) (by simp only [ByteArray.size_append]; omega)]
+    rw [ByteArray.extract_append_eq_left (a := a.value) (b := rest)
+      (i := a.value.size) rfl]
   rw [ite_or_decide_false]
   · -- main goal: success form
     simp only [Option.some.injEq, Prod.mk.injEq]
+    rw [u32Bytes_toNat (by omega)]
     constructor
     · -- record identity: the extracted value is the original value
-      rw [show a.name.size + 1 + a.typeName.size + 1 + 4
-            = (a.name ++ nulByte ++ (a.typeName ++ nulByte)).size + 4 by
-          simp only [ByteArray.size_append, nulByte_size]; omega]
       rw [hval]
     · -- cursor arithmetic
-      rw [u32Bytes_toNat (by omega)]
+      rfl
   · -- first bounds side condition
     intro h
     rw [u32Bytes_toNat (by omega)] at h
@@ -1196,6 +1239,153 @@ theorem parse_wire (a : RawAttr) (maxLen : Nat) (hw : Emittable a maxLen) :
     intro h
     rw [u32Bytes_toNat (by omega)] at h
     simp only [ByteArray.size_append, nulByte_size, u32Bytes_size] at h
+    omega
+
+/-- Parsing the emitted bytes yields the original attribute. -/
+theorem parse_wire (a : RawAttr) (maxLen : Nat) (hw : Emittable a maxLen) :
+    parse (wire a) maxLen 0
+      = some (a, a.name.size + 1 + a.typeName.size + 1 + 4 + a.value.size) := by
+  have h := parse_emit_at ByteArray.empty ByteArray.empty a maxLen hw
+  simp only [ByteArray.empty_append, ByteArray.size_empty, Nat.zero_add,
+    ByteArray.append_empty] at h
+  exact h
+
+/-- Wire bytes of a list of attributes (right-nested). -/
+def wireAll (as : List RawAttr) : Bytes :=
+  as.foldr (fun a acc => wire a ++ acc) ByteArray.empty
+
+theorem wireAll_cons (a : RawAttr) (as : List RawAttr) :
+    wireAll (a :: as) = wire a ++ wireAll as := rfl
+
+theorem wireAll_nil : wireAll [] = ByteArray.empty := rfl
+
+/-- Emitting then folding left yields the same bytes as `wireAll` (up to the
+    initial accumulator). -/
+theorem foldl_wireAll (as : List RawAttr) (acc : Bytes) :
+    as.foldl (fun acc' a => acc' ++ wire a) acc = acc ++ wireAll as :=
+  foldl_append_eq_foldr as wire acc
+
+/-- Size of the emitted list is the sum of the attribute sizes. -/
+theorem wireAll_size (as : List RawAttr) :
+    (wireAll as).size = (as.map fun a => (wire a).size).sum := by
+  induction as with
+  | nil => simp [wireAll]
+  | cons a as ih =>
+    rw [wireAll_cons, ByteArray.size_append, List.map_cons, List.sum_cons, ih]
+
+/-- Size of one attribute's wire form. -/
+theorem wire_size (a : RawAttr) :
+    (wire a).size = a.name.size + 1 + a.typeName.size + 1 + 4 + a.value.size := by
+  unfold wire
+  simp only [ByteArray.size_append, nulByte_size, u32Bytes_size]
+  omega
+
+/-- Parsing the emitted list after a prefix, stopped by a NUL byte after the
+    last attribute, yields the list and the cursor past the terminator. This
+    is the list-level round-trip lemma for attribute lists. -/
+theorem parseAll_emit (as : List RawAttr) (p rest : Bytes) (longNames : Bool) (fuel : Nat)
+    (hAll : ∀ a ∈ as, Emittable a (if longNames then maxLongName else maxShortName))
+    (hf : as.length + 1 ≤ fuel) :
+    parseAll (p ++ (wireAll as ++ (nulByte ++ rest))) longNames p.size fuel
+      = some (as, p.size + (wireAll as).size + 1) := by
+  induction as generalizing p fuel with
+  | nil =>
+    have hf' : 1 ≤ fuel := by omega
+    obtain ⟨fuel, rfl⟩ : ∃ n, fuel = n + 1 := ⟨fuel - 1, by omega⟩
+    unfold parseAll
+    have hlt : p.size < (p ++ (wireAll [] ++ (nulByte ++ rest))).size := by
+      simp only [wireAll, List.foldr_nil]
+      simp only [ByteArray.empty_append, ByteArray.size_append, nulByte_size]
+      omega
+    rw [dite_eq_left hlt]
+    have hby : ((p ++ (wireAll [] ++ (nulByte ++ rest)))[p.size]'hlt == 0) = true := by
+      have hz := getU8?_nul_at (p := p) (rest := rest)
+      have heq : p ++ (wireAll [] ++ (nulByte ++ rest)) = p ++ (nulByte ++ rest) := by
+        simp [wireAll]
+      rw [← heq] at hz
+      rw [getU8?_of_lt hlt] at hz
+      have h0 : (p ++ (wireAll [] ++ (nulByte ++ rest)))[p.size]'hlt = 0 :=
+        Option.some.inj hz
+      rw [h0]
+      rfl
+    rw [hby]
+    simp [wireAll]
+  | cons a as ih =>
+    have hAll' : ∀ t ∈ as, Emittable t (if longNames then maxLongName else maxShortName) :=
+      fun t ht => hAll t (List.mem_cons_of_mem a ht)
+    have ha : Emittable a (if longNames then maxLongName else maxShortName) :=
+      hAll a (List.mem_cons.mpr (Or.inl rfl))
+    obtain ⟨n, rfl⟩ : ∃ n, fuel = n + 1 := ⟨fuel - 1, by omega⟩
+    have ha_sz := wire_size a
+    have hre : p ++ (wireAll (a :: as) ++ (nulByte ++ rest))
+        = p ++ (wire a ++ (wireAll as ++ (nulByte ++ rest))) := by
+      simp only [wireAll_cons, ByteArray.append_assoc]
+    unfold parseAll
+    rw [hre]
+    have hlt : p.size < (p ++ (wire a ++ (wireAll as ++ (nulByte ++ rest)))).size := by
+      simp only [ByteArray.size_append, nulByte_size]
+      omega
+    rw [dite_eq_left hlt]
+    have h0lt : 0 < a.name.size := by
+      have h := ha.nameNonempty
+      omega
+    have hby : ((p ++ (wire a ++ (wireAll as ++ (nulByte ++ rest))))[p.size]'hlt == 0) = false := by
+      have h1 : getU8? (p ++ (wire a ++ (wireAll as ++ (nulByte ++ rest)))) p.size
+          = some (a.name[0]'h0lt) := by
+        rw [getU8?_append_right (a := p) (b := wire a ++ (wireAll as ++ (nulByte ++ rest)))
+              (by omega)]
+        rw [Nat.sub_self]
+        rw [getU8?_append_left (a := wire a) (i := 0) (by rw [ha_sz]; omega)]
+        unfold wire
+        rw [getU8?_append_left (a := a.name) (i := 0) h0lt]
+        rw [getU8?_of_lt h0lt]
+      have hn0 : (a.name[0]'h0lt) ≠ 0 := by
+        have hnn := ha.nameNoNul
+        have h := hnn 0
+        rw [getU8?_of_lt h0lt] at h
+        intro hc
+        exact h (congrArg some hc)
+      have hbe : (p ++ (wire a ++ (wireAll as ++ (nulByte ++ rest))))[p.size]'hlt
+          = a.name[0]'h0lt := by
+        have h2 := h1
+        rw [getU8?_of_lt hlt] at h2
+        exact Option.some.inj h2
+      rw [hbe, beq_eq_false_iff_ne]
+      exact hn0
+    rw [hby]
+    simp only [Bool.false_eq_true, ite_false]
+    -- attribute read
+    have hp := parse_emit_at (p := p) (rest := wireAll as ++ (nulByte ++ rest))
+      (a := a) (maxLen := if longNames then maxLongName else maxShortName) ha
+    simp only [hp]
+    have hcont : p ++ (wire a ++ (wireAll as ++ (nulByte ++ rest)))
+        = (p ++ wire a) ++ (wireAll as ++ (nulByte ++ rest)) := by
+      simp only [ByteArray.append_assoc]
+    rw [hcont]
+    have hfn : as.length + 1 ≤ n := by
+      simp only [List.length_cons] at hf
+      omega
+    have htails : (p ++ wire a).size = p.size + (wire a).size := by
+      simp only [ByteArray.size_append]
+    have ih' := ih (p := p ++ wire a) (fuel := n) hAll' hfn
+    rw [htails, ha_sz,
+        show ByteArray.size p + (ByteArray.size a.name + 1 + ByteArray.size a.typeName + 1
+          + 4 + ByteArray.size a.value)
+        = ByteArray.size p + ByteArray.size a.name + 1 + ByteArray.size a.typeName + 1
+          + 4 + ByteArray.size a.value from by omega] at ih'
+    show (do
+        let __x_1 ← parseAll (p ++ wire a ++ (wireAll as ++ (nulByte ++ rest))) longNames
+            (p.size + a.name.size + 1 + a.typeName.size + 1 + 4 + a.value.size) n
+        some (a :: __x_1.1, __x_1.2)) =
+      some (a :: as, p.size + (wireAll (a :: as)).size + 1)
+    simp only [ih']
+    show some (a :: as, ByteArray.size p + ByteArray.size a.name + 1
+        + ByteArray.size a.typeName + 1 + 4 + ByteArray.size a.value
+        + (wireAll as).size + 1)
+      = some (a :: as, ByteArray.size p + (wireAll (a :: as)).size + 1)
+    rw [wireAll_cons, ByteArray.size_append, ha_sz]
+    congr 1
+    congr 1
     omega
 
 end RawAttr

@@ -16,3 +16,8 @@ import Exr.Tiles
 import Exr.File
 import Exr.Parse
 import Exr.Emit
+import Exr.Size
+import Exr.Deep
+import Exr.Rle
+import Exr.Zip
+import Exr.TypedEmit
