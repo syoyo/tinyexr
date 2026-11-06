@@ -53,7 +53,7 @@ jobs:
   lean-check:
     name: linux-x64-lean-check
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -62,11 +62,21 @@ jobs:
 
       # lean-action auto-detects the mathlib dependency pinned in
       # lean/lake-manifest.json, runs `lake exe cache get`, and builds
-      # lean-toolchain's Lean (4.35.0).
-      - name: Build Lean formalization
+      # lean-toolchain's Lean (4.35.0).  The Lakefile marks the three oracle
+      # tools as default targets, so this also builds exrcheck/exrgen/codecgen.
+      - name: Build Lean formalization and oracle tools
         uses: leanprover/lean-action@v1
         with:
           lake-package-directory: lean
+
+      - name: Codec differential check (Lean model vs v3 PXR24/B44)
+        run: make codec-diff
+
+      - name: Structural differential check (Lean model vs v3 parser)
+        run: make lean-diff
+
+      - name: Committed Lean fixtures are current
+        run: make lean-gen-check
 
   tinyexr-v3-c-windows:
     name: windows-x64-mingw-v3-c

@@ -39,13 +39,11 @@ def t8 (h : UInt16) : UInt16 :=
 def unt8 (v : UInt16) : UInt16 :=
   if (v &&& 0x8000) != 0 then v &&& 0x7fff else ~~~v
 
-/-- `t8`/`unt8` round-trip on every non-NaN half value. The transform has
-    three disjoint cases (NaN collapses to `0x8000`, negatives are bitwise
-    complemented, non-negatives get the sign bit set), and each case is
-    discharged by a bit-level decision procedure; no exhaustive table
-    evaluation (`native_decide`) is involved. -/
+/-- Same low 15 bits with or without the sign bit set. -/
 private theorem or_high_and_low (x : UInt16) :
     (x ||| 0x8000) &&& 0x7fff = x &&& 0x7fff := by bv_decide
+
+/-- Setting the sign bit always sets it. -/
 private theorem high_or_high (x : UInt16) :
     (x ||| 0x8000) &&& 0x8000 = 0x8000 := by bv_decide
 

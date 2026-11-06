@@ -23,7 +23,7 @@ MINIZ_SRC = ./deps/miniz/miniz.c
 # ---- legacy v1 single-header test (unchanged) -----------------------------
 TARGET = test_tinyexr
 
-.PHONY: all test clean help lib test-c test-c-threads test-c-tsan c11-gate lean-check lean-diff lean-gen codec-diff texcomp-web fuzz fuzz-threads tocio-fuzz fuzz-jph fuzz-libdeflate fuzz-corpus fuzz-corpus-asan parse-test wasm freestanding-gate freestanding-zstd-gate examples-c bench bench-compare bench-htj2k arm-smoke host-smoke gpu-test vk-test jph-gpu-test bench-gpu-jph texcomp texcomp-arm texcomp-c11-gate texcomp-test texcomp-bench texcomp-astc-psnr texcomp-astc-arm-smoke texcomp-astc-arm-gate texcomp-astc-hdr-gate texcomp-uni-gate texcomp-bc6h-gate texcomp-wasm texcomp-wasm-simd wasm-texcomp wasm-texcomp-simd ptexatlas-c11-gate
+.PHONY: all test clean help lib test-c test-c-threads test-c-tsan c11-gate lean-check lean-diff lean-gen lean-gen-update lean-gen-check codec-diff texcomp-web fuzz fuzz-threads tocio-fuzz fuzz-jph fuzz-libdeflate fuzz-corpus fuzz-corpus-asan parse-test wasm freestanding-gate freestanding-zstd-gate examples-c bench bench-compare bench-htj2k arm-smoke host-smoke gpu-test vk-test jph-gpu-test bench-gpu-jph texcomp texcomp-arm texcomp-c11-gate texcomp-test texcomp-bench texcomp-astc-psnr texcomp-astc-arm-smoke texcomp-astc-arm-gate texcomp-astc-hdr-gate texcomp-uni-gate texcomp-bc6h-gate texcomp-wasm texcomp-wasm-simd wasm-texcomp wasm-texcomp-simd ptexatlas-c11-gate
 
 all: $(TARGET)
 
@@ -307,6 +307,23 @@ lean-gen: lib
 	@for k in scanline tiled mipmap ripmap deepscanline multipart; do \
 	  $(LEAN_EXRGEN) build/lean-gen/$$k.exr 1 $$k >/dev/null; done
 	@echo "lean-gen: build/lean-gen/{scanline,tiled,mipmap,ripmap,deepscanline,multipart}.exr"
+
+# Regenerate the committed Lean fixtures in place (run after changing ExrGen).
+lean-gen-update: lib
+	@for k in scanline tiled mipmap ripmap deepscanline multipart; do \
+	  $(LEAN_EXRGEN) test/unit/regression/leangen-$$k.exr 1 $$k >/dev/null; done
+	@echo "lean-gen-update: test/unit/regression/leangen-*.exr regenerated"
+
+# Fail if the committed fixtures do not match the current exrgen.
+lean-gen-check: lib
+	@mkdir -p build/lean-gen-check
+	@set -e; for k in scanline tiled mipmap ripmap deepscanline multipart; do \
+	  $(LEAN_EXRGEN) build/lean-gen-check/$$k.exr 1 $$k >/dev/null; \
+	  cmp -s build/lean-gen-check/$$k.exr test/unit/regression/leangen-$$k.exr || { \
+	    echo "stale fixture: test/unit/regression/leangen-$$k.exr"; \
+	    echo "regenerate with: make lean-gen-update"; exit 1; }; \
+	done
+	@echo "lean-gen-check: fixtures current"
 
 .PHONY: FORCE
 FORCE:
@@ -1332,6 +1349,8 @@ help:
 	@echo "make lean-check - build Lean 4 + mathlib formalization of the OpenEXR format (lean/)"
 	@echo "make lean-diff - differential structural check: Lean model vs tinyexr v3 + corpus"
 	@echo "make lean-gen  - generate valid structural EXR files with the Lean exrgen tool"
+	@echo "make lean-gen-update - regenerate test/unit/regression/leangen-*.exr"
+	@echo "make lean-gen-check  - fail if the committed Lean fixtures are stale"
 	@echo "make codec-diff - differential codec test: Lean vectors vs tinyexr v3 PXR24"
 	@echo "make bench  - codec/SIMD throughput benchmark (incl. HTJ2K SIMD tiers)"
 	@echo "make tools-test - run all self-contained tool gates (texcomp/resize/texpipe/envmap)"

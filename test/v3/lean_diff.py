@@ -177,12 +177,17 @@ def compare(path):
 def collect(paths):
     files = []
     for p in paths:
+        if not p:
+            continue
         if os.path.isdir(p):
             files.extend(sorted(glob.glob(os.path.join(p, "**", "*.exr"), recursive=True)))
         elif any(ch in p for ch in "*?["):
             files.extend(sorted(glob.glob(p, recursive=True)))
-        else:
+        elif os.path.exists(p):
             files.append(p)
+        else:
+            # e.g. ~/work/openexr-images or /tmp/exrgen on a CI runner
+            print(f"note: skipping missing corpus path {p}", file=sys.stderr)
     return files
 
 
