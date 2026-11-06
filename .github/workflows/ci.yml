@@ -50,6 +50,24 @@ jobs:
       - name: Run TinyEXR v3 C unit tests
         run: make test-c
 
+  lean-check:
+    name: linux-x64-lean-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # lean-action auto-detects the mathlib dependency pinned in
+      # lean/lake-manifest.json, runs `lake exe cache get`, and builds
+      # lean-toolchain's Lean (4.35.0).
+      - name: Build Lean formalization
+        uses: leanprover/lean-action@v1
+        with:
+          lake-package-directory: lean
+
   tinyexr-v3-c-windows:
     name: windows-x64-mingw-v3-c
     runs-on: windows-latest

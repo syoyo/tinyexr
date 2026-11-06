@@ -51,3 +51,9 @@ test/unit/tester-*
 
 # local agent handoff notes (machine-specific paths; not published)
 resume.md
+
+# Lean 4 formalization build outputs
+/lean/.lake/
+
+# Lean-generated differential corpus
+/build/lean-gen/

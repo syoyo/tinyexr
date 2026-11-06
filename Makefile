@@ -23,7 +23,7 @@ MINIZ_SRC = ./deps/miniz/miniz.c
 # ---- legacy v1 single-header test (unchanged) -----------------------------
 TARGET = test_tinyexr
 
-.PHONY: all test clean help lib test-c test-c-threads test-c-tsan c11-gate texcomp-web fuzz fuzz-threads tocio-fuzz fuzz-jph fuzz-libdeflate fuzz-corpus fuzz-corpus-asan parse-test wasm freestanding-gate freestanding-zstd-gate examples-c bench bench-compare bench-htj2k arm-smoke host-smoke gpu-test vk-test jph-gpu-test bench-gpu-jph texcomp texcomp-arm texcomp-c11-gate texcomp-test texcomp-bench texcomp-astc-psnr texcomp-astc-arm-smoke texcomp-astc-arm-gate texcomp-astc-hdr-gate texcomp-uni-gate texcomp-bc6h-gate texcomp-wasm texcomp-wasm-simd wasm-texcomp wasm-texcomp-simd ptexatlas-c11-gate
+.PHONY: all test clean help lib test-c test-c-threads test-c-tsan c11-gate lean-check lean-diff lean-gen codec-diff texcomp-web fuzz fuzz-threads tocio-fuzz fuzz-jph fuzz-libdeflate fuzz-corpus fuzz-corpus-asan parse-test wasm freestanding-gate freestanding-zstd-gate examples-c bench bench-compare bench-htj2k arm-smoke host-smoke gpu-test vk-test jph-gpu-test bench-gpu-jph texcomp texcomp-arm texcomp-c11-gate texcomp-test texcomp-bench texcomp-astc-psnr texcomp-astc-arm-smoke texcomp-astc-arm-gate texcomp-astc-hdr-gate texcomp-uni-gate texcomp-bc6h-gate texcomp-wasm texcomp-wasm-simd wasm-texcomp wasm-texcomp-simd ptexatlas-c11-gate
 
 all: $(TARGET)
 
@@ -265,6 +265,48 @@ c11-gate: | build
 	  $(CC) $(V3_CSTD) $(V3_WARN) $(V3_INC) -O1 -fsyntax-only $$f || exit 1; \
 	done
 	@echo "pure-C11 gate: OK"
+
+# Lean 4 + mathlib formalization of the OpenEXR format (lean/). Fetches the
+# prebuilt mathlib olean cache on first run (needs network once).
+LEAN ?= lean
+LAKE ?= lake
+lean-check:
+	cd lean && $(LAKE) exe cache get && $(LAKE) build && $(LAKE) build exrcheck exrgen codecgen
+	@echo "lean-check: OK"
+
+# Differential structural check: Lean model vs tinyexr v3 vs generated files.
+LEAN_EXRCHECK = lean/.lake/build/bin/exrcheck
+LEAN_EXRGEN = lean/.lake/build/bin/exrgen
+LEAN_CODECGEN = lean/.lake/build/bin/codecgen
+lean-diff: lib $(PARSE_HARNESS)
+	@mkdir -p build/lean-gen
+	@for k in scanline tiled mipmap ripmap deepscanline multipart; do \
+	  $(LEAN_EXRGEN) build/lean-gen/$$k.exr 1 $$k >/dev/null; done
+	python3 test/v3/lean_diff.py test/unit/regression build/lean-gen $(EXR_IMAGES)
+
+# Codec-level differential harness (PXR24/B44 vs the Lean model).
+CODEC_DIFF = build/codec_diff
+CODEC_VECTORS = build/codec-vectors.bin
+
+$(CODEC_DIFF): test/v3/codec_diff.c build/libtinyexr3.a | build
+	$(CC) $(V3_CSTD) -Wall -Wextra -Iinclude -Isrc -Ideps/zstd -O2 \
+	  test/v3/codec_diff.c build/libtinyexr3.a -lm -o $(CODEC_DIFF)
+
+CODEC_SEEDS ?= 12345 1 7 42 999 20240101 65535
+
+codec-diff: $(CODEC_DIFF) lib
+	@mkdir -p build
+	@set -e; for seed in $(CODEC_SEEDS); do \
+	  $(LEAN_CODECGEN) $(CODEC_VECTORS) $$seed >/dev/null; \
+	  echo "seed $$seed"; \
+	  ./$(CODEC_DIFF) $(CODEC_VECTORS); \
+	done
+
+lean-gen: lib
+	@mkdir -p build/lean-gen
+	@for k in scanline tiled mipmap ripmap deepscanline multipart; do \
+	  $(LEAN_EXRGEN) build/lean-gen/$$k.exr 1 $$k >/dev/null; done
+	@echo "lean-gen: build/lean-gen/{scanline,tiled,mipmap,ripmap,deepscanline,multipart}.exr"
 
 .PHONY: FORCE
 FORCE:
@@ -832,9 +874,11 @@ fuzz-corpus-asan: $(V3_TEST_OBJ) build/test-tinyexr_zstd.o $(LD_TEST_OBJ) test/f
 EXR_IMAGES ?= $(HOME)/work/openexr-images
 PARSE_HARNESS = test/v3/parse_harness
 
-parse-test: lib
+$(PARSE_HARNESS): test/v3/parse_harness.c build/libtinyexr3.a | build
 	$(CC) $(V3_CSTD) -Wall -Wextra -Iinclude -O2 \
 	  test/v3/parse_harness.c build/libtinyexr3.a -lm -o $(PARSE_HARNESS)
+
+parse-test: lib $(PARSE_HARNESS)
 	python3 test/v3/parse-tester.py --harness $(PARSE_HARNESS) $(EXR_IMAGES)
 
 # ---- native example (uses the optional stdio layer) -----------------------
@@ -1285,6 +1329,10 @@ help:
 	@echo "make test-c-threads - unit tests with multithreading (THREADS=1)"
 	@echo "make test-c-tsan - threaded unit tests under ThreadSanitizer"
 	@echo "make c11-gate - strict C11 -Werror compile of all src/*.c"
+	@echo "make lean-check - build Lean 4 + mathlib formalization of the OpenEXR format (lean/)"
+	@echo "make lean-diff - differential structural check: Lean model vs tinyexr v3 + corpus"
+	@echo "make lean-gen  - generate valid structural EXR files with the Lean exrgen tool"
+	@echo "make codec-diff - differential codec test: Lean vectors vs tinyexr v3 PXR24"
 	@echo "make bench  - codec/SIMD throughput benchmark (incl. HTJ2K SIMD tiers)"
 	@echo "make tools-test - run all self-contained tool gates (texcomp/resize/texpipe/envmap)"
 	@echo "make tools-test-all - tools-test + astcenc conformance cross-checks (needs C++)"

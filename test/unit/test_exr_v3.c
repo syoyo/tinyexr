@@ -4277,6 +4277,91 @@ static void metadata_attribute_tests(void) {
     exr_header_free(exr_default_allocator(), &h);
 }
 
+
+/* OpenEXR validates the scan-line chunk order *in file order*: for DECREASING_Y
+ * the first physical chunk must hold the last block (and the offset table is
+ * reversed accordingly). The v3 writer used to always emit increasing-y chunks,
+ * which made OpenEXR reject DECREASING_Y files ("Invalid chunk index"); this
+ * test re-checks the exact rule OpenEXRCore applies. */
+static void check_scanline_chunk_file_order(const void *buf, size_t sz,
+                                            int decreasing, const char *name) {
+    exr_reader *r = NULL;
+    uint32_t n = 0, k;
+    int ok;
+    if (!EXR_OK(exr_reader_open_memory(buf, sz, NULL, &r))) {
+        CHECK(0, name);
+        return;
+    }
+    ok = EXR_OK(exr_reader_parse_header(r));
+    if (ok) ok = EXR_OK(exr_reader_num_blocks(r, 0, &n));
+    if (!ok || n == 0 || !r->parts[0].offsets || r->parts[0].header.tiled) {
+        CHECK(0, name);
+        exr_reader_close(r);
+        return;
+    }
+    {
+        const uint8_t *mem = (const uint8_t *)r->mem;
+        const uint64_t *offs = r->parts[0].offsets;
+        int32_t min_y = r->parts[0].header.data_window.min_y;
+        int lpb = exr_lines_per_block(r->parts[0].header.compression);
+        uint64_t cursor = offs[0];
+        for (k = 1; k < n; k++)
+            if (offs[k] < cursor) cursor = offs[k];
+        for (k = 0; k < n; k++) {
+            uint32_t want = decreasing ? (n - 1u - k) : k;
+            uint32_t j, found = n;
+            int32_t y, want_y;
+            uint32_t data_size;
+            for (j = 0; j < n; j++)
+                if (offs[j] == cursor) { found = j; break; }
+            if (found != want || cursor + 8 > sz) { CHECK(0, name); break; }
+            y = (int32_t)rd_u32le(mem + cursor);
+            data_size = rd_u32le(mem + cursor + 4);
+            want_y = min_y + (int32_t)want * lpb;
+            if (y != want_y) { CHECK(0, name); break; }
+            cursor += (uint64_t)8 + data_size;
+        }
+        if (k == n) CHECK(1, name);
+        printf("  ok: %s (%u chunks, %s)\n", name, n,
+               decreasing ? "decreasing-y" : "increasing-y");
+    }
+    exr_reader_close(r);
+}
+
+static void scanline_line_order_tests(void) {
+    static const char *path = "test/unit/regression/decreasing-y-scanline.exr";
+    exr_image src, back;
+    void *buf = NULL;
+    size_t sz = 0;
+    exr_result rc;
+    memset(&src, 0, sizeof(src));
+    if (!EXR_OK(exr_load_from_file(path, NULL, &src))) {
+        CHECK(0, "load decreasing-y fixture");
+        return;
+    }
+    src.parts[0].header.line_order = EXR_LINEORDER_DECREASING_Y;
+    rc = exr_save_to_memory(&buf, &sz, NULL, &src, EXR_COMPRESSION_NONE);
+    CHECK(EXR_OK(rc), "save decreasing-y");
+    if (EXR_OK(rc)) {
+        check_scanline_chunk_file_order(buf, sz, 1, "decreasing-y chunk order");
+        memset(&back, 0, sizeof(back));
+        rc = exr_load_from_memory(buf, sz, NULL, &back);
+        CHECK(EXR_OK(rc) && images_equal(&src, &back),
+              "decreasing-y round-trip");
+        exr_image_free(&back);
+    }
+    free(buf);
+    buf = NULL;
+    sz = 0;
+    src.parts[0].header.line_order = EXR_LINEORDER_INCREASING_Y;
+    rc = exr_save_to_memory(&buf, &sz, NULL, &src, EXR_COMPRESSION_NONE);
+    CHECK(EXR_OK(rc), "save increasing-y");
+    if (EXR_OK(rc))
+        check_scanline_chunk_file_order(buf, sz, 0, "increasing-y chunk order");
+    free(buf);
+    exr_image_free(&src);
+}
+
 int main(void) {
     static const char *poc[] = {
         "test/unit/regression/poc-1383755b301e5f505b2198dc0508918b537fdf48bbfc6deeffe268822e6f6cd6",
@@ -4307,6 +4392,9 @@ int main(void) {
 
     printf("== fuzzer PoCs (must not crash) ==\n");
     for (i = 0; i < sizeof(poc) / sizeof(poc[0]); ++i) run_safe(poc[i]);
+
+    printf("== scanline chunk order (lineOrder) ==\n");
+    scanline_line_order_tests();
 
     printf("== writer round-trip (load -> save -> reload) ==\n");
     roundtrip("asakusa.exr", EXR_COMPRESSION_NONE, "NONE");

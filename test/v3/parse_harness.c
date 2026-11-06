@@ -110,10 +110,18 @@ int main(int argc, char **argv) {
             if (!h) continue;
             int32_t w = h->data_window.max_x - h->data_window.min_x + 1;
             int32_t hh = h->data_window.max_y - h->data_window.min_y + 1;
-            printf("PART %d type=%s compression=%s channels=%d size=%dx%d\n",
-                   (int)i, part_type_name(h->part_type),
-                   compression_name(h->compression), (int)h->num_channels,
-                   (int)w, (int)hh);
+            {
+                uint32_t blocks = 0;
+                exr_reader_num_blocks(r, i, &blocks);
+                printf("PART %d type=%s compression=%s channels=%d size=%dx%d "
+                       "chunks=%u tiled=%d deep=%d\n",
+                       (int)i, part_type_name(h->part_type),
+                       compression_name(h->compression), (int)h->num_channels,
+                       (int)w, (int)hh, blocks,
+                       h->tiled ? 1 : 0,
+                       (h->part_type == EXR_PART_DEEP_SCANLINE ||
+                        h->part_type == EXR_PART_DEEP_TILED) ? 1 : 0);
+            }
         }
     }
     if (r) exr_reader_close(r);

@@ -344,6 +344,20 @@ static void gather_level_tile(const exr_header *h, const int *order,
     }
 }
 
+
+/* Offset-table / on-disk chunk order for scan-line parts.
+ *
+ * For DECREASING_Y, OpenEXR writes (and validates) scan-line blocks from the
+ * highest y down; the offset table entry for block `ci` still lives at index
+ * `ci`, but the file order is reversed. Writing increasing-y chunks with a
+ * DECREASING_Y line order makes OpenEXR reject the file ("Invalid chunk
+ * index"), so the emit loops map write-step -> block index here. */
+static uint32_t wr_scanline_block_index(exr_line_order order, uint32_t n,
+                                        uint32_t step) {
+    if (order == EXR_LINEORDER_DECREASING_Y && n > 0) return n - 1u - step;
+    return step;
+}
+
 /* One compressed deep block (offset table + sample data) plus its result, so a
  * worker can produce it while the driver writes earlier blocks in order. */
 typedef struct {
@@ -479,10 +493,11 @@ static exr_result emit_deep_scanlines(obuf *b, const exr_allocator *a,
         exr_parallel_for(exr_get_num_threads(), (int)(nchunks - 1u),
                          deep_sl_enc_job, &ec);
     for (ci = 0; ci < nchunks; ++ci) {
-        deep_block_out *o = &out[ci];
-        int y0 = ymin + (int)ci * lpb;
+        uint32_t bi = wr_scanline_block_index(pt->header.line_order, nchunks, ci);
+        deep_block_out *o = &out[bi];
+        int y0 = ymin + (int)bi * lpb;
         if (!EXR_OK(o->rc)) { rc = o->rc; break; }
-        offtab[ci] = (uint64_t)b->len;
+        offtab[bi] = (uint64_t)b->len;
         if (multipart) ob_i32(b, p);
         ob_i32(b, y0);
         ob_u64(b, (uint64_t)o->poff_sz);
@@ -683,12 +698,13 @@ static exr_result encode_parallel_scanline(
         if (!EXR_OK(rcs[ci])) { rc = rcs[ci]; break; }
     if (EXR_OK(rc)) {
         for (ci = 0; ci < n; ++ci) {
-            int y0 = ymin + (int)ci * lpb;
-            offsets[ci] = (uint64_t)b->len;
+            uint32_t bi = wr_scanline_block_index(h->line_order, n, ci);
+            int y0 = ymin + (int)bi * lpb;
+            offsets[bi] = (uint64_t)b->len;
             if (multipart) ob_i32(b, p);
             ob_i32(b, y0);
-            ob_i32(b, (int32_t)sizes[ci]);
-            ob_bytes(b, payloads[ci], sizes[ci]);
+            ob_i32(b, (int32_t)sizes[bi]);
+            ob_bytes(b, payloads[bi], sizes[bi]);
             if (b->err) { rc = b->err; break; }
         }
     }
@@ -1333,7 +1349,9 @@ static exr_result serialize(exr_context *context, const exr_allocator *a,
 #endif
             if (!threaded)
             for (ci = 0; ci < chunk_counts[p]; ++ci) {
-                int y0 = ymin + (int)ci * lpb;
+                uint32_t bi = wr_scanline_block_index(h->line_order,
+                                                      chunk_counts[p], ci);
+                int y0 = ymin + (int)bi * lpb;
                 int nlines = (lpb > ymax - y0 + 1) ? (ymax - y0 + 1) : lpb;
                 size_t blk_size, payload_size = 0;
                 uint8_t *block, *payload = NULL;
@@ -1363,7 +1381,7 @@ static exr_result serialize(exr_context *context, const exr_allocator *a,
                 exr_free(a, block);
                 if (!EXR_OK(rc)) goto done;
 
-                offset_tables[p][ci] = (uint64_t)b.len;
+                offset_tables[p][bi] = (uint64_t)b.len;
                 if (multipart) ob_i32(&b, p);
                 ob_i32(&b, y0);
                 ob_i32(&b, (int32_t)payload_size);
