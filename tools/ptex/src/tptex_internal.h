@@ -12,6 +12,14 @@
 
 #include "../include/tptex.h"
 
+/* Results are defined to match upstream bit-for-bit, which needs plain single
+ * precision float arithmetic. x87 excess precision (FLT_EVAL_METHOD 2) would
+ * change them: build 32-bit x86 with -msse2 -mfpmath=sse, or define
+ * TPTEX_ALLOW_EXCESS_PRECISION to accept last-bit differences. */
+#if defined(__FLT_EVAL_METHOD__) && __FLT_EVAL_METHOD__ != 0 && !defined(TPTEX_ALLOW_EXCESS_PRECISION)
+#error "tptex needs FLT_EVAL_METHOD 0 (use -msse2 -mfpmath=sse on x86-32)"
+#endif
+
 /* --- explicit little-endian byte access (never struct punning) ---------- */
 static inline uint16_t tptex__ld_u16(const uint8_t* p) {
   return (uint16_t)((uint32_t)p[0] | ((uint32_t)p[1] << 8));

@@ -46,6 +46,7 @@ typedef struct level_info {
 
 typedef struct level {
   int loaded;
+  tptex_status failed; /* sticky load failure (TPTEX_OK if none) */
   uint32_t nfaces;
   uint32_t* fdh;      /* face data headers (bits 0..29 block size, 30..31 encoding) */
   uint64_t* offsets;  /* absolute file offsets of each face's data */
@@ -72,6 +73,7 @@ typedef struct meta_entry {
   int is_lmd;
   uint64_t lmd_pos;
   uint32_t lmd_zipsize;
+  tptex_status lmd_failed;
 } meta_entry;
 
 struct tptex_texture {
@@ -113,6 +115,7 @@ struct tptex_texture {
   int has_edits;
 
   int meta_loaded;
+  tptex_status meta_failed;
   meta_entry* meta;
   size_t nmeta, capmeta;
   uint64_t meta_bytes;
@@ -308,8 +311,9 @@ static tptex_status parse_levels(tptex_texture* t) {
       t->levelinfo[i].nfaces = tptex__ld_u32(p + 12);
       t->levelpos[i] = pos;
       if (!tptex__add_u64(pos, t->levelinfo[i].data_size, &pos)) { st = TPTEX_E_OVERFLOW; break; }
-      /* level 0 indexes faces by id; reduction levels hold a prefix of faces */
-      if (i == 0u ? t->levelinfo[0].nfaces != t->nfaces : t->levelinfo[i].nfaces > t->nfaces) {
+      /* level 0 indexes faces by id, reduction levels hold a prefix of faces; a
+       * level may hold fewer entries than faces (e.g. all faces constant) */
+      if (t->levelinfo[i].nfaces > t->nfaces) {
         st = TPTEX_E_CORRUPT;
         break;
       }
@@ -488,16 +492,19 @@ static tptex_status open_impl(tptex_texture* t, const char* path) {
   }
 
   if (t->flags & TPTEX_OPEN_NO_LAZY) {
+    /* Preload everything. A level or metadata block that is malformed makes only
+     * the reads that need it fail (as in lazy mode), not the open; the failure is
+     * remembered so later calls never mutate the texture. */
     uint32_t li;
     for (li = 0; li < t->nlevels; ++li)
-      if ((st = level_ensure(t, li)) != TPTEX_OK) return st;
-    if ((st = meta_load(t)) != TPTEX_OK) return st;
-    {
+      if ((st = level_ensure(t, li)) == TPTEX_E_NOMEM) return st;
+    if ((st = meta_load(t)) == TPTEX_E_NOMEM) return st;
+    if (st == TPTEX_OK) {
       size_t mi;
       for (mi = 0; mi < t->nmeta; ++mi) {
         const void* d;
         int cnt;
-        if ((st = tptex_meta_value(t, (int)mi, &d, &cnt)) != TPTEX_OK) return st;
+        if ((st = tptex_meta_value(t, (int)mi, &d, &cnt)) == TPTEX_E_NOMEM) return st;
       }
     }
   }
@@ -727,7 +734,7 @@ static tptex_status read_record(tptex_texture* t, uint64_t pos, uint32_t fdh, tp
 
 /* Load a level's face-data-header table and absolute offsets (level 0 also
  * receives the face-edit overrides). */
-static tptex_status level_ensure(tptex_texture* t, uint32_t id) {
+static tptex_status level_ensure_impl(tptex_texture* t, uint32_t id) {
   level* lv;
   uint8_t* raw;
   size_t raw_size;
@@ -737,6 +744,7 @@ static tptex_status level_ensure(tptex_texture* t, uint32_t id) {
   if (id >= t->nlevels) return TPTEX_E_RANGE;
   lv = &t->levels[id];
   if (lv->loaded) return TPTEX_OK;
+  if (lv->failed != TPTEX_OK) return lv->failed;
   if (!tptex__mul_u64(t->levelinfo[id].nfaces, 4u, &need) || !tptex__to_size(need, &raw_size))
     return TPTEX_E_OVERFLOW;
   if ((st = check_block_size(t, need)) != TPTEX_OK) return st;
@@ -770,12 +778,19 @@ static tptex_status level_ensure(tptex_texture* t, uint32_t id) {
   if (id == 0u) {
     size_t k;
     for (k = 0; k < t->nfaceedits; ++k) {
+      if (t->faceedits[k].faceid >= lv->nfaces) continue;
       lv->fdh[t->faceedits[k].faceid] = t->faceedits[k].fdh;
       lv->offsets[t->faceedits[k].faceid] = t->faceedits[k].pos;
     }
   }
   lv->loaded = 1;
   return TPTEX_OK;
+}
+
+static tptex_status level_ensure(tptex_texture* t, uint32_t id) {
+  tptex_status st = level_ensure_impl(t, id);
+  if (st != TPTEX_OK && id < t->nlevels && st != TPTEX_E_NOMEM) t->levels[id].failed = st;
+  return st;
 }
 
 static tptex_status level_face(tptex_texture* t, uint32_t levelid, uint32_t idx, tptex_res res, fbuf* out) {
@@ -1099,11 +1114,17 @@ static tptex_status meta_load(tptex_texture* t) {
   size_t i;
   tptex_status st = TPTEX_OK;
   if (t->meta_loaded) return TPTEX_OK;
+  if (t->meta_failed != TPTEX_OK) return t->meta_failed;
   if (t->metadatamemsize) st = parse_meta_block(t, t->metadatapos, t->metadatazipsize, t->metadatamemsize);
   if (st == TPTEX_OK && t->lmdheadermemsize) st = parse_lmd_headers(t);
   for (i = 0; st == TPTEX_OK && i < t->nmetaedits; ++i)
     st = parse_meta_block(t, t->metaedits[i].pos, t->metaedits[i].zipsize, t->metaedits[i].memsize);
-  if (st != TPTEX_OK) { meta_free(t); t->meta_bytes = 0; return st; }
+  if (st != TPTEX_OK) {
+    meta_free(t);
+    t->meta_bytes = 0;
+    if (st != TPTEX_E_NOMEM) t->meta_failed = st;
+    return st;
+  }
   t->meta_loaded = 1;
   return TPTEX_OK;
 }
@@ -1152,12 +1173,13 @@ tptex_status tptex_meta_value(tptex_texture* t, int index, const void** data, in
   e = &t->meta[index];
   if (e->is_lmd && !e->data) { /* large metadata: read on first access */
     uint8_t* buf;
-    if (t->meta_bytes + e->datasize > t->limits.max_meta_bytes) return TPTEX_E_LIMIT;
-    if ((st = check_block_size(t, e->datasize)) != TPTEX_OK) return st;
+    if (e->lmd_failed != TPTEX_OK) return e->lmd_failed;
+    if (t->meta_bytes + e->datasize > t->limits.max_meta_bytes) return e->lmd_failed = TPTEX_E_LIMIT;
+    if ((st = check_block_size(t, e->datasize)) != TPTEX_OK) return e->lmd_failed = st;
     buf = (uint8_t*)TALLOC(t, e->datasize);
     if (!buf) return TPTEX_E_NOMEM;
     st = read_zip(t, e->lmd_pos, e->lmd_zipsize, buf, e->datasize);
-    if (st != TPTEX_OK) { TFREE(t, buf, e->datasize); return st; }
+    if (st != TPTEX_OK) { TFREE(t, buf, e->datasize); return e->lmd_failed = st; }
     tptex__le_to_host(buf, e->datasize, meta_elem_size(e->type));
     e->data = buf;
     t->meta_bytes += e->datasize;

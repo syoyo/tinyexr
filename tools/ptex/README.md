@@ -42,3 +42,7 @@ Differences: faces are applied as one block (not tile by tile), so only float su
 malformed adjacency and non-finite input return a status instead of undefined behaviour; a black-border
 kernel lying wholly outside a face is empty (upstream hits UB there). Not covered by the differential test yet:
 subface topologies and valence-5+ corners.
+
+## Portability notes
+Verified: GCC/Clang x86-64 (ASan/UBSan), 32-bit x86 with `-msse2 -mfpmath=sse` (x87 excess precision is
+rejected at compile time), emscripten. Floating-point code must be built with `-ffp-contract=off`.
