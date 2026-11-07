@@ -70,8 +70,10 @@ static void roundtrip(tptex_data_type dt, int nch, int alpha, int mips, int ulog
   {
     tptex_options opt;
     tptex_texture* t2 = NULL;
-    const char* path = "build/tptex_test_roundtrip.ptx";
+    const char* dir = getenv("TPTEX_TEST_TMPDIR");
+    char path[512];
     FILE* fp;
+    snprintf(path, sizeof path, "%s/tptex_test_roundtrip.ptx", dir ? dir : "build");
     tptex_options_init(&opt);
     opt.flags = TPTEX_OPEN_NO_LAZY;
     TPTEX_CHECK(tptex_open_memory(file, fsize, &opt, &t2) == TPTEX_OK);
@@ -95,7 +97,7 @@ static void roundtrip(tptex_data_type dt, int nch, int alpha, int mips, int ulog
       }
       remove(path);
     }
-    TPTEX_CHECK(tptex_open_file("build/does-not-exist.ptx", NULL, &t2) != TPTEX_OK);
+    TPTEX_CHECK(tptex_open_file("/nonexistent-dir/does-not-exist.ptx", NULL, &t2) != TPTEX_OK);
   }
   tptex_free(NULL, file, fsize);
   free(px); free(back);
