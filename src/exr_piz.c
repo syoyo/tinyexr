@@ -10,6 +10,7 @@
  */
 
 #include "exr_internal.h"
+#include <limits.h>
 
 #define PIZ_BITMAP_SIZE 8192
 #define PIZ_USHORT_RANGE 65536
@@ -451,8 +452,7 @@ static int get_code(int po, int rlc, uint64_t *c, int *lc, const uint8_t **in,
         }
         *lc -= 8;
         cs = (uint8_t)((*c >> *lc) & 0xffu);
-        if (*out + cs > oe) return 0;
-        if ((*out - 1) < ob) return 0;
+        if (*out <= ob || (size_t)(oe - *out) < (size_t)cs) return 0;
         s = (*out)[-1];
         while (cs-- > 0) *(*out)++ = s;
     } else if (*out < oe) {
@@ -518,6 +518,7 @@ static PIZ_OPT_O3 int piz_fast_huf_decode(
     uint64_t buffer, buffer_back;
     int buffer_bits = 64, back_bits = 64;
     int bits_left = nbits - 128;
+    int consumed = 0;
     size_t out = 0;
 
     if (nbits < 128 || src_len < 16) return 0;
@@ -547,7 +548,8 @@ static PIZ_OPT_O3 int piz_fast_huf_decode(
             if (id >= symbol_count) return 0;
             symbol = ids[id];
         }
-        if (code_len <= 0 || code_len > buffer_bits) return 0;
+        if (code_len <= 0 || code_len > buffer_bits || code_len > nbits - consumed) return 0;
+        consumed += code_len;
         buffer <<= code_len;
         buffer_bits -= code_len;
         if (symbol == (uint32_t)rlc) {
@@ -557,6 +559,8 @@ static PIZ_OPT_O3 int piz_fast_huf_decode(
                                 &back_bits, &cur, &bits_left, end);
                 buffer_bits = 64;
             }
+            if (8 > nbits - consumed) return 0;
+            consumed += 8;
             count = (uint32_t)(buffer >> 56);
             if (count == 0 || out == 0 || count > dst_len - out) return 0;
             while (count-- != 0) {
@@ -575,7 +579,7 @@ static PIZ_OPT_O3 int piz_fast_huf_decode(
             buffer_bits = 64;
         }
     }
-    return bits_left == 0;
+    return consumed == nbits;
 }
 
 static int piz_build_fast_table(const int64_t *hcode, const uint32_t *symbols,
@@ -608,7 +612,8 @@ static PIZ_OPT_O3 int huf_uncompress(
     PizHufWorkspace *w = &local;
     void **slot;
     const uint8_t *ptr, *ie;
-    size_t symbol_capacity, symbol_bytes;
+    size_t symbol_capacity, symbol_bytes, coded_bytes;
+    const uint8_t *payload_start;
     size_t symbol_count = 0;
     uint64_t c = 0;
     int lc = 0;
@@ -626,6 +631,9 @@ static PIZ_OPT_O3 int huf_uncompress(
     memcpy(&im_val, in, 4);
     memcpy(&iM_val, in + 4, 4);
     memcpy(&nBits_val, in + 12, 4);
+    if (im_val >= PIZ_HUF_ENCSIZE || iM_val >= PIZ_HUF_ENCSIZE ||
+        im_val > iM_val || nBits_val > INT_MAX || in_len - 20 > INT_MAX)
+        return 0;
     im = (int)im_val;
     iM = (int)iM_val;
     nBits = (int)nBits_val;
@@ -719,7 +727,9 @@ static PIZ_OPT_O3 int huf_uncompress(
         }
     }
     ni = (int)(in_len - (size_t)(ptr - in));
-    if (nBits < 0 || nBits > 8 * ni) goto cleanup;
+    if (nBits < 0 || exr_add_ovf((size_t)nBits, 7u, &coded_bytes)) goto cleanup;
+    coded_bytes /= 8u;
+    if (coded_bytes > (size_t)ni) goto cleanup;
     if (nBits >= 128 &&
         piz_build_fast_table(w->hcode, w->symbols, symbol_count, w->fast) &&
         piz_fast_huf_decode(ptr, in_len - (size_t)(ptr - in), nBits,
@@ -743,7 +753,8 @@ static PIZ_OPT_O3 int huf_uncompress(
     outb = out;
     outp = out;
     oe = out + out_len;
-    ie = ptr + (nBits + 7) / 8;
+    payload_start = ptr;
+    ie = ptr + coded_bytes;
 
     /* The bounded two-window reader is substantially cheaper for ordinary
      * streams. Keep the original reader below as a correctness fallback for
@@ -804,13 +815,19 @@ static PIZ_OPT_O3 int huf_uncompress(
     }
 
     {
+        size_t loaded_bits;
+        if (lc < 0 || exr_mul_ovf((size_t)(ptr - payload_start), 8u, &loaded_bits) ||
+            loaded_bits < (size_t)lc || loaded_bits - (size_t)lc > (size_t)nBits)
+            goto cleanup;
         int i = (8 - nBits) & 7;
         c >>= i;
         lc -= i;
         while (lc > 0) {
             uint32_t code = fast[(c << (HUF_DECBITS - lc)) & HUF_DECMASK];
             if (code) {
-                lc -= (int)(code & 63u);
+                int code_len = (int)(code & 63u);
+                if (code_len <= 0 || code_len > lc) goto cleanup;
+                lc -= code_len;
                 if (!get_code((int)(code >> 6), rlc, &c, &lc, &ptr, ie, &outp, outb,
                               oe))
                     goto cleanup;
@@ -822,7 +839,7 @@ static PIZ_OPT_O3 int huf_uncompress(
             }
         }
     }
-    ret = 1;
+    ret = outp == oe && lc == 0;
 
 cleanup:
     if (w == &local) {

@@ -2138,5 +2138,306 @@ theorem parseFile_emit (f : ParsedFile) (payload : Bytes) (hok : FileEmitOK f) :
       omega
     rw [hdata]
 
+/-- Raw-header inversion conditions: attribute order and unknown attributes are
+preserved. The typed interpretation must agree with the retained raw fields. -/
+structure HeaderWireOK (longNames singleTile deep : Bool) (h : Header) : Prop where
+  emittable : ∀ a ∈ h.attrs, RawAttr.Emittable a
+    (if longNames then RawAttr.maxLongName else RawAttr.maxShortName)
+  nonempty : h.attrs ≠ []
+  decoded : Parse.headerOfAttrs h.attrs singleTile deep = some h
+
+/-- Canonical emit obligations are a special case of raw-header obligations. -/
+theorem HeaderEmitOK.toWire {h : Header} {multipart singleTile deep : Bool}
+    (hok : HeaderEmitOK multipart singleTile deep h) (longNames : Bool) :
+    HeaderWireOK longNames singleTile deep h := by
+  refine ⟨?_, ?_, ?_⟩
+  · rw [hok.attrsEq]
+    intro a ha
+    have h31 := headerAttrs_emittable_of_ok hok a ha
+    by_cases hl : longNames
+    · rw [ite_eq_left hl]
+      exact h31.mono (by decide)
+    · rw [ite_eq_right hl]
+      exact h31
+  · rw [hok.attrsEq]
+    exact headerAttrs_ne_nil h multipart
+  · rw [hok.attrsEq]
+    exact headerOfAttrs_of_ok hok
+
+/-- Sufficient parser fuel for arbitrary numbers of raw attributes per part. -/
+def partsWireFuel (parts : List Header) : Nat :=
+  (parts.map fun h => h.attrs.length + 1).sum + 2
+
+theorem partsWireFuel_ge_two (parts : List Header) : 2 ≤ partsWireFuel parts := by
+  unfold partsWireFuel
+  omega
+
+theorem partsWireFuel_cons (h : Header) (parts : List Header) :
+    partsWireFuel (h :: parts) = partsWireFuel parts + h.attrs.length + 1 := by
+  simp only [partsWireFuel, List.map_cons, List.sum_cons]
+  omega
+
+theorem parsePartHeaders_emit_raw_multipart
+    (parts : List Header) (p rest : Bytes) (longNames singleTile deep : Bool)
+    (hOK : ∀ h ∈ parts, HeaderWireOK longNames singleTile deep h)
+    (fuel : Nat) (hf : partsWireFuel parts ≤ fuel) :
+    Parse.parsePartHeaders
+      (p ++ (emitParts parts ++ (nulByte ++ rest)))
+      longNames true deep singleTile p.size fuel
+      = some (parts, p.size + (emitParts parts).size + 1) := by
+  induction parts generalizing p fuel with
+  | nil =>
+    have hf1 : 2 ≤ fuel := by simpa [partsWireFuel] using hf
+    obtain ⟨N, rfl⟩ : ∃ n, fuel = n + 1 := ⟨fuel - 1, by omega⟩
+    unfold Parse.parsePartHeaders
+    have hbytes : p ++ (emitParts ([] : List Header) ++ (nulByte ++ rest))
+        = p ++ (RawAttr.wireAll ([] : List RawAttr) ++ (nulByte ++ rest)) := by
+      simp [emitParts, RawAttr.wireAll]
+    rw [hbytes]
+    have hparse : RawAttr.parseAll (p ++ (RawAttr.wireAll ([] : List RawAttr) ++ (nulByte ++ rest))) longNames p.size N
+        = some (([] : List RawAttr), p.size + (RawAttr.wireAll ([] : List RawAttr)).size + 1) :=
+      RawAttr.parseAll_emit ([] : List RawAttr) p rest longNames N
+        (fun a ha => (List.not_mem_nil (a := a) ha).elim) (by simp only [List.length_nil]; omega)
+    rw [hparse]
+    simp [emitParts, RawAttr.wireAll]
+  | cons h parts ih =>
+    have hOK' : ∀ t ∈ parts, HeaderWireOK longNames singleTile deep t :=
+      fun t ht => hOK t (List.mem_cons_of_mem h ht)
+    have hh := hOK h List.mem_cons_self
+    obtain ⟨N, rfl⟩ : ∃ n, fuel = n + 1 := ⟨fuel - 1, by
+      have := partsWireFuel_ge_two (h :: parts)
+      omega⟩
+    have hN : partsWireFuel parts + h.attrs.length ≤ N := by
+      simp only [partsWireFuel_cons] at hf
+      omega
+    have hNrec : partsWireFuel parts ≤ N := by omega
+    unfold Parse.parsePartHeaders
+    have hfirst : p ++ (emitParts ((h :: parts)) ++ (nulByte ++ rest))
+        = p ++ (RawAttr.wireAll (h.attrs) ++
+            (nulByte ++ (emitParts parts ++ (nulByte ++ rest)))) := by
+      rw [emitParts_cons, headerBytes_eq_wireAll h.attrs]
+      simp [ByteArray.append_assoc]
+    rw [hfirst]
+    have hlen : (h.attrs).length + 1 ≤ N := by
+      have := partsWireFuel_ge_two parts
+      omega
+    have hparse : RawAttr.parseAll
+        (p ++ (RawAttr.wireAll h.attrs ++ (nulByte ++ (emitParts parts ++ (nulByte ++ rest)))))
+        longNames p.size N = some (h.attrs, p.size + (RawAttr.wireAll h.attrs).size + 1) :=
+      RawAttr.parseAll_emit h.attrs p (emitParts parts ++ (nulByte ++ rest)) longNames N hh.emittable hlen
+    rw [hparse]
+    have hdec := hh.decoded
+    have hneBool : (h.attrs).isEmpty = false := by
+      simp [hh.nonempty]
+    simp only [hdec, hneBool, Bool.false_eq_true, ite_false, ite_true]
+    have hrec := ih (p := p ++ (RawAttr.wireAll (h.attrs) ++ nulByte))
+      hOK' (fuel := N) hNrec
+    rw [show p.size + (RawAttr.wireAll (h.attrs)).size + 1
+          = (p ++ (RawAttr.wireAll (h.attrs) ++ nulByte)).size by
+        simp only [ByteArray.size_append, nulByte_size_emit]
+        exact Nat.add_assoc _ _ _]
+    rw [show p ++ (RawAttr.wireAll (h.attrs) ++
+            (nulByte ++ (emitParts parts ++ (nulByte ++ rest))))
+          = (p ++ (RawAttr.wireAll (h.attrs) ++ nulByte)) ++
+              (emitParts parts ++ (nulByte ++ rest)) by
+        simp [ByteArray.append_assoc]]
+    rw [hrec]
+    have hnul : (nulByte).size = 1 := nulByte_size_emit
+    have hprefix : (p ++ (RawAttr.wireAll (h.attrs) ++ nulByte)).size
+        = p.size + ((RawAttr.wireAll (h.attrs)).size + 1) := by
+      simp [ByteArray.size_append, nulByte_size_emit]
+    have hnum : (p ++ (RawAttr.wireAll (h.attrs) ++ nulByte)).size
+          + (emitParts parts).size + 1
+        = p.size + (emitParts (h :: parts)).size + 1 := by
+      rw [hprefix, emitParts_cons, headerBytes_eq_wireAll h.attrs]
+      simp only [ByteArray.size_append, nulByte_size_emit]
+      omega
+    rw [hnum]
+
+theorem parsePartHeaders_emit_raw_single
+    (h : Header) (p rest : Bytes) (longNames singleTile deep : Bool)
+    (hok : HeaderWireOK longNames singleTile deep h)
+    (fuel : Nat) (hf : h.attrs.length + 2 ≤ fuel) :
+    Parse.parsePartHeaders
+      (p ++ (emitParts [h] ++ rest))
+      longNames false deep singleTile p.size fuel
+      = some ([h], p.size + (emitParts [h]).size) := by
+  obtain ⟨N, rfl⟩ : ∃ n, fuel = n + 1 := ⟨fuel - 1, by omega⟩
+  unfold Parse.parsePartHeaders
+  have hfirst : p ++ (emitParts [h] ++ rest)
+      = p ++ (RawAttr.wireAll (h.attrs) ++ (nulByte ++ rest)) := by
+    rw [emitParts_cons, emitParts_nil, headerBytes_eq_wireAll h.attrs]
+    simp [ByteArray.append_assoc]
+  rw [hfirst]
+  have hlen : (h.attrs).length + 1 ≤ N := by
+    omega
+  have hparse : RawAttr.parseAll
+      (p ++ (RawAttr.wireAll h.attrs ++ (nulByte ++ rest))) longNames p.size N
+      = some (h.attrs, p.size + (RawAttr.wireAll h.attrs).size + 1) :=
+    RawAttr.parseAll_emit h.attrs p rest longNames N hok.emittable hlen
+  rw [hparse]
+  have hneBool : (h.attrs).isEmpty = false := by
+    simp [hok.nonempty]
+  simp only [hok.decoded, hneBool, Bool.false_eq_true, ite_false]
+  have hempty : (ByteArray.empty : Bytes).size = 0 := rfl
+  have hnum : p.size + (RawAttr.wireAll (h.attrs)).size + 1
+      = p.size + (emitParts [h]).size := by
+    rw [emitParts_cons, emitParts_nil, headerBytes_eq_wireAll h.attrs]
+    simp only [ByteArray.size_append, nulByte_size_emit, hempty, Nat.add_zero]
+    exact Nat.add_assoc _ _ _
+  rw [hnum]
+
+structure FileWireOK (f : ParsedFile) : Prop where
+  headersOK :
+    ∀ h ∈ f.parts,
+      HeaderWireOK f.version.longNames f.version.singleTile f.version.nonImage h
+  tablesOK :
+    ∀ p ∈ f.parts.zip f.offsetTables,
+      p.2.offsets.length = Parse.chunkCountOf p.1
+  tablesCount : f.offsetTables.length = f.parts.length
+  offsetsSmall : ∀ t ∈ f.offsetTables, ∀ o ∈ t.offsets, o < 2 ^ 64
+  singlePartLength :
+    f.version.multipart = false → f.parts.length = 1
+  dataStart : f.dataStart = (filePrefix f).size
+
+theorem FileEmitOK.toWire {f : ParsedFile} (hok : FileEmitOK f) : FileWireOK f := by
+  exact ⟨fun h hh => (hok.headersOK h hh).toWire f.version.longNames,
+    hok.tablesOK, hok.tablesCount, hok.offsetsSmall, hok.singlePartLength, hok.dataStart⟩
+
+theorem partsWireFuel_le_size (parts : List Header) :
+    partsWireFuel parts ≤ (emitParts parts).size + 2 := by
+  induction parts with
+  | nil => simp [partsWireFuel, emitParts]
+  | cons h parts ih =>
+    rw [partsWireFuel_cons, emitParts_cons, ByteArray.size_append]
+    have hb := wireAll_size_ge h.attrs
+    have hs : (headerBytes h.attrs).size = (RawAttr.wireAll h.attrs).size + 1 := by
+      rw [headerBytes_eq_wireAll, ByteArray.size_append, nulByte_size_emit]
+    omega
+
+theorem parsePartHeaders_emit_raw_single_list (parts : List Header) (p rest : Bytes)
+    (longNames singleTile deep : Bool)
+    (hOK : ∀ h ∈ parts, HeaderWireOK longNames singleTile deep h)
+    (hlen : parts.length = 1)
+    (fuel : Nat) (hf : partsWireFuel parts ≤ fuel) :
+    Parse.parsePartHeaders (p ++ (emitParts parts ++ rest))
+      longNames false deep singleTile p.size fuel
+      = some (parts, p.size + (emitParts parts).size) := by
+  cases parts with
+  | nil => simp at hlen
+  | cons h parts =>
+    cases parts with
+    | nil =>
+      apply parsePartHeaders_emit_raw_single h p rest longNames singleTile deep (hOK h List.mem_cons_self) fuel
+      simp only [partsWireFuel, List.map_cons, List.map_nil, List.sum_cons, List.sum_nil] at hf
+      omega
+    | cons h' parts => simp at hlen
+
+theorem parseFile_emit_raw (f : ParsedFile) (payload : Bytes) (hok : FileWireOK f) :
+    Parse.parseFile (filePrefix f ++ payload) = some f := by
+  have hsizeParts := partsWireFuel_le_size f.parts
+  have htablesSize := tablesBytes_size f.offsetTables
+  have hsum := sum_offsets_eq_sum_chunkCount f.parts f.offsetTables
+    hok.tablesCount hok.tablesOK
+  by_cases hm : f.version.multipart
+  · have hmp : f.version.multipart = true := hm
+    have hdecomp : filePrefix f ++ payload
+        = magicVersionBytes f.version
+          ++ (emitParts f.parts ++ (nulByte ++ (tablesBytes f.offsetTables ++ payload))) := by
+      unfold filePrefix
+      simp only [ite_eq_left hm, emitParts_eq_foldl,
+        show f.offsetTables.foldl (fun acc t => acc ++ offsetTableBytes t.offsets)
+            ByteArray.empty = tablesBytes f.offsetTables from rfl,
+        ByteArray.append_assoc]
+    rw [hdecomp, parseFile_prefix, hmp]
+    have hheaders := parsePartHeaders_emit_raw_multipart f.parts (magicVersionBytes f.version)
+      (tablesBytes f.offsetTables ++ payload) f.version.longNames
+      f.version.singleTile f.version.nonImage
+      hok.headersOK
+      ((magicVersionBytes f.version
+        ++ (emitParts f.parts ++ (nulByte ++ (tablesBytes f.offsetTables ++ payload)))).size + 1)
+      (by
+        simp only [ByteArray.size_append, magicVersionBytes_size, nulByte_size_emit]
+        omega)
+    rw [magicVersionBytes_size] at hheaders
+    rw [hheaders]
+    have htables : Parse.parseTables
+        (magicVersionBytes f.version
+          ++ (emitParts f.parts ++ (nulByte ++ (tablesBytes f.offsetTables ++ payload))))
+        f.parts (8 + (emitParts f.parts).size + 1)
+        = some (f.offsetTables, 8 + (emitParts f.parts).size + 1
+            + 8 * (f.parts.map Parse.chunkCountOf).sum) := by
+      have h := parseTables_emit f.parts f.offsetTables
+        (magicVersionBytes f.version ++ emitParts f.parts ++ nulByte) payload
+        hok.tablesCount hok.tablesOK
+        (fun t ht o ho => hok.offsetsSmall t ht o ho)
+      have hprefix : (magicVersionBytes f.version ++ emitParts f.parts ++ nulByte).size
+          = 8 + (emitParts f.parts).size + 1 := by
+        rw [ByteArray.append_assoc, ByteArray.size_append, ByteArray.size_append,
+          magicVersionBytes_size, nulByte_size_emit]
+        omega
+      rw [show (magicVersionBytes f.version ++ emitParts f.parts ++ nulByte)
+            ++ (tablesBytes f.offsetTables ++ payload)
+          = magicVersionBytes f.version
+            ++ (emitParts f.parts ++ (nulByte ++ (tablesBytes f.offsetTables ++ payload))) by
+        simp [ByteArray.append_assoc], hprefix] at h
+      exact h
+    simp only [htables]
+    have hdata : 8 + (emitParts f.parts).size + 1
+          + 8 * (f.parts.map Parse.chunkCountOf).sum = f.dataStart := by
+      rw [hok.dataStart, filePrefix_size, ite_eq_left hm]
+      omega
+    rw [hdata]
+  · have hmp : f.version.multipart = false := by
+      cases h : f.version.multipart with
+      | false => rfl
+      | true => exact absurd h hm
+    have hlen1 := hok.singlePartLength hmp
+    have hdecomp : filePrefix f ++ payload
+        = magicVersionBytes f.version
+          ++ (emitParts f.parts ++ (tablesBytes f.offsetTables ++ payload)) := by
+      unfold filePrefix
+      simp only [ite_eq_right hm, emitParts_eq_foldl,
+        show f.offsetTables.foldl (fun acc t => acc ++ offsetTableBytes t.offsets)
+            ByteArray.empty = tablesBytes f.offsetTables from rfl,
+        ByteArray.append_assoc]
+    rw [hdecomp, parseFile_prefix, hmp]
+    have hheaders := parsePartHeaders_emit_raw_single_list f.parts (magicVersionBytes f.version)
+      (tablesBytes f.offsetTables ++ payload) f.version.longNames
+      f.version.singleTile f.version.nonImage
+      hok.headersOK hlen1
+      ((magicVersionBytes f.version
+        ++ (emitParts f.parts ++ (tablesBytes f.offsetTables ++ payload))).size + 1)
+      (by
+        simp only [ByteArray.size_append, magicVersionBytes_size]
+        omega)
+    rw [magicVersionBytes_size] at hheaders
+    rw [hheaders]
+    have htables : Parse.parseTables
+        (magicVersionBytes f.version
+          ++ (emitParts f.parts ++ (tablesBytes f.offsetTables ++ payload)))
+        f.parts (8 + (emitParts f.parts).size)
+        = some (f.offsetTables, 8 + (emitParts f.parts).size
+            + 8 * (f.parts.map Parse.chunkCountOf).sum) := by
+      have h := parseTables_emit f.parts f.offsetTables
+        (magicVersionBytes f.version ++ emitParts f.parts) payload
+        hok.tablesCount hok.tablesOK
+        (fun t ht o ho => hok.offsetsSmall t ht o ho)
+      have hsize : (magicVersionBytes f.version ++ emitParts f.parts).size
+          = 8 + (emitParts f.parts).size := by
+        rw [ByteArray.size_append, magicVersionBytes_size]
+      rw [show (magicVersionBytes f.version ++ emitParts f.parts)
+            ++ (tablesBytes f.offsetTables ++ payload)
+          = magicVersionBytes f.version
+            ++ (emitParts f.parts ++ (tablesBytes f.offsetTables ++ payload)) by
+        simp [ByteArray.append_assoc], hsize] at h
+      exact h
+    simp only [htables]
+    have hdata : 8 + (emitParts f.parts).size
+          + 8 * (f.parts.map Parse.chunkCountOf).sum = f.dataStart := by
+      rw [hok.dataStart, filePrefix_size, ite_eq_right hm]
+      omega
+    rw [hdata]
+
 end Emit
 end Exr

@@ -69,11 +69,38 @@ jobs:
         with:
           lake-package-directory: lean
 
-      - name: Codec differential check (Lean model vs v3 PXR24/B44)
+      - name: Codec differential check (Lean vs v3 PXR24/B44/RLE/ZIP/PIZ)
         run: make codec-diff
 
+      - name: Checkout pinned OpenEXR corpus
+        uses: actions/checkout@v4
+        with:
+          repository: AcademySoftwareFoundation/openexr-images
+          ref: e38ffb0790f62f05a6f083a6fa4cac150b3b7452
+          path: build/openexr-images
+
       - name: Structural differential check (Lean model vs v3 parser)
-        run: make lean-diff
+        run: |
+          make lean-diff EXR_IMAGES=build/openexr-images
+          python3 test/v3/lean_diff.py --require-corpus build/openexr-images test/unit/regression build/lean-gen
+
+      - name: Install independent OpenEXR oracle dependency
+        run: sudo apt-get update && sudo apt-get install -y libopenexr-dev pkg-config
+
+      - name: OpenEXR fully decodes generated fixtures
+        run: make lean-openexr-test
+
+      - name: First-party theorem axiom audit
+        run: make lean-axiom-check
+
+      - name: Differential gate regression tests
+        run: make lean-validation-test
+
+      - name: Sanitized codec differential and gate regressions
+        run: make lean-validation-sanitize
+
+      - name: Sanitized regression corpus including generated deep tiles
+        run: make fuzz-corpus
 
       - name: Committed Lean fixtures are current
         run: make lean-gen-check

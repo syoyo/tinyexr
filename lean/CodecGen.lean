@@ -8,7 +8,11 @@
     u32 recordCount
     per record:
       u8  kind       (0 = PXR24 UINT, 1 = PXR24 HALF, 2 = PXR24 FLOAT,
-                      3 = B44 block)
+                      3/4 = B44/B44A, 5 = RLE, 6 = ADLER32, 7 = ZIP,
+                      8/9 = PIZ lifting, 10 = PIZ LUT, 11 = PIZ codes,
+                      12 = PIZ lengths, 13 = PIZ payload, 14 = mixed PXR24,
+                      15/16 = full PIZ traversal, 17 = frequency-derived PIZ tables,
+                      18 = Huffman packets, 19 = packet parser verdicts)
       u8  reserved
       u32 count      (samples for PXR24; 16 for B44)
       count × u32 input values (raw half bits / u32 / float bits)
@@ -27,6 +31,17 @@
 import Exr.B44
 import Exr.Rle
 import Exr.Zip
+import Exr.Piz
+import Exr.PizTraversal
+import Exr.PizHeap
+import Exr.PizHistogram
+import Exr.PizTable
+import Exr.PizPacket
+import Exr.PizPacketEmit
+import Exr.PizBlock
+import Exr.PizReconstruct
+import Exr.PizBitmap
+import Exr.PizFrameEmit
 
 namespace CodecGen
 
@@ -97,7 +112,7 @@ def b44Record (kind : Nat) (vals : List UInt32) : Exr.Bytes :=
   let blk : Fin 16 → UInt16 := fun i => UInt16.ofNat (vals.getD i.val 0).toNat
   let flat := kind == 4
   let enc := Exr.B44.packBlock blk flat
-  let dec := Exr.B44.decodeBlock enc
+  let dec := (List.ofFn (Exr.B44.quantized blk)).map Exr.B44.unt8
   let decBytes := ByteArray.mk ((dec.map (fun (h : UInt16) =>
     ([h.toUInt8, (h >>> 8).toUInt8] : List UInt8))).flatten.toArray)
   u8 kind ++ u8 0 ++ u32le 16 ++
@@ -123,6 +138,182 @@ def adlerRecord (vals : List UInt8) : Exr.Bytes :=
     u32le 4 ++ ByteArray.mk ([v.toUInt8, ((v >>> 8)).toUInt8,
       ((v >>> 16)).toUInt8, ((v >>> 24)).toUInt8] : List UInt8).toArray ++
     u32le vals.length ++ ByteArray.mk vals.toArray
+
+/-- ZIP intermediate stream plus its checksum; DEFLATE bytes remain external. -/
+def zipRecord (vals : List UInt8) : Exr.Bytes :=
+  let intermediate := Exr.Zip.preprocess vals
+  let enc := intermediate ++ Exr.Zip.adler32Trailer intermediate
+  u8 7 ++ u8 0 ++ u32le vals.length ++
+    (vals.map (fun v => u32le v.toNat)).foldl (· ++ ·) ByteArray.empty ++
+    u32le enc.length ++ ByteArray.mk enc.toArray ++
+    u32le vals.length ++ ByteArray.mk vals.toArray
+
+def halfBytes (vals : List UInt16) : Exr.Bytes :=
+  ByteArray.mk (vals.flatMap (fun (v : UInt16) => [v.toUInt8, (v >>> 8).toUInt8])).toArray
+
+/-- PIZ lifting cell and pair, expected decode from the original samples. -/
+def pizWaveRecord (small : Bool) (vals : List UInt32) : Exr.Bytes :=
+  let a := (vals.getD 0 0).toUInt16
+  let b := (vals.getD 1 0).toUInt16
+  let c := (vals.getD 2 0).toUInt16
+  let d := (vals.getD 3 0).toUInt16
+  let enc := if small then Exr.Piz.wenc14 else Exr.Piz.wenc16
+  let cell := Exr.Piz.encodeCell enc ((a, b), (c, d))
+  let pair := enc a b
+  let packed := halfBytes [cell.1.1, cell.1.2, cell.2.1, cell.2.2, pair.1, pair.2]
+  let raw := halfBytes [a, b, c, d]
+  u8 (if small then 8 else 9) ++ u8 0 ++ u32le 4 ++
+    (vals.map (fun v => u32le v.toNat)).foldl (· ++ ·) ByteArray.empty ++
+    u32le packed.size ++ packed ++ u32le raw.size ++ raw
+
+/-- PIZ's bitmap omits zero; rank zero is reserved even when absent in input. -/
+def pizBitmap (vals : List UInt32) : List UInt8 :=
+  (vals.foldl (fun (bm : Array UInt8) v =>
+    let n := v.toNat
+    if n = 0 then bm else bm.set! (n / 8) (bm[n / 8]! ||| (1 <<< UInt8.ofNat (n % 8))))
+    (Array.replicate 8192 0)).toList
+
+def pizLutRecord (vals : List UInt32) : Exr.Bytes :=
+  let bitmap := pizBitmap vals
+  let alphabet := Exr.Piz.alphabet bitmap
+  let ranks := vals.map (fun v => UInt16.ofNat (Exr.Piz.forward alphabet v.toNat))
+  let packed := ByteArray.mk bitmap.toArray ++ halfBytes ranks
+  let raw := halfBytes (vals.map UInt32.toUInt16)
+  u8 10 ++ u8 0 ++ u32le vals.length ++
+    (vals.map (fun v => u32le v.toNat)).foldl (· ++ ·) ByteArray.empty ++
+    u32le packed.size ++ packed ++ u32le raw.size ++ raw
+
+def pizCodeRecord (lengths : List Nat) : Exr.Bytes :=
+  let packed := (Exr.Piz.canonicalTable lengths).foldl
+    (fun acc v => acc ++ u64le (UInt64.ofNat v)) ByteArray.empty
+  u8 11 ++ u8 0 ++ u32le lengths.length ++
+    (lengths.map u32le).foldl (· ++ ·) ByteArray.empty ++
+    u32le packed.size ++ packed ++ u32le 0
+
+def pizLengthRecord (lengths : List Nat) : Exr.Bytes :=
+  let packed := Exr.Piz.Huffman.tableBytes lengths
+  let decoded := match Exr.Piz.Table.readTable lengths.length (Exr.Piz.Bits.unpack packed) with
+    | some (values, _) => values
+    | none => []
+  u8 12 ++ u8 0 ++ u32le lengths.length ++
+    (lengths.map u32le).foldl (· ++ ·) ByteArray.empty ++
+    u32le packed.length ++ ByteArray.mk packed.toArray ++
+    u32le decoded.length ++ ByteArray.mk (decoded.map UInt8.ofNat).toArray
+
+/-- A supplied balanced codebook isolates symbol/RLE coding from the
+frequency-heap code-length selection algorithm. The last symbol is RLE. -/
+def pizPayloadRecord (symbols : List Nat) : Exr.Bytes :=
+  let bits := Exr.Piz.Huffman.payloadBits (List.replicate 17 5) symbols 16
+  let packed := Exr.Piz.Huffman.packBits bits
+  let decoded := (Exr.Piz.Entropy.decode (List.replicate 17 5) 16 symbols.length bits).getD []
+  let raw := halfBytes (decoded.map UInt16.ofNat)
+  u8 13 ++ u8 0 ++ u32le symbols.length ++
+    (symbols.map u32le).foldl (· ++ ·) ByteArray.empty ++
+    u32le (packed.length + 4) ++ u32le bits.length ++ ByteArray.mk packed.toArray ++
+    u32le raw.size ++ raw
+
+/-- Three mixed-type channels over three rows at (-4,-2), with x/y
+subsampling. Each channel row restarts its own delta accumulator. -/
+def pxrMixedRecord (vals : List UInt32) : Exr.Bytes :=
+  let groups : List (Nat × Nat) := [(1,6), (2,12), (0,4), (2,12), (0,4), (1,6), (2,12), (0,4)]
+  let (_, input, enc, dec) := groups.foldl
+    (fun (state : Nat × List UInt32 × Exr.Bytes × Exr.Bytes) (g : Nat × Nat) =>
+      let (offset, input, enc, dec) := state
+      let xs := ((vals.drop offset).take g.2).map (fun v => if g.1 = 1 then v &&& 65535 else v)
+      let planes := match g.1 with
+        | 0 => planeBytes xs 4
+        | 1 => planeBytes xs 2
+        | _ => planeBytes (xs.map Exr.Pxr24.float24) 3
+      let raw := match g.1 with
+        | 0 => decodedBytes xs 4
+        | 1 => decodedBytes xs 2
+        | _ => decodedBytes (xs.map (fun v => Exr.Pxr24.float24 v <<< 8)) 4
+      (offset + g.2, input ++ xs, enc ++ planes, dec ++ raw))
+    (0, [], ByteArray.empty, ByteArray.empty)
+  u8 14 ++ u8 0 ++ u32le input.length ++
+    (input.map (fun v => u32le v.toNat)).foldl (· ++ ·) ByteArray.empty ++
+    u32le enc.size ++ enc ++ u32le dec.size ++ dec
+
+/-- Full multilevel PIZ traversal, including lane strides and prefix/tail
+canaries. Every model access is covered by Traversal.allocation_bounds. -/
+def pizTraversalRecord (small : Bool) (w h lanes : Nat) (vals : List UInt32) : Exr.Bytes :=
+  let original := (vals.map UInt32.toUInt16).toArray
+  let encoded := (List.range lanes).foldl (fun a lane =>
+    Exr.Piz.Traversal.run false small 3 w h lanes lane a) original
+  let decoded := (List.range lanes).foldl (fun a lane =>
+    Exr.Piz.Traversal.run true small 3 w h lanes lane a) encoded
+  let metadata := [w, h, lanes, 3]
+  let enc := halfBytes encoded.toList
+  let dec := halfBytes decoded.toList
+  u8 (if small then 15 else 16) ++ u8 0 ++ u32le (vals.length + 4) ++
+    (metadata.map u32le).foldl (· ++ ·) ByteArray.empty ++
+    (vals.map (fun v => u32le v.toNat)).foldl (· ++ ·) ByteArray.empty ++
+    u32le enc.size ++ enc ++ u32le dec.size ++ dec
+
+/-- Frequency-derived Huffman code lengths and canonical words, including
+C's synthetic run marker and its exact strict-comparison tie behavior. -/
+def pizFrequencyRecord (frequencies : List Nat) : Exr.Bytes :=
+  let (packed, decoded) := match Exr.Piz.Frequency.lengths frequencies with
+    | none => (ByteArray.empty, ByteArray.empty)
+    | some lengths =>
+      ((Exr.Piz.canonicalTable lengths).foldl
+        (fun acc word => acc ++ u64le (UInt64.ofNat word)) ByteArray.empty,
+        ByteArray.mk (lengths.map UInt8.ofNat).toArray)
+  u8 17 ++ u8 0 ++ u32le frequencies.length ++
+    (frequencies.map u32le).foldl (· ++ ·) ByteArray.empty ++
+    u32le packed.size ++ packed ++ u32le decoded.size ++ decoded
+
+/-- Full frequency-derived Huffman packet, including the real 20-byte
+header, sliced length table, payload bits and the composed Lean parser. -/
+def pizPacketBytes (symbols : List Nat) : Exr.Bytes := if symbols.isEmpty then ByteArray.empty else Id.run do
+    let largest := symbols.foldl max 0
+    let first := symbols.foldl min 65536
+    let marker := largest+1
+    let frequencies := Exr.Piz.Frequency.countSymbols symbols marker
+    let some lengths := Exr.Piz.Frequency.lengths frequencies.toList | return ByteArray.empty
+    return Exr.Piz.Packet.emit first marker (lengths.drop first) symbols
+
+def pizPacketRecord (symbols : List Nat) : Exr.Bytes :=
+  let encoded := pizPacketBytes symbols
+  let decoded := match Exr.Piz.Packet.parse encoded symbols.length with
+    | some packet => packet.samples
+    | none => []
+  let raw := halfBytes (decoded.map UInt16.ofNat)
+  u8 18 ++ u8 0 ++ u32le symbols.length ++
+    (symbols.map u32le).foldl (· ++ ·) ByteArray.empty ++
+    u32le encoded.size ++ encoded ++ u32le raw.size ++ raw
+
+def setWordAt (bytes : Exr.Bytes) (offset value : Nat) : Exr.Bytes :=
+  (List.range 4).foldl (fun b i => b.set! (offset+i) (UInt8.ofNat (value / 2^(8*i)))) bytes
+
+/-- Malformed and deliberately lenient packet cases compare the composed
+Lean parser's verdict and samples directly with C's Huffman decoder. -/
+def pizPacketParseRecord (symbols : List Nat) (bytes : Exr.Bytes) : Exr.Bytes :=
+  let decoded := match Exr.Piz.Packet.parse bytes symbols.length with
+    | some packet => packet.samples
+    | none => []
+  let raw := halfBytes (decoded.map UInt16.ofNat)
+  u8 19 ++ u8 0 ++ u32le symbols.length ++
+    (symbols.map u32le).foldl (· ++ ·) ByteArray.empty ++
+    u32le bytes.size ++ bytes ++ u32le raw.size ++ raw
+
+/-- Entire PIZ block: model bitmap, planar gather, forward wavelets and
+frequency-derived Huffman framing, decoded by both the model and C. -/
+def pizBlockRecord (ctx : Exr.Piz.Layout.Context) (raw : List UInt16) : Exr.Bytes :=
+  let bitmap := Exr.Piz.Bitmap.make raw
+  let transformed := Exr.Piz.Block.coefficients ctx bitmap.toList raw
+  let packet := pizPacketBytes (transformed.toList.map UInt16.toNat)
+  let encoded := Exr.Piz.Block.emitFraming bitmap packet
+  let parsed := Exr.Piz.Block.decodeCompressed ctx encoded
+  let decoded := parsed.getD ByteArray.empty
+  let dispatched := Exr.Piz.Block.decode ctx encoded
+  let fields := [ctx.x.toInt32.toUInt32.toNat,ctx.y.toInt32.toUInt32.toNat,ctx.width,ctx.lines,
+    ctx.channels.length] ++ ctx.channels.flatMap (fun c =>
+      [match c.pixelType with | .uint => 0 | .half => 1 | .float => 2,c.xSampling,c.ySampling]) ++
+    [if parsed.isSome then 1 else 0,if dispatched.isSome then 1 else 0] ++ raw.map UInt16.toNat
+  u8 20 ++ u8 0 ++ u32le fields.length ++
+    (fields.map u32le).foldl (· ++ ·) ByteArray.empty ++
+    u32le encoded.size ++ encoded ++ u32le decoded.size ++ decoded
 
 /-- Build the vector file for a seed. -/
 def build (seed : UInt64) : Exr.Bytes :=
@@ -226,9 +417,116 @@ def build (seed : UInt64) : Exr.Bytes :=
     | [] => acc
     | b :: tl => genLA tl (acc ++ adlerRecord b)
   let body := genLA longA body
+  -- Compression and raw-fallback paths, odd byte counts and long predictors.
+  let zipCases := rleEdge ++ [(List.range 5553).map UInt8.ofNat, List.replicate 8193 0]
+  let body := zipCases.foldl (fun acc xs => acc ++ zipRecord xs) body
+  let pxrCases : List (List UInt32) :=
+    [List.replicate 257 0, List.replicate 257 0x3c00,
+     (List.range 513).map UInt32.ofNat]
+  let body := ([0, 1, 2] : List Nat).foldl (fun acc kind =>
+    pxrCases.foldl (fun acc xs => acc ++ pxrRecord kind xs) acc) body
+  let waveEdges : List (List UInt32) :=
+    [[0,0,0,0], [0,16383,16383,0], [16383,0,0,16383],
+     [1,2,3,4], [16383,16383,16382,16381]]
+  let wideEdges : List (List UInt32) :=
+    [[0,65535,32768,32767], [65535,0,0,65535], [65535,65535,65535,65535]]
+  let body := waveEdges.foldl (fun acc xs => acc ++ pizWaveRecord true xs) body
+  let body := (waveEdges ++ wideEdges).foldl (fun acc xs => acc ++ pizWaveRecord false xs) body
+  let rec genP (k : Nat) (r : Rng) (acc : Exr.Bytes) : Exr.Bytes :=
+    match k with
+    | 0 => acc
+    | k + 1 =>
+      let (small, r) := genValues r 4 14
+      let (wide, r) := genValues r 4 16
+      genP k r (acc ++ pizWaveRecord true small ++ pizWaveRecord false wide)
+  let body := genP 32 r0 body
+  let (lutRandom, _) := genValues r0 257 16
+  let lutCases : List (List UInt32) :=
+    [[], [0], [65535], [0, 1, 7, 8, 255, 256, 32768, 65535, 8, 0],
+     List.replicate 128 0, lutRandom, (List.range 512).map UInt32.ofNat]
+  let body := lutCases.foldl (fun acc xs => acc ++ pizLutRecord xs) body
+  let codeCases : List (List Nat) :=
+    [[1, 1], [1, 2, 3, 3], [0, 1, 0, 2, 3, 0, 3], [58], [58, 58],
+     List.replicate 16 4, List.replicate 256 8, [0, 0, 0],
+     [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,20]]
+  let body := codeCases.foldl (fun acc xs => acc ++ pizCodeRecord xs) body
+  let lengthCases := codeCases ++
+    [List.replicate 2 0 ++ [1], List.replicate 5 0 ++ [1],
+     List.replicate 6 0 ++ [1], List.replicate 261 0 ++ [1],
+     List.replicate 262 0 ++ [1], List.replicate 523 0 ++ [1]]
+  let body := lengthCases.foldl (fun acc xs => acc ++ pizLengthRecord xs) body
+  let (randomSymbols, _) := genValues r0 513 4
+  let payloadCases : List (List Nat) :=
+    [[0], [15], [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],
+     List.replicate 4 7, List.replicate 5 7, List.replicate 255 7,
+     List.replicate 256 7, List.replicate 257 7, List.replicate 1025 0,
+     [1] ++ List.replicate 300 2 ++ [3] ++ List.replicate 5 4,
+     randomSymbols.map UInt32.toNat]
+  let body := payloadCases.foldl (fun acc xs => acc ++ pizPayloadRecord xs) body
+  let (mixedValues, _) := genValues r0 60 32
+  let body := body ++ pxrMixedRecord mixedValues
+  let geometries : List (Nat × Nat) :=
+    [(0,0), (1,9), (9,1), (2,3), (3,2), (3,3), (5,7), (7,5), (14,19), (17,33), (32,32)]
+  let body := geometries.foldl (fun acc wh =>
+    ([1,2] : List Nat).foldl (fun acc lanes =>
+      let (small, _) := genValues r0 (wh.1 * wh.2 * lanes + 8) 14
+      let (wide, _) := genValues r0 (wh.1 * wh.2 * lanes + 8) 16
+      acc ++ pizTraversalRecord true wh.1 wh.2 lanes small ++
+        pizTraversalRecord false wh.1 wh.2 lanes wide) acc) body
+  let (randomFrequencies, _) := genValues r0 512 8
+  let frequencyCases : List (List Nat) :=
+    [[], [0,0,0], [1], [5,0,0], [0,0,7], [1,1], [1,1,1,1,1,1,1],
+     [1,2,3,5,8,13,21,34,55,89,144,233,377,610],
+     List.replicate 128 1, List.replicate 256 5,
+     randomFrequencies.map UInt32.toNat,
+     List.replicate 1024 0 ++ [1]]
+  let body := frequencyCases.foldl (fun acc fs => acc ++ pizFrequencyRecord fs) body
+  let (packetRandom, _) := genValues r0 1025 8
+  let packetCases : List (List Nat) :=
+    [[], [0], [7], [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],
+     List.replicate 1025 7, [5,7,15,5,7,15,5],
+     (List.range 128), packetRandom.map UInt32.toNat,
+     List.replicate 300 0 ++ List.replicate 128 1 ++ [2,3,4] ++ List.replicate 256 5]
+  let body := packetCases.foldl (fun acc symbols => acc ++ pizPacketRecord symbols) body
+  let parseSymbols := (List.range 16) ++ List.replicate 300 7 ++ [1,2,3]
+  let parsePacket := pizPacketBytes parseSymbols
+  let parseMarker := parseSymbols.foldl max 0 + 1
+  let parseCases : List (List Nat × Exr.Bytes) :=
+    [(parseSymbols, parsePacket.extract 0 (parsePacket.size-1)),
+     (parseSymbols, setWordAt parsePacket 0 (parseMarker+1)),
+     (parseSymbols, setWordAt parsePacket 12 0x80000000),
+     (parseSymbols.take (parseSymbols.length-1), parsePacket),
+     (parseSymbols ++ [0], parsePacket),
+     (parseSymbols, setWordAt parsePacket 8 0xffffffff),
+     (parseSymbols, setWordAt parsePacket 16 0x12345678),
+     (parseSymbols, parsePacket.push 0xff),
+     ([0,1,0,0], pizPacketBytes [0,1,0]),
+     ((List.range 128) ++ [0], pizPacketBytes (List.range 128)),
+     ((List.range 128).take 127, pizPacketBytes (List.range 128))]
+  let body := parseCases.foldl (fun acc p => acc ++ pizPacketParseRecord p.1 p.2) body
+  let blockContexts : List Exr.Piz.Layout.Context :=
+    [⟨0,0,9,7,[⟨.half,1,1⟩]⟩,
+     ⟨0,0,17,9,[⟨.float,1,1⟩]⟩,
+     ⟨-4,-2,12,3,[⟨.half,2,2⟩,⟨.float,1,1⟩,⟨.uint,3,1⟩]⟩,
+     ⟨-1,-1,1,3,[⟨.half,2,1⟩,⟨.half,1,2⟩]⟩,
+     ⟨0,0,14,19,[⟨.uint,1,1⟩]⟩,
+     ⟨-1,-1,1,1,[⟨.half,2,2⟩]⟩]
+  let body := blockContexts.foldl (fun acc ctx =>
+    let (words,_) := genValues r0 (Exr.Piz.Layout.wordCount ctx.planes) 4
+    acc ++ pizBlockRecord ctx (words.map (fun w => UInt16.ofNat w.toNat))) body
+  let zeroContext : Exr.Piz.Layout.Context := ⟨0,0,31,32,[⟨.half,1,1⟩]⟩
+  let body := body ++ pizBlockRecord zeroContext (List.replicate (31*32) 0)
+  -- Once per default seed sweep, exercise the complete full-range PIZ
+  -- path with an alphabet exceeding 2^14, rather than only isolated kernels.
+  let wideBlocks : List (Exr.Piz.Layout.Context × List UInt16) :=
+    if seed == 12345 then
+      [(⟨0,0,129,129,[⟨.half,1,1⟩]⟩,(List.range (129*129)).map UInt16.ofNat)]
+    else []
+  let body := wideBlocks.foldl (fun acc p => acc ++ pizBlockRecord p.1 p.2) body
   -- magic + record count
   ByteArray.mk #[84, 69, 88, 86] ++
-    u32le (120 + 120 + 2 * edgeBlocks.length + 60 + rleEdge.length + 12 + longA.length) ++ body
+    u32le (120 + 120 + 2 * edgeBlocks.length + 60 + rleEdge.length + 12 + longA.length + zipCases.length + 3 * pxrCases.length +
+      2 * waveEdges.length + wideEdges.length + 64 + lutCases.length + codeCases.length + lengthCases.length + payloadCases.length + 1 + 4 * geometries.length + frequencyCases.length + packetCases.length + parseCases.length + blockContexts.length + 1 + wideBlocks.length) ++ body
 
 end CodecGen
 

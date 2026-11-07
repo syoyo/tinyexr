@@ -1011,21 +1011,25 @@ static int inflate_raw(const uint8_t *src, size_t src_len, uint8_t *dst,
 exr_result exr_inflate_zlib(const uint8_t *src, size_t src_size, uint8_t *dst,
                             size_t dst_cap, size_t *out_size) {
     uint8_t cmf, flg;
-    size_t offset = 2, len;
-    if (src_size < 2) return EXR_ERROR_CORRUPT;
+    size_t len;
+    uint32_t expected;
+    if (out_size) *out_size = 0;
+    if (src_size < 6) return EXR_ERROR_CORRUPT;
     cmf = src[0];
     flg = src[1];
-    if ((cmf & 0x0F) != 8) return EXR_ERROR_CORRUPT;
+    if ((cmf & 0x0F) != 8 || (cmf >> 4) > 7) return EXR_ERROR_CORRUPT;
     if ((((uint32_t)cmf << 8) | flg) % 31 != 0) return EXR_ERROR_CORRUPT;
-    if (flg & 0x20) {
-        if (src_size < 6) return EXR_ERROR_CORRUPT;
-        offset += 4;
-    }
-    if (src_size - offset < 4) return EXR_ERROR_CORRUPT;
+    /* No dictionary is supplied by the EXR codecs. */
+    if (flg & 0x20) return EXR_ERROR_CORRUPT;
     len = dst_cap;
-    if (!inflate_raw(src + offset, src_size - offset - 4, dst, &len))
+    if (!inflate_raw(src + 2, src_size - 6, dst, &len))
         return EXR_ERROR_CORRUPT;
-    *out_size = len;
+    expected = ((uint32_t)src[src_size - 4] << 24) |
+               ((uint32_t)src[src_size - 3] << 16) |
+               ((uint32_t)src[src_size - 2] << 8) |
+               (uint32_t)src[src_size - 1];
+    if (exr_adler32(dst, len, 1) != expected) return EXR_ERROR_CORRUPT;
+    if (out_size) *out_size = len;
     return EXR_SUCCESS;
 }
 

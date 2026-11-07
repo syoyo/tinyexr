@@ -23,6 +23,7 @@
 -/
 
 import Exr.B44
+import Mathlib.Data.Int.CardIntervalMod
 import Exr.Emit
 import Mathlib.Algebra.BigOperators.Group.Finset.Basic
 import Mathlib.Algebra.BigOperators.Ring.Finset
@@ -467,5 +468,117 @@ theorem u32Bytes_faithful (n : Nat) (h : n < 2 ^ 32) : (UInt32.ofNat n).toNat = 
 theorem u32Bytes_ofNat_mod (n : Nat) : (UInt32.ofNat n).toNat = n % 2 ^ 32 := by
   show (OfNat.ofNat n : UInt32).toNat = n % 2 ^ 32
   rw [UInt32.toNat_ofNat]
+
+end Exr
+
+namespace Exr
+
+/-- Number of sampled x coordinates in an inclusive row extent. The finite
+    enumeration also defines the empty extent and negative origins exactly. -/
+def sampledCount (origin : Int) (width sampling : Nat) : Nat :=
+  if sampling = 0 then 0 else
+    ((List.range width).filter fun (i : Nat) => (origin + (i : Int)) % (sampling : Int) == 0).length
+
+theorem sampledCount_le (origin : Int) (width sampling : Nat) :
+    sampledCount origin width sampling ≤ width := by
+  unfold sampledCount
+  split
+  · omega
+  · exact (List.length_filter_le _ _).trans (by simp)
+
+theorem sampledCount_one (origin : Int) (width : Nat) :
+    sampledCount origin width 1 = width := by
+  simp [sampledCount]
+
+/-- Offset of the first sampled coordinate within a sampling period. -/
+def sampledPhase (origin : Int) (sampling : Nat) : Nat := ((-origin) % (sampling : Int)).toNat
+
+theorem sampledPhase_mod (origin : Int) (sampling : Nat) (hs : sampling ≠ 0) (i : Nat) :
+    (origin + (i : Int)) % (sampling : Int) = 0 ↔ i ≡ sampledPhase origin sampling [MOD sampling] := by
+  have spos : (0 : Int) < sampling := by exact_mod_cast Nat.pos_of_ne_zero hs
+  have hc : ((sampledPhase origin sampling : Nat) : Int) = (-origin) % (sampling : Int) :=
+    Int.toNat_of_nonneg (Int.emod_nonneg _ (by omega))
+  rw [← Int.natCast_modEq_iff]
+  change (origin + (i : Int)) % (sampling : Int) = 0 ↔
+    (i : Int) % (sampling : Int) = (sampledPhase origin sampling : Int) % (sampling : Int)
+  rw [hc, Int.emod_emod]
+  change (origin + (i : Int)) ≡ 0 [ZMOD sampling] ↔ (i : Int) ≡ -origin [ZMOD sampling]
+  constructor
+  · intro h
+    simpa [← Int.add_assoc] using h.add_left (-origin)
+  · intro h
+    simpa using h.add_left origin
+
+def sampledCountFast (origin : Int) (width sampling : Nat) : Nat :=
+  if sampling = 0 then 0 else width / sampling +
+    if sampledPhase origin sampling < width % sampling then 1 else 0
+
+theorem sampledCountFast_eq (origin : Int) (width sampling : Nat) :
+    sampledCountFast origin width sampling = sampledCount origin width sampling := by
+  by_cases hs : sampling = 0
+  · simp [sampledCountFast, sampledCount, hs]
+  · have hp : sampledPhase origin sampling < sampling := by
+      have hm := Int.emod_lt_of_pos (-origin) (show (0 : Int) < sampling by exact_mod_cast Nat.pos_of_ne_zero hs)
+      have hn := Int.emod_nonneg (-origin) (show (sampling : Int) ≠ 0 by exact_mod_cast hs)
+      unfold sampledPhase
+      omega
+    have he : (fun i : Nat => ((origin + (i : Int)) % (sampling : Int) == 0)) =
+        (fun i : Nat => decide (i ≡ sampledPhase origin sampling [MOD sampling])) := by
+      funext i
+      apply Bool.eq_iff_iff.mpr
+      simpa only [beq_iff_eq, decide_eq_true_eq] using sampledPhase_mod origin sampling hs i
+    rw [sampledCount, ite_eq_right hs, ← List.countP_eq_length_filter, he]
+    change sampledCountFast origin width sampling = Nat.count (fun i => i ≡ sampledPhase origin sampling [MOD sampling]) width
+    rw [Nat.count_modEq_card width (Nat.pos_of_ne_zero hs)]
+    simp [sampledCountFast, hs, Nat.mod_eq_of_lt hp]
+
+/-- Actual byte count of one channel at absolute row y. -/
+def sampledChannelBytes (c : Channel) (origin : Int) (width : Nat) (y : Int) : Nat :=
+  if y % c.ySampling.toInt = 0 then
+    sampledCount origin width c.xSampling.toInt.toNat * c.pixelType.sizeBytes
+  else 0
+
+/-- Canonical scanline byte count, including channel subsampling. `rowBytes`
+    is its full-resolution upper bound. -/
+def sampledRowBytes (cs : List Channel) (origin : Int) (width : Nat) (y : Int) : Nat :=
+  (cs.map fun c => sampledChannelBytes c origin width y).sum
+
+theorem sampledChannelBytes_le (c : Channel) (origin : Int) (width : Nat) (y : Int) :
+    sampledChannelBytes c origin width y ≤ width * c.pixelType.sizeBytes := by
+  unfold sampledChannelBytes
+  split
+  · exact Nat.mul_le_mul_right _ (sampledCount_le origin width _)
+  · omega
+
+theorem sampledRowBytes_le (cs : List Channel) (origin : Int) (width : Nat) (y : Int) :
+    sampledRowBytes cs origin width y ≤ rowBytes cs width := by
+  induction cs with
+  | nil => simp [sampledRowBytes, rowBytes]
+  | cons c cs ih =>
+    have hc := sampledChannelBytes_le c origin width y
+    simp only [sampledRowBytes, rowBytes, List.map_cons, List.sum_cons] at *
+    omega
+
+/-- Sum actual row byte counts; vertical subsampling can make rows differ. -/
+def sampledBlockBytes (cs : List Channel) (x y : Int) (width lines : Nat) : Nat :=
+  ((List.range lines).map fun row => sampledRowBytes cs x width (y + (row : Int))).sum
+
+/-- Executable counterpart with constant-time horizontal sample counting.
+    Scanline blocks contain only the codec's bounded number of rows. -/
+def sampledBlockBytesFast (cs : List Channel) (x y : Int) (width lines : Nat) : Nat :=
+  ((List.range lines).map fun row =>
+    (cs.map fun c => if (y + (row : Int)) % c.ySampling.toInt = 0 then
+      sampledCountFast x width c.xSampling.toInt.toNat * c.pixelType.sizeBytes else 0).sum).sum
+
+theorem sampledBlockBytesFast_eq (cs : List Channel) (x y : Int) (width lines : Nat) :
+    sampledBlockBytesFast cs x y width lines = sampledBlockBytes cs x y width lines := by
+  simp only [sampledBlockBytesFast, sampledBlockBytes, sampledRowBytes,
+    sampledChannelBytes, sampledCountFast_eq]
+
+theorem sampledCountFast_large : sampledCountFast (-1) 2147483647 2 = 1073741823 := by decide
+
+theorem sampledCount_negative_origin : sampledCount (-3) 7 2 = 3 := by decide
+
+theorem sampledCount_empty : sampledCount 0 0 2 = 0 := by decide
 
 end Exr

@@ -118,6 +118,37 @@ theorem validateZlibBlock_of_valid {hdr : UInt8 × UInt8} {xs : List UInt8}
     validateZlibBlock hdr (adler32Trailer xs) xs = true := by
   simp [validateZlibBlock, h]
 
+/-- ZIP uses the same byte permutation and predictor as RLE, before zlib.
+The Adler trailer covers this intermediate stream, not the original pixels. -/
+def preprocess (xs : List UInt8) : List UInt8 :=
+  Rle.predictorEncode (Rle.interleaveEncode xs)
+
+def reconstruct (xs : List UInt8) : List UInt8 :=
+  Rle.interleaveDecode (Rle.predictorDecode xs)
+
+theorem reconstruct_preprocess (xs : List UInt8) :
+    reconstruct (preprocess xs) = xs := by
+  rw [reconstruct, preprocess, Rle.predictorDecode_encode, Rle.interleaveDecode_encode]
+
+/-- Wrapper and pixel reconstruction after an external DEFLATE decoder
+has supplied the intermediate bytes. No DEFLATE correctness is assumed here. -/
+def decodeInflated (hdr : UInt8 × UInt8) (trailer inflated : List UInt8) :
+    Option (List UInt8) :=
+  if validateZlibBlock hdr trailer inflated then some (reconstruct inflated) else none
+
+theorem decodeInflated_preprocess (hdr : UInt8 × UInt8) (xs : List UInt8)
+    (hh : zlibHeaderValid hdr = true) :
+    decodeInflated hdr (adler32Trailer (preprocess xs)) (preprocess xs) = some xs := by
+  simp only [decodeInflated, validateZlibBlock_of_valid hh, ite_true, reconstruct_preprocess]
+
+theorem decodeInflated_invalid_header (hdr : UInt8 × UInt8) (trailer inflated : List UInt8)
+    (hh : zlibHeaderValid hdr = false) : decodeInflated hdr trailer inflated = none := by
+  simp [decodeInflated, validateZlibBlock, hh]
+
+theorem decodeInflated_bad_checksum (hdr : UInt8 × UInt8) (trailer inflated : List UInt8)
+    (ht : trailer ≠ adler32Trailer inflated) : decodeInflated hdr trailer inflated = none := by
+  simp [decodeInflated, validateZlibBlock, ht]
+
 /-- Scan lines per ZIP block: 16 (ZIPS is one line per block). -/
 theorem zipLinesPerBlock : Compression.linesPerBlock Compression.zip = 16 := rfl
 theorem zipsLinesPerBlock : Compression.linesPerBlock Compression.zips = 1 := rfl

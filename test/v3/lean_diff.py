@@ -68,10 +68,53 @@ def run(cmd, timeout=300):
         return None
 
 
+def add_metadata(lines, parts):
+    """Read shared numeric metadata records, validating indices and arity."""
+    seen = set()
+    for line in lines:
+        fields = line.split()
+        if not fields or fields[0] not in ("COMPRESSION", "TILE", "CHANNEL"):
+            continue
+        tag = fields[0]
+        idx = int(fields[1])
+        if idx < 0 or idx >= len(parts):
+            raise ValueError("part index out of range")
+        part = parts[idx]
+        key = (tag, idx, fields[2] if tag == "CHANNEL" else None)
+        if key in seen:
+            raise ValueError("duplicate metadata record")
+        seen.add(key)
+        if tag == "COMPRESSION" and len(fields) == 3:
+            part["compression_id"] = int(fields[2])
+        elif tag == "TILE":
+            if fields[2:] == ["none"]:
+                part["tile"] = None
+            elif len(fields) == 6:
+                part["tile"] = tuple(map(int, fields[2:]))
+            else:
+                raise ValueError("invalid tile report")
+        elif tag == "CHANNEL" and len(fields) == 8:
+            channels = part.setdefault("channel_info", [])
+            if int(fields[2]) != len(channels):
+                raise ValueError("channel index out of order")
+            name = tuple(map(int, fields[3].split(".")))
+            channels.append((name, *map(int, fields[4:])))
+        else:
+            raise ValueError("invalid metadata report")
+    for part in parts:
+        if ("compression_id" not in part or "tile" not in part
+                or len(part.get("channel_info", [])) != part.get("channels")):
+            raise ValueError("incomplete metadata report")
+
+
 def lean_facts(path):
     res = run([DEFAULT_LEAN, path])
     if res is None:
         return {"ok": False, "error": "timeout", "parts": []}
+    if res.returncode not in (0, 1) or not any(
+        line.startswith("file-ok ") for line in res.stdout.splitlines()
+    ):
+        return {"ok": False, "error": "invalid checker result", "parts": []}
     ok = False
     parts = []
     for line in res.stdout.splitlines():
@@ -80,6 +123,8 @@ def lean_facts(path):
         m = PART_RE.match(line)
         if m:
             idx, ptype, tiled, deep, chunks, declared, table = m.groups()
+            if int(idx) != len(parts):
+                return {"ok": False, "parts": [], "error": "invalid part index"}
             parts.append(
                 {
                     "type": LEAN_TYPE_MAP.get(ptype, ptype),
@@ -90,13 +135,42 @@ def lean_facts(path):
                     "table": int(table),
                 }
             )
-    return {"ok": ok, "parts": parts, "error": None if res.returncode in (0, 1) else res.returncode}
+    for line in res.stdout.splitlines():
+        fields = line.split()
+        if fields and fields[0] in ("part-window", "part-channels"):
+            try:
+                part = parts[int(fields[1])]
+                if fields[0] == "part-window":
+                    x0, y0, x1, y1 = map(int, fields[2:])
+                    part["size"] = (x1 - x0 + 1, y1 - y0 + 1)
+                    part["window"] = (x0, y0, x1, y1)
+                else:
+                    part["channels"] = int(fields[2])
+            except (ValueError, IndexError):
+                return {"ok": False, "parts": [], "error": "invalid part report"}
+    reports = [line.split() for line in res.stdout.splitlines() if line.startswith("file-ok ")]
+    if (len(reports) != 1 or len(reports[0]) != 3
+            or reports[0][1] not in ("true", "false")
+            or not reports[0][2].isdigit()
+            or (ok and (int(reports[0][2]) != len(parts) or not parts))
+            or res.returncode != (0 if ok else 1)):
+        return {"ok": False, "parts": [], "error": "inconsistent checker result"}
+    if ok:
+        try:
+            add_metadata(res.stdout.splitlines(), parts)
+        except (ValueError, IndexError):
+            return {"ok": False, "parts": [], "error": "invalid metadata report"}
+    return {"ok": ok, "parts": parts, "error": None}
 
 
 def harness_facts(path):
     res = run([DEFAULT_HARNESS, path])
     if res is None:
         return {"header_ok": False, "load_ok": False, "parts": [], "timeout": True}
+    if res.returncode not in (0, 1) or not any(
+        line.startswith("HEADER_RESULT ") for line in res.stdout.splitlines()
+    ):
+        return {"error": "invalid harness result", "timeout": False}
     header_ok = False
     load_ok = False
     parts = []
@@ -109,6 +183,8 @@ def harness_facts(path):
         m = HARNESS_PART_RE.match(line)
         if m:
             idx, ptype, comp, chans, w, h, chunks, tiled, deep = m.groups()
+            if int(idx) != len(parts):
+                return {"error": "invalid part index", "timeout": False}
             compressions.append(comp)
             parts.append(
                 {
@@ -121,6 +197,29 @@ def harness_facts(path):
                     "deep": deep == "1",
                 }
             )
+    for line in res.stdout.splitlines():
+        fields = line.split()
+        if fields and fields[0] == "WINDOW":
+            try:
+                parts[int(fields[1])]["window"] = tuple(map(int, fields[2:]))
+            except (ValueError, IndexError):
+                return {"error": "invalid window report", "timeout": False}
+    headers = [line for line in res.stdout.splitlines() if line.startswith("HEADER_RESULT ")]
+    loads = [line for line in res.stdout.splitlines() if line.startswith("LOAD_RESULT ")]
+    counts = [line.split() for line in res.stdout.splitlines() if line.startswith("PARTS ")]
+    if (len(headers) != 1 or len(loads) != 1
+            or re.fullmatch(r"HEADER_RESULT -?\d+ .+", headers[0]) is None
+            or re.fullmatch(r"LOAD_RESULT -?\d+ .+", loads[0]) is None
+            or res.returncode != (0 if load_ok else 1)
+            or (header_ok and (len(counts) != 1 or len(counts[0]) != 2
+                or not counts[0][1].isdigit() or int(counts[0][1]) != len(parts)
+                or not parts))):
+        return {"error": "inconsistent harness result", "timeout": False}
+    if header_ok:
+        try:
+            add_metadata(res.stdout.splitlines(), parts)
+        except (ValueError, IndexError):
+            return {"error": "invalid metadata report", "timeout": False}
     return {
         "header_ok": header_ok,
         "load_ok": load_ok,
@@ -135,6 +234,12 @@ def compare(path):
     lf = lean_facts(path)
     cf = harness_facts(path)
     diffs = []
+
+    if lf["error"] is not None:
+        return [f"{path}: Lean checker failure: {lf['error']}"]
+
+    if cf.get("error") is not None:
+        return [f"{path}: C harness failure: {cf['error']}"]
 
     if cf["timeout"]:
         return [f"{path}: tinyexr harness timeout"]
@@ -157,6 +262,9 @@ def compare(path):
         return diffs
 
     for i, (lp, cp) in enumerate(zip(lf["parts"], cf["parts"])):
+        for field in ("size", "window", "channels", "compression_id", "tile", "channel_info"):
+            if field not in lp or field not in cp or lp[field] != cp[field]:
+                diffs.append(f"{path}: part {i} {field} lean={lp.get(field)} tinyexr={cp.get(field)}")
         if lp["type"] != cp["type"]:
             diffs.append(f"{path}: part {i} type lean={lp['type']} tinyexr={cp['type']}")
         if lp["tiled"] != cp["tiled"]:
@@ -197,6 +305,8 @@ def main():
     ap.add_argument("--lean", default=DEFAULT_LEAN)
     ap.add_argument("--harness", default=DEFAULT_HARNESS)
     ap.add_argument("--quiet", action="store_true")
+    ap.add_argument("--require-corpus", action="append", default=[], metavar="PATH",
+                    help="require a nonempty corpus at PATH and include it")
     ap.add_argument("corpus", nargs="*")
     args = ap.parse_args()
 
@@ -217,7 +327,11 @@ def main():
         os.path.join(os.path.expanduser("~"), "work", "openexr-images"),
         "/tmp/exrgen",
     ]
-    files = collect(corpus)
+    for path in args.require_corpus:
+        if not os.path.exists(path) or not collect([path]):
+            print(f"error: required corpus missing or empty: {path}", file=sys.stderr)
+            return 2
+    files = sorted(set(collect(corpus + args.require_corpus)))
     if not files:
         print("error: no .exr files found", file=sys.stderr)
         return 2

@@ -10,7 +10,8 @@
   * required attributes: channels, compression, dataWindow, displayWindow,
     lineOrder, pixelAspectRatio, screenWindowCenter, screenWindowWidth;
   * tiles attribute required for tiled/deep-tiled parts;
-  * name / type / chunkCount required for multi-part and deep parts;
+  * type required for multi-part and deep parts; name required for multipart;
+  * chunkCount, when present, must match the computed geometry;
   * maxSamplesPerPixel is optional for deep parts (-1 means "unknown"; the
     spec text calls it required, but OpenEXR's library and its own deep sample
     images treat absence as unknown, so we follow the library);
@@ -140,7 +141,9 @@ def validateChecks (h : Header) : List Bool :=
     | some m => decide (m.toInt ≥ -1)
     | none => true,
     if h.isDeep then Compression.isDeepAllowed h.compression else true,
-    if h.isDeep then h.name.isSome else true,
+    -- A single deep part may omit its name (OpenEXR and the v3 writer do).
+    -- Multipart name requirements are checked at file level.
+    true,
     -- `maxSamplesPerPixel` is required by the spec text for deep parts, but
     -- OpenEXR's library (which the spec declares authoritative) reads deep
     -- files that omit it, treating the value as unknown (-1). We follow the

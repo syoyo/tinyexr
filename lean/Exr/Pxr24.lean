@@ -518,6 +518,47 @@ theorem unpackRowPlanes_packPlanes (vals : List UInt32) (bytes : Nat)
   rw [unpackPlanesToGroups_packPlanes vals bytes hb]
   exact unpackGroups_packGroups vals bytes hb hbound
 
+/-- A normalized channel row: FLOAT values have already passed through
+`float24`, so they occupy three planes; HALF and UINT use two and four. -/
+structure Row where
+  bytes : Nat
+  values : List UInt32
+
+/-- Bounds needed for byte-plane split/join to preserve normalized values. -/
+def Row.Valid (row : Row) : Prop :=
+  (row.bytes = 2 ∨ row.bytes = 3 ∨ row.bytes = 4) ∧
+    ∀ v ∈ row.values, v ≤ boundOf row.bytes
+
+def packRows (rows : List Row) : List UInt32 :=
+  rows.flatMap (fun row => packPlanes row.values row.bytes)
+
+def rowLayout (rows : List Row) : List (Nat × Nat) :=
+  rows.map (fun row => (row.values.length, row.bytes))
+
+/-- Reconstruct a block in canonical line/channel order. Empty or skipped
+sampled rows are represented by count zero or omitted from the layout. -/
+def unpackRows : List (Nat × Nat) → List UInt32 → List (List UInt32)
+  | [], _ => []
+  | (count, bytes) :: rest, stream =>
+    unpackRowPlanes (stream.take (count * bytes)) count bytes ::
+      unpackRows rest (stream.drop (count * bytes))
+
+/-- Row boundaries reset the delta accumulator. Arbitrary mixed-type and
+sampled row layouts compose, without assuming a rectangular channel layout.
+The external DEFLATE decoder supplies this plane stream. -/
+theorem unpackRows_packRows (rows : List Row) (h : ∀ row ∈ rows, row.Valid) :
+    unpackRows (rowLayout rows) (packRows rows) = rows.map Row.values := by
+  induction rows with
+  | nil => rfl
+  | cons row rest ih =>
+    have hr := h row List.mem_cons_self
+    have hl := packPlanes_length row.values row.bytes hr.1
+    have ht : ∀ r ∈ rest, r.Valid := fun r hm => h r (List.mem_cons_of_mem row hm)
+    simp only [rowLayout, List.map_cons, packRows, List.flatMap_cons, unpackRows]
+    rw [← hl, List.take_left, List.drop_left,
+      unpackRowPlanes_packPlanes row.values row.bytes hr.1 hr.2]
+    exact congrArg (row.values :: ·) (ih ht)
+
 end Pxr24
 
 end Exr

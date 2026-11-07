@@ -110,6 +110,23 @@ int main(int argc, char **argv) {
             if (!h) continue;
             int32_t w = h->data_window.max_x - h->data_window.min_x + 1;
             int32_t hh = h->data_window.max_y - h->data_window.min_y + 1;
+            printf("COMPRESSION %d %d\n", (int)i, (int)h->compression);
+            if (h->tiled)
+                printf("TILE %d %u %u %d %d\n", (int)i,
+                       h->tile_x_size, h->tile_y_size,
+                       (int)h->level_mode, (int)h->rounding_mode);
+            else printf("TILE %d none\n", (int)i);
+            for (int32_t ci = 0; ci < h->num_channels; ++ci) {
+                const exr_channel *ch = &h->channels[ci];
+                printf("CHANNEL %d %d ", (int)i, (int)ci);
+                for (size_t ni = 0; ch->name[ni]; ++ni)
+                    printf("%s%u", ni ? "." : "", (unsigned)(unsigned char)ch->name[ni]);
+                printf(" %d %d %d %d\n", (int)ch->pixel_type, (int)ch->p_linear,
+                       (int)ch->x_sampling, (int)ch->y_sampling);
+            }
+            printf("WINDOW %d %d %d %d %d\n", (int)i,
+                   (int)h->data_window.min_x, (int)h->data_window.min_y,
+                   (int)h->data_window.max_x, (int)h->data_window.max_y);
             {
                 uint32_t blocks = 0;
                 exr_reader_num_blocks(r, i, &blocks);

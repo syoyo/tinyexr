@@ -8,7 +8,7 @@
 
     exrgen <out.exr> <seed> <kind>
 
-  kinds: scanline | tiled | mipmap | ripmap | deepscanline | multipart
+  kinds: scanline | tiled | mipmap | ripmap | deepscanline | deeptiled | multipart
 
   Copyright (c) 2026 Syoyo Fujita and TinyEXR authors
   SPDX-License-Identifier: BSD-3-Clause
@@ -100,15 +100,26 @@ def chunkBytes (partIdx : Nat) (multipart : Bool) (h : Exr.Header) (ci : Nat) : 
       | none => ByteArray.empty
       | some (tx, ty, lx, ly, tw, th) =>
         let data := tw * th * bpp
-        partHdr ++ u32 tx ++ u32 ty ++ u32 lx ++ u32 ly ++ u32 data ++ zeros data
+        let coords := partHdr ++ u32 tx ++ u32 ty ++ u32 lx ++ u32 ly
+        if h.isDeep then
+          let row := (List.range tw).foldl (fun acc x => acc ++ u32 (x + 1)) ByteArray.empty
+          let counts := (List.range th).foldl (fun acc _ => acc ++ row) ByteArray.empty
+          let fullCountBytes := td.xSize * td.ySize * 4
+          let paddedCounts := counts ++ zeros (fullCountBytes - counts.size)
+          coords ++ u64 fullCountBytes ++ u64 data ++ u64 data ++ paddedCounts ++ zeros data
+        else coords ++ u32 data ++ zeros data
   else if h.partType.isDeep then
     -- deep scan-line chunk: y, packed off table size, packed samples,
     -- unpacked samples, then the all-zero cumulative count table
     let width := h.width.toNat
     let lpb := Exr.Compression.linesPerBlock h.compression
     let y := h.dataWindow.minY.toInt.toNat + ci * lpb
-    let otab := zeros (width * 4)
-    partHdr ++ u32 y ++ u64 (width * 4) ++ u64 0 ++ u64 0 ++ otab
+    let active := h.maxSamplesPerPixel.any (fun m => m.toInt > 0)
+    let otab := if active then
+      (List.range width).foldl (fun acc x => acc ++ u32 (x + 1)) ByteArray.empty
+      else zeros (width * 4)
+    let data := if active then width * bpp else 0
+    partHdr ++ u32 y ++ u64 (width * 4) ++ u64 data ++ u64 data ++ otab ++ zeros data
   else
     let lpb := Exr.Compression.linesPerBlock h.compression
     let width := h.width.toNat
@@ -148,6 +159,12 @@ def kindOf (kind : String) : Option (List GenPart × Exr.Version) :=
     let h := mkHeader .deepScanline 16 16 none (some 0) (some (chanBytes "deep")) (some (-1))
     some ([{ header := { h with chunkCount := some h.computedChunks }, chunks := h.computedChunks }],
       { singleTile := false, longNames := false, nonImage := true, multipart := false })
+  | "deeptiled" =>
+    let t : Exr.TypedAttr.TileDesc :=
+      { xSize := 8, ySize := 8, levelMode := .oneLevel, roundingMode := .roundDown }
+    let h := mkHeader .deepTiled 16 16 (some t) (some 0) (some (chanBytes "deep-tile")) (some 1)
+    some ([{ header := { h with chunkCount := some h.computedChunks }, chunks := h.computedChunks }],
+      { singleTile := false, longNames := false, nonImage := true, multipart := false })
   | "multipart" =>
     let h1 := mkHeader .scanline 16 16 none (some 0) (some (chanBytes "a")) none
     let h2 := mkHeader .scanline 8 8 none (some 0) (some (chanBytes "b")) none
@@ -162,9 +179,24 @@ def kindOf (kind : String) : Option (List GenPart × Exr.Version) :=
       { singleTile := false, longNames := false, nonImage := false, multipart := true })
   | _ => none
 
+/-- Seeded variants retain the historical seed-1 fixture bytes. Other seeds
+    exercise non-square, odd extents and partial edge tiles. -/
+def kindOfSeed (kind : String) (seed : Nat) : Option (List GenPart × Exr.Version) := do
+  let (parts, version) ← kindOf kind
+  if seed == 1 then return (parts, version)
+  let parts := parts.map fun p =>
+    let w := 1 + seed % 29
+    let ht := 1 + (seed * 7) % 23
+    let window : Exr.Box2i := { minX := 0, minY := 0, maxX := Int32.ofNat (w - 1), maxY := Int32.ofNat (ht - 1) }
+    let h := { p.header with dataWindow := window }
+    let h := if h.isDeep then { h with maxSamplesPerPixel := some 1 } else h
+    let h := { h with chunkCount := some h.computedChunks }
+    { header := h, chunks := h.computedChunks : GenPart }
+  return (parts, version)
+
 /-- Generate the file: magic/version, headers, offset tables, chunk payloads. -/
-def generate (kind : String) : Option Exr.Bytes :=
-  match kindOf kind with
+def generateWithSeed (kind : String) (seed : Nat) : Option Exr.Bytes :=
+  match kindOfSeed kind seed with
   | none => none
   | some (parts, version) =>
     let multipart := version.multipart
@@ -203,12 +235,18 @@ def generate (kind : String) : Option Exr.Bytes :=
     let payloadBytes := chunks.foldl (fun acc (_, b) => acc ++ b) ByteArray.empty
     some (Exr.Emit.magicVersionBytes version ++ headers ++ tableBytes ++ payloadBytes)
 
+/-- Historical fixture generation uses seed 1. -/
+def generate (kind : String) : Option Exr.Bytes := generateWithSeed kind 1
+
 end ExrGen
 
 def main (args : List String) : IO UInt32 := do
   match args with
-  | [outPath, _, kind] =>
-    match ExrGen.generate kind with
+  | [outPath, seed, kind] =>
+    let some seed := seed.toNat? | do
+      IO.eprintln "exrgen: seed must be a nonnegative integer"
+      return 2
+    match ExrGen.generateWithSeed kind seed with
     | none =>
       IO.eprintln s!"exrgen: unknown kind '{kind}'"
       return 2

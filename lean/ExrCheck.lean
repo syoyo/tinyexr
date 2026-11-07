@@ -19,7 +19,7 @@
   SPDX-License-Identifier: BSD-3-Clause
 -/
 
-import Exr.Emit
+import Exr.Chunk
 
 open System
 
@@ -51,6 +51,17 @@ def reportPart (idx : Nat) (h : Exr.Header) (t : Option Exr.OffsetTable) : IO Un
     | none => 0
   IO.println s!"part {idx} {partTypeName h.partType} {h.isTiled} {h.isDeep} \
       {h.computedChunks} {declaredOrComputed h} {tableLen}"
+  IO.println s!"COMPRESSION {idx} {h.compression.toBits.toNat}"
+  let tile := match h.tileDesc with
+    | none => "none"
+    | some td =>
+      let mode := match td.levelMode with | .oneLevel => 0 | .mipmap => 1 | .ripmap => 2
+      let rounding := match td.roundingMode with | .roundDown => 0 | .roundUp => 1
+      s!"{td.xSize} {td.ySize} {mode} {rounding}"
+  IO.println s!"TILE {idx} {tile}"
+  for (channel, ci) in h.channels.zipIdx do
+    let name := String.intercalate "." (channel.name.data.toList.map fun b => toString b.toNat)
+    IO.println s!"CHANNEL {idx} {ci} {name} {channel.pixelType.toBits.toNat} {if channel.pLinear then 1 else 0} {channel.xSampling.toInt} {channel.ySampling.toInt}"
   IO.println s!"part-window {idx} {h.dataWindow.minX} {h.dataWindow.minY} \
       {h.dataWindow.maxX} {h.dataWindow.maxY}"
   match h.tileDesc with
@@ -61,7 +72,7 @@ def reportPart (idx : Nat) (h : Exr.Header) (t : Option Exr.OffsetTable) : IO Un
   IO.println s!"part-channels {idx} {h.channels.length} \
       {decide (Exr.Channel.StrictlySorted h.channels)}"
 
-def run (path : String) (strictShared : Bool) : IO UInt32 := do
+def run (path : String) (strictShared : Bool) (checkChunks : Bool := false) : IO UInt32 := do
   let bytes ← IO.FS.readBinFile path
   IO.println s!"file {path}"
   match Exr.Parse.parseFile bytes with
@@ -73,6 +84,7 @@ def run (path : String) (strictShared : Bool) : IO UInt32 := do
     let ok :=
       if strictShared then Exr.Parse.checkPartsOpenEXR bytes.size f
       else Exr.Parse.checkParts bytes.size f
+    let ok := ok && (if checkChunks then Exr.Chunk.checkFile bytes f else true)
     IO.println s!"file-ok {ok} {f.parts.length}"
     let mut idx := 0
     for (h, t) in f.parts.zip f.offsetTables do
@@ -89,6 +101,8 @@ def main (args : List String) : IO UInt32 := do
   match args with
   | [path] => ExrCheck.run path false
   | ["--strict", path] => ExrCheck.run path true
+  | ["--chunks", path] => ExrCheck.run path false true
+  | ["--strict", "--chunks", path] => ExrCheck.run path true true
   | _ =>
-    IO.eprintln "usage: exrcheck [--strict] <file.exr>  (--strict = OpenEXR shared-attribute rule)"
+    IO.eprintln "usage: exrcheck [--strict] [--chunks] <file.exr>  (--strict = OpenEXR shared-attribute rule)"
     return 2

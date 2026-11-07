@@ -458,6 +458,30 @@ def parseHeader (b : Bytes) (longNames : Bool) (i : Nat) (fuel : Nat) :
     Option (List RawAttr × Nat) :=
   RawAttr.parseAll b longNames i fuel
 
+/-- Check known attribute wire schemas before accepting decoded headers.
+    Optional malformed attributes must not be treated as absent. -/
+def attrSchemaValid (a : RawAttr) : Bool :=
+  let schema := fun ty size => TypedAttr.nameEq a.typeName ty && a.value.size == size
+  if TypedAttr.nameEq a.name "channels" then TypedAttr.nameEq a.typeName "chlist"
+  else if TypedAttr.nameEq a.name "compression" then schema "compression" 1
+  else if TypedAttr.nameEq a.name "lineOrder" then schema "lineOrder" 1
+  else if TypedAttr.nameEq a.name "dataWindow" || TypedAttr.nameEq a.name "displayWindow" then schema "box2i" 16
+  else if TypedAttr.nameEq a.name "pixelAspectRatio" || TypedAttr.nameEq a.name "screenWindowWidth" then schema "float" 4
+  else if TypedAttr.nameEq a.name "screenWindowCenter" then schema "v2f" 8
+  else if TypedAttr.nameEq a.name "tiles" then schema "tiledesc" 9 && (TypedAttr.decodeTileDesc a.value).isSome
+  else if TypedAttr.nameEq a.name "chromaticities" then schema "chromaticities" 32
+  else if TypedAttr.nameEq a.name "name" || TypedAttr.nameEq a.name "type" then TypedAttr.nameEq a.typeName "string"
+  else if TypedAttr.nameEq a.name "chunkCount" then
+    schema "int" 4 && match TypedAttr.decodeInt a.value with
+      | some n => decide (0 ≤ n.toInt)
+      | none => false
+  else if TypedAttr.nameEq a.name "maxSamplesPerPixel" then schema "int" 4
+  else true
+
+/-- Raw header attributes have valid schemas and unique names. -/
+def attrsSchemaValid (attrs : List RawAttr) : Bool :=
+  attrs.all attrSchemaValid && decide (attrs.map (fun a => a.name.data.toList)).Nodup
+
 /-- Validate that a decoded parse result is structurally sound:
 
     * multi-part files require a `name` attribute on every part,
@@ -468,23 +492,43 @@ def parseHeader (b : Bytes) (longNames : Bool) (i : Nat) (fuel : Nat) :
 
     This mirrors OpenEXR/tinyexr header acceptance; `exrcheck` reports it. -/
 def checkParts (fileSize : Nat) (f : ParsedFile) : Bool :=
-  (if f.version.multipart then f.parts.all (fun h => h.name.isSome) else true) &&
+  !f.parts.isEmpty && f.parts.length == f.offsetTables.length &&
+  (if f.version.multipart then f.parts.all (fun h => h.name.any (fun n => n.size > 0)) else true) &&
   f.parts.all (fun h => h.validate && h.chunkCountConsistent) &&
   (f.parts.zip f.offsetTables).all (fun (h, t) =>
     t.offsets.length == h.computedChunks &&
-    t.offsets.all (fun o => f.dataStart ≤ o && o < fileSize))
+    t.offsets.all (fun o => f.dataStart ≤ o && o < fileSize)) &&
+  f.parts.all (fun h => attrsSchemaValid h.attrs &&
+    (if f.version.multipart || h.isDeep then (findAttr h.attrs "type").isSome else true))
+
+/-- Shared optional metadata compares wire values and validates its schema.
+    Both parts may omit the attribute; a one-sided presence is a mismatch. -/
+def sharedOptionalAttr (base h : Header) (name ty : String) (size : Nat) : Bool :=
+  match findAttr base.attrs name, findAttr h.attrs name with
+  | none, none => true
+  | some a, some b =>
+    TypedAttr.nameEq a.typeName ty && TypedAttr.nameEq b.typeName ty &&
+      a.value.size == size && b.value.size == size && a.value.data == b.value.data
+  | _, _ => false
+
+def sharedOptionalAttrsOK : List Header → Bool
+  | [] => true
+  | base :: rest => rest.all fun h =>
+    sharedOptionalAttr base h "timecode" "timecode" 8 &&
+      sharedOptionalAttr base h "chromaticities" "chromaticities" 32
 
 /-- OpenEXR-strict variant of `checkParts`: multi-part files must also agree on
-    the shared attributes (`displayWindow`, `pixelAspectRatio`). This models
+    the shared attributes (`displayWindow`, `pixelAspectRatio`, `timecode`,
+    `chromaticities`). This models
     OpenEXRCore's `internal_exr_validate_shared_attrs`; tinyexr does not enforce
     it, so the lenient `checkParts` remains the default for the differ. -/
 def checkPartsOpenEXR (fileSize : Nat) (f : ParsedFile) : Bool :=
-  checkParts fileSize f && Header.sharedAttrsOK f.parts
+  checkParts fileSize f && Header.sharedAttrsOK f.parts && sharedOptionalAttrsOK f.parts
 
 theorem checkPartsOpenEXR_implies_checkParts {fileSize : Nat} {f : ParsedFile}
     (h : checkPartsOpenEXR fileSize f = true) : checkParts fileSize f = true := by
   unfold checkPartsOpenEXR at h
-  exact (Bool.and_eq_true_iff.mp h).1
+  exact (Bool.and_eq_true_iff.mp (Bool.and_eq_true_iff.mp h).1).1
 
 theorem checkParts_parts_valid {f : ParsedFile} {fileSize : Nat}
     (hc : checkParts fileSize f = true) :
@@ -492,7 +536,7 @@ theorem checkParts_parts_valid {f : ParsedFile} {fileSize : Nat}
   have hB : (f.parts.all (fun h => h.validate && h.chunkCountConsistent)) = true := by
     have h := hc
     simp only [checkParts, Bool.and_eq_true] at h
-    exact h.1.2
+    exact h.1.1.2
   exact fun h hm => Bool.and_eq_true_iff.mp (List.all_eq_true.mp hB h hm)
 
 end Parse

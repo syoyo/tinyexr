@@ -45,6 +45,26 @@ static exr_result deep_decompress(const exr_allocator *a, exr_compression comp,
     }
 }
 
+/* OpenEXR's legacy deep-tile writer stores a full nominal tile's count-table
+ * bytes when compression falls back to raw data, including on edge tiles.
+ * Counts for real pixels are packed first; the unused tail is padding. */
+static exr_result deep_decompress_counts(const exr_allocator *a,
+                                         const exr_header *h, int tiled,
+                                         const uint8_t *src, size_t src_size,
+                                         uint8_t *dst, size_t unpacked) {
+    if (tiled) {
+        size_t full;
+        if (exr_mul_ovf((size_t)h->tile_x_size, (size_t)h->tile_y_size, &full) ||
+            exr_mul_ovf(full, sizeof(int32_t), &full) || full < unpacked)
+            return EXR_ERROR_CORRUPT;
+        if (src_size == full) {
+            if (unpacked) memcpy(dst, src, unpacked);
+            return EXR_SUCCESS;
+        }
+    }
+    return deep_decompress(a, h->compression, src, src_size, dst, unpacked);
+}
+
 /* Pass-2 (sample data) decompress + scatter for one deep scanline chunk. Each
  * chunk writes a disjoint [start, start+total) sample range of every channel
  * plane, so chunks run in parallel. The offset table (pass 1) has already filled
@@ -315,8 +335,8 @@ exr_result exr_deep_decode_counts(exr_reader *r, exr_int_part *p,
     packed_pos = off + (uint64_t)hsz;
     rc = exr_reader_fetch(r, packed_pos, (size_t)pots, NULL, &packed);
     if (rc != EXR_SUCCESS) { exr_free(a, otab); return rc; }
-    rc = deep_decompress(a, h->compression, packed, (size_t)pots,
-                         (uint8_t *)otab, bytes);
+    rc = deep_decompress_counts(a, h, is_tiled, packed, (size_t)pots,
+                                (uint8_t *)otab, bytes);
     if (rc != EXR_SUCCESS) { exr_free(a, otab); return rc; }
     /* Offset table is cumulative per row (resets each row); for scanline blocks
      * bh == 1 so this is identical to a flat cumulative scan. */
@@ -399,8 +419,8 @@ exr_result exr_deep_decode_samples(exr_reader *r, exr_int_part *p,
     packed_pos = off + (uint64_t)hsz;
     rc = exr_reader_fetch(r, packed_pos, (size_t)pots, NULL, &packed);
     if (rc != EXR_SUCCESS) goto done;
-    rc = deep_decompress(a, h->compression, packed, (size_t)pots,
-                         (uint8_t *)otab, otab_bytes);
+    rc = deep_decompress_counts(a, h, is_tiled, packed, (size_t)pots,
+                                (uint8_t *)otab, otab_bytes);
     if (rc != EXR_SUCCESS) goto done;
     if (bw > 0) {
         int row;
@@ -776,8 +796,8 @@ exr_result exr_read_deep_tiled_part(exr_reader *r, exr_int_part *p,
             }
             rc = exr_reader_fetch(r, off + hsz, (size_t)pots, NULL, &packed);
             if (rc != EXR_SUCCESS) goto done;
-            rc = deep_decompress(a, h->compression, packed, (size_t)pots,
-                                 (uint8_t *)otab, otab_bytes);
+            rc = deep_decompress_counts(a, h, 1, packed, (size_t)pots,
+                                        (uint8_t *)otab, otab_bytes);
             if (rc != EXR_SUCCESS) goto done;
             /* The sample-count table is cumulative per scanline row (it resets
              * at the start of each row of the tile), matching OpenEXR. */
@@ -913,6 +933,21 @@ exr_result exr_deep_encode_tile(const exr_allocator *a, exr_compression comp,
     rc = deep_compress(a, comp, (uint8_t *)otab, usamp,
                        packed_off, packed_off_size);
     if (rc != EXR_SUCCESS) goto done;
+    if (*packed_off_size == usamp) {
+        size_t full;
+        if (exr_mul_ovf((size_t)h->tile_x_size, (size_t)h->tile_y_size, &full) ||
+            exr_mul_ovf(full, sizeof(int32_t), &full) || full < usamp) {
+            rc = EXR_ERROR_CORRUPT; goto done;
+        }
+        if (full > usamp) {
+            uint8_t *padded = (uint8_t *)exr_calloc(a, full, 1);
+            if (!padded) { rc = EXR_ERROR_OUT_OF_MEMORY; goto done; }
+            memcpy(padded, *packed_off, usamp);
+            exr_free(a, *packed_off);
+            *packed_off = padded;
+            *packed_off_size = full;
+        }
+    }
 
     if (cum > (uint64_t)SIZE_MAX ||
         exr_mul_ovf((size_t)cum, sample_size, &usamp)) {

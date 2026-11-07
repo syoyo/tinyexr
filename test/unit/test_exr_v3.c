@@ -738,6 +738,58 @@ static int first_scanline_payload(void *buf, size_t sz, size_t *payload,
     return *payload + *payload_size <= sz;
 }
 
+/* The composed Lean Huffman parser found successful decodes with an
+ * unwritten output suffix, and fast-path reads into declared padding bits. */
+static void piz_huffman_budget_test(void) {
+    uint16_t source[512], decoded[513];
+    exr_channel channel;
+    exr_codec_ctx ctx;
+    memset(&channel, 0, sizeof(channel));
+    channel.pixel_type = EXR_PIXEL_HALF;
+    channel.x_sampling = channel.y_sampling = 1;
+    memset(&ctx, 0, sizeof(ctx));
+    ctx.alloc = exr_default_allocator();
+    ctx.compression = EXR_COMPRESSION_PIZ;
+    ctx.channels = &channel; ctx.num_channels = 1;
+    ctx.width = 512; ctx.num_lines = 1;
+    for (int fast = 0; fast < 2; ++fast) {
+        uint8_t *packed = NULL;
+        size_t size = 0, header;
+        uint16_t lo, hi;
+        uint32_t bits;
+        exr_result rc;
+        for (size_t i = 0; i < 512; ++i) source[i] = fast ? (uint16_t)(i % 16) : 0;
+        ctx.width = 512;
+        rc = exr_piz_compress(&ctx, (const uint8_t *)source, sizeof(source), &packed, &size);
+        CHECK(EXR_OK(rc) && size < sizeof(source), "PIZ budget regression creates compressed block");
+        if (!EXR_OK(rc) || size >= sizeof(source)) { exr_free(ctx.alloc, packed); continue; }
+        rc = exr_piz_decompress(&ctx, packed, size, (uint8_t *)decoded, sizeof(source));
+        CHECK(EXR_OK(rc) && memcmp(source, decoded, sizeof(source)) == 0,
+              "PIZ budget regression valid block round trips");
+        ctx.width = 513;
+        rc = exr_piz_decompress(&ctx, packed, size, (uint8_t *)decoded, sizeof(decoded));
+        CHECK(rc == EXR_ERROR_CORRUPT, "PIZ rejects Huffman output shorter than requested");
+        ctx.width = 511;
+        rc = exr_piz_decompress(&ctx, packed, size, (uint8_t *)decoded, 511u * 2u);
+        CHECK(rc == EXR_ERROR_CORRUPT, "PIZ rejects Huffman output longer than requested");
+        ctx.width = 512;
+        lo = exr_rd_u16(packed); hi = exr_rd_u16(packed + 2);
+        header = 8 + (lo <= hi ? (size_t)(hi - lo + 1) : 0);
+        CHECK(header + 20 <= size, "PIZ budget regression locates Huffman header");
+        if (header + 20 <= size) {
+            bits = exr_rd_u32(packed + header + 12);
+            CHECK(fast ? bits >= 128 : bits < 128, "PIZ budget regression covers fast and fallback paths");
+            exr_wr_u32(packed + header + 12, bits - 1);
+            rc = exr_piz_decompress(&ctx, packed, size, (uint8_t *)decoded, sizeof(source));
+            CHECK(rc == EXR_ERROR_CORRUPT, "PIZ rejects truncated declared Huffman bit count");
+            exr_wr_u32(packed + header + 12, bits + 1);
+            rc = exr_piz_decompress(&ctx, packed, size, (uint8_t *)decoded, sizeof(source));
+            CHECK(rc == EXR_ERROR_CORRUPT, "PIZ rejects excess declared Huffman bit count");
+        }
+        exr_free(ctx.alloc, packed);
+    }
+}
+
 static void zero_image(exr_image *img) {
     int p, c;
     for (p = 0; p < img->num_parts; ++p) {
@@ -2047,6 +2099,93 @@ static void deep_tiled_oob_rejects(void) {
     if (found && !EXR_OK(rc))
         printf("  ok: deep-tiled OOB rejected (%s)\n", exr_result_string(rc));
     free(buf);
+}
+
+/* Raw count tables on partial deep tiles are padded to the nominal tile size
+ * for OpenEXR compatibility. Exercise both full-image and block API paths. */
+static void deep_tiled_edge_padding(void) {
+    static const exr_compression codecs[] = {
+        EXR_COMPRESSION_NONE, EXR_COMPRESSION_RLE, EXR_COMPRESSION_ZIPS
+    };
+    exr_image image;
+    size_t codec;
+    exr_result rc;
+    int pass = 1;
+    memset(&image, 0, sizeof(image));
+    rc = exr_load_from_file("test/unit/regression/leangen-deeptiled-edge.exr", NULL, &image);
+    CHECK(EXR_OK(rc), "deep edge fixture loads");
+    if (!EXR_OK(rc)) return;
+    if (image.num_parts != 1 || image.parts[0].width != 14 || image.parts[0].height != 19 ||
+        image.parts[0].header.num_channels != 3 || image.parts[0].deep_total_samples != 266) {
+        CHECK(0, "deep edge fixture shape");
+        exr_image_free(&image);
+        return;
+    }
+    for (codec = 0; codec < sizeof(codecs) / sizeof(codecs[0]); ++codec) {
+        void *encoded = NULL;
+        size_t encoded_size = 0;
+        exr_reader *reader = NULL;
+        uint32_t blocks = 0, i;
+#if defined(EXR_USE_THREADS)
+        exr_set_num_threads(1);
+#endif
+        rc = exr_save_to_memory(&encoded, &encoded_size, NULL, &image, codecs[codec]);
+#if defined(EXR_USE_THREADS)
+        if (EXR_OK(rc)) {
+            void *parallel = NULL;
+            size_t parallel_size = 0;
+            exr_result prc;
+            exr_set_num_threads(4);
+            prc = exr_save_to_memory(&parallel, &parallel_size, NULL, &image, codecs[codec]);
+            exr_set_num_threads(1);
+            if (!EXR_OK(prc) || parallel_size != encoded_size ||
+                memcmp(encoded, parallel, encoded_size) != 0) pass = 0;
+            free(parallel);
+        }
+#endif
+        if (EXR_OK(rc)) rc = exr_reader_open_memory(encoded, encoded_size, NULL, &reader);
+        if (EXR_OK(rc)) rc = exr_reader_parse_header(reader);
+        if (EXR_OK(rc)) rc = exr_reader_num_blocks(reader, 0, &blocks);
+        if (!EXR_OK(rc) || blocks != 6) pass = 0;
+        for (i = 0; EXR_OK(rc) && i < blocks; ++i) {
+            exr_block_info info;
+            int32_t counts[64];
+            uint16_t samples[3][64];
+            exr_buffer channels[3];
+            uint64_t total = 0;
+            size_t n, j;
+            int c;
+            rc = exr_reader_block_info(reader, 0, i, &info);
+            if (!EXR_OK(rc)) { pass = 0; break; }
+            if (info.width <= 0 || info.height <= 0 ||
+                exr_mul_ovf((size_t)info.width, (size_t)info.height, &n) || n > 64) {
+                pass = 0; break;
+            }
+            rc = exr_reader_decode_deep_counts(reader, 0, i, counts, 64, &total);
+            if (!EXR_OK(rc) || total != n) { pass = 0; break; }
+            for (j = 0; j < n; ++j) if (counts[j] != 1) pass = 0;
+            memset(samples, 0xff, sizeof(samples));
+            for (c = 0; c < 3; ++c) {
+                channels[c].data = samples[c];
+                channels[c].size = n * sizeof(uint16_t);
+            }
+            rc = exr_reader_decode_deep_samples(reader, 0, i, channels, 3);
+            if (!EXR_OK(rc)) { pass = 0; break; }
+            for (c = 0; c < 3; ++c)
+                for (j = 0; j < n; ++j) if (samples[c][j] != 0) pass = 0;
+            if (codecs[codec] == EXR_COMPRESSION_NONE) {
+                uint64_t offset = reader->parts[0].offsets[i];
+                size_t prefix = reader->is_multipart ? 4u : 0u;
+                if (offset > encoded_size || encoded_size - (size_t)offset < prefix + 40u ||
+                    exr_rd_u64((const uint8_t *)encoded + (size_t)offset + prefix + 16u) != 256)
+                    pass = 0;
+            }
+        }
+        if (reader) exr_reader_close(reader);
+        free(encoded);
+    }
+    exr_image_free(&image);
+    CHECK(pass, "deep edge padding: NONE/RLE/ZIPS block counts and samples");
 }
 
 /* Stream a deep scanline part out block-by-block and verify it round-trips. */
@@ -3719,6 +3858,44 @@ static void inflate_hdist19_test(void) {
     CHECK(EXR_OK(rc) && ((s2 << 16) | s1) == want, "inflate HDIST=18 adler32 matches");
 }
 
+/* Regression for wrapper checks found by the Lean ZIP integration vectors. */
+static void zlib_wrapper_validation_test(void) {
+    static const uint8_t valid[] = {
+        0x78, 0x01, 0x01, 0x01, 0x00, 0xfe, 0xff, 0x41, 0x00, 0x42, 0x00, 0x42
+    };
+    const exr_zlib_backend backends[] = { EXR_ZLIB_INTREE, EXR_ZLIB_LIBDEFLATE };
+    uint8_t changed[sizeof(valid)], dictionary[sizeof(valid) + 4], out[2];
+    size_t got;
+    for (size_t i = 0; i < sizeof(backends) / sizeof(backends[0]); ++i) {
+        if (!EXR_OK(exr_zlib_set_backend(backends[i]))) continue;
+        got = 99;
+        CHECK(EXR_OK(exr_zlib_inflate(valid, sizeof(valid), out, sizeof(out), &got)) &&
+              got == 1 && out[0] == 'A', "zlib wrapper accepts valid stored stream");
+        memcpy(changed, valid, sizeof(valid));
+        changed[sizeof(valid) - 1] ^= 1;
+        got = 99;
+        CHECK(!EXR_OK(exr_zlib_inflate(changed, sizeof(changed), out, sizeof(out), &got)) &&
+              got == 0, "zlib wrapper rejects wrong Adler trailer and clears output size");
+        memcpy(changed, valid, sizeof(valid));
+        changed[0] = 0x88;
+        changed[1] = (uint8_t)((31u - ((0x88u << 8) % 31u)) % 31u);
+        got = 99;
+        CHECK(!EXR_OK(exr_zlib_inflate(changed, sizeof(changed), out, sizeof(out), &got)) &&
+              got == 0, "zlib wrapper rejects CINFO above seven with valid FCHECK");
+        dictionary[0] = valid[0];
+        dictionary[1] = (uint8_t)(32u + (31u - (((0x78u << 8) + 32u) % 31u)) % 31u);
+        memset(dictionary + 2, 0, 4);
+        memcpy(dictionary + 6, valid + 2, sizeof(valid) - 2);
+        got = 99;
+        CHECK(!EXR_OK(exr_zlib_inflate(dictionary, sizeof(dictionary), out, sizeof(out), &got)) &&
+              got == 0, "zlib wrapper rejects an unsupported preset dictionary");
+        got = 99;
+        CHECK(!EXR_OK(exr_zlib_inflate(valid, sizeof(valid) - 1, out, sizeof(out), &got)) &&
+              got == 0, "zlib wrapper rejects truncated checksum");
+    }
+    exr_zlib_set_backend(EXR_ZLIB_AUTO);
+}
+
 static void zlib_backend_parity_tests(void) {
     enum { W = 96, H = 64, NC = 2, NPX = W * H };
     static uint16_t px[NC][NPX];
@@ -4051,6 +4228,8 @@ static void util_tests(void) {
     simd_zip_kernel_parity_tests();
     zlib_backend_parity_tests();
     inflate_hdist19_test();
+    piz_huffman_budget_test();
+    zlib_wrapper_validation_test();
     printf("== util: resize ==\n");
     util_resize_tests();
     printf("== util: tonemap ==\n");
@@ -4548,6 +4727,7 @@ int main(void) {
 
     printf("== streaming deep + suspend/resume + memory bound ==\n");
     deep_tiled_oob_rejects();
+    deep_tiled_edge_padding();
     stream_deep_check("data/deepscanline.exr", EXR_COMPRESSION_ZIPS,
                       "deep scanline ZIPS");
 #ifndef EXR_NO_ZSTD

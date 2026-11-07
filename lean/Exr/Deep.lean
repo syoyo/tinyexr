@@ -117,16 +117,100 @@ theorem cumCounts_last (cs : List Int32) :
   rw [Int32.zero_add] at h
   exact h
 
-/-- Validity of a cumulative table: every count is non-negative (the C
-    reader's `cnt < 0` rejection). -/
-def validTable (cs : List Int32) : Prop :=
+/-- Nonnegative modular differences. This algebraic predicate does not
+    validate signed wire cumulative counts; use `validTable` below. -/
+def modularValidTable (cs : List Int32) : Prop :=
   ∀ c ∈ diffCounts cs, 0 ≤ c
 
-theorem cumCounts_valid {cs : List Int32} (hnonneg : ∀ c ∈ cs, 0 ≤ c) :
-    validTable (cumCounts cs) := by
-  unfold validTable
+theorem cumCounts_modular_valid {cs : List Int32} (hnonneg : ∀ c ∈ cs, 0 ≤ c) :
+    modularValidTable (cumCounts cs) := by
+  unfold modularValidTable
   rw [diffCounts_cumCounts]
   exact hnonneg
+
+/-- Validate cumulative wire counts using widened subtraction, as the C
+    reader does. Wrapping signed-32-bit subtraction is not a validity check. -/
+def validTableGo (prev : Int) : List Int32 → Prop
+  | [] => True
+  | c :: cs => prev ≤ c.toInt ∧ validTableGo c.toInt cs
+
+def validTable (cs : List Int32) : Prop := validTableGo 0 cs
+
+/-! Mathematical count algebra, with no machine-integer wraparound. Tile rows
+    are encoded separately; the accumulator resets for each row. -/
+namespace Checked
+
+def cumCountsGo (prev : Nat) : List Nat → List Nat
+  | [] => []
+  | c :: cs => (prev + c) :: cumCountsGo (prev + c) cs
+
+def cumCounts (cs : List Nat) : List Nat := cumCountsGo 0 cs
+
+def diffCountsGo (prev : Nat) : List Nat → Option (List Nat)
+  | [] => some []
+  | c :: cs => if prev ≤ c then
+      (diffCountsGo c cs).map ((c - prev) :: ·)
+    else none
+
+def diffCounts (cs : List Nat) : Option (List Nat) := diffCountsGo 0 cs
+
+theorem diffCountsGo_cumCountsGo (prev : Nat) (cs : List Nat) :
+    diffCountsGo prev (cumCountsGo prev cs) = some cs := by
+  induction cs generalizing prev with
+  | nil => rfl
+  | cons c cs ih =>
+    simp [cumCountsGo, diffCountsGo, ih]
+
+theorem diffCounts_cumCounts (cs : List Nat) :
+    diffCounts (cumCounts cs) = some cs := diffCountsGo_cumCountsGo 0 cs
+
+/-- Wire cumulative counts must fit signed 32-bit integers. -/
+def encodeRow (cs : List Nat) : Option (List Nat) :=
+  if cs.sum ≤ 2147483647 then some (cumCounts cs) else none
+
+theorem decode_encodeRow (cs : List Nat) (h : cs.sum ≤ 2147483647) :
+    (encodeRow cs).bind diffCounts = some cs := by
+  simp [encodeRow, h, diffCounts_cumCounts]
+
+def encodeRows (rows : List (List Nat)) : Option (List (List Nat)) := rows.mapM encodeRow
+
+def decodeRows (rows : List (List Nat)) : Option (List (List Nat)) := rows.mapM diffCounts
+
+theorem decodeRows_encodeRows (rows : List (List Nat))
+    (h : ∀ row ∈ rows, row.sum ≤ 2147483647) :
+    (encodeRows rows).bind decodeRows = some rows := by
+  induction rows with
+  | nil => rfl
+  | cons row rows ih =>
+    have hr := h row List.mem_cons_self
+    have ht := ih (fun r hm => h r (List.mem_cons_of_mem row hm))
+    simp only [encodeRows, List.mapM_cons, encodeRow, ite_eq_left hr] at *
+    cases he : List.mapM encodeRow rows with
+    | none => simp [he] at ht
+    | some encoded =>
+      simp only [he, Option.bind_some, Option.pure_def] at ht ⊢
+      change List.mapM diffCounts encoded = some rows at ht
+      simp [decodeRows, List.mapM_cons, diffCounts_cumCounts, ht]
+
+/-- The chunk total is the sum of row totals, with no signed-32-bit cap on
+    the combined total of a deep tile. -/
+def totalSamples (rows : List (List Nat)) : Nat := (rows.map List.sum).sum
+
+theorem rejects_wrapped_cumulative :
+    ¬ validTable ([2147483647, -2147483648] : List Int32) := by
+  unfold validTable
+  simp only [validTableGo]
+  decide
+
+theorem tile_rows_reset :
+    encodeRows [[1, 2], [3, 4]] = some [[1, 3], [3, 7]] := by decide
+
+theorem rejects_overflowing_row : encodeRow [2147483647, 1] = none := by decide
+
+theorem total_across_rows_is_wide :
+    totalSamples [[2147483647], [2147483647]] = 4294967294 := by decide
+
+end Checked
 
 /-- Uncompressed bytes of a deep chunk's packed offset table:
     one 4-byte cumulative count per pixel in the chunk's scan-lines. -/
@@ -167,8 +251,11 @@ def onDiskBytes (c : DeepChunk) (layout : ChunkLayout) : Nat :=
 def WellFormed (c : DeepChunk) (width : Nat) (cs : List Channel)
     (counts : List Int32) : Prop :=
   counts.length = width * c.nlines ∧
-  (totalOf counts).toInt = (c.totalSamples : Int) ∧
-  c.unpackedSampleSize = sampleBytes c.totalSamples cs
+  (counts.map Int32.toInt).sum = (c.totalSamples : Int) ∧
+  c.unpackedSampleSize = sampleBytes c.totalSamples cs ∧
+  (∀ n ∈ counts, 0 ≤ n.toInt) ∧
+  (∀ row ∈ List.range c.nlines,
+    (((counts.drop (row * width)).take width).map Int32.toInt).sum ≤ 2147483647)
 
 theorem WellFormed.offsetTableSize {c : DeepChunk} {width : Nat}
     {cs : List Channel} {counts : List Int32} (h : c.WellFormed width cs counts) :
@@ -178,7 +265,7 @@ theorem WellFormed.offsetTableSize {c : DeepChunk} {width : Nat}
 theorem WellFormed.sampleSize {c : DeepChunk} {width : Nat}
     {cs : List Channel} {counts : List Int32} (h : c.WellFormed width cs counts) :
     c.unpackedSampleSize = c.totalSamples * pixelSize cs :=
-  h.2.2
+  h.2.2.1
 
 end DeepChunk
 

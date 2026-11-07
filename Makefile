@@ -225,8 +225,10 @@ build/test-libdeflate/%.o: deps/libdeflate/%.c build/.v3-test-flags | build
 	@mkdir -p $(dir $@)
 	$(CC) -Ideps/libdeflate -O1 -g $(SAN) -w -c $< -o $@
 
-lib: $(V3_OBJ) $(ZSTD_OBJ) $(LD_OBJ) $(CUEW_OBJ) $(VKEW_OBJ)
-	$(AR) rcs build/libtinyexr3.a $(V3_OBJ) $(ZSTD_OBJ) $(LD_OBJ) $(CUEW_OBJ) $(VKEW_OBJ)
+lib: build/libtinyexr3.a
+
+build/libtinyexr3.a: $(V3_OBJ) $(ZSTD_OBJ) $(LD_OBJ) $(CUEW_OBJ) $(VKEW_OBJ) | build
+	$(AR) rcs $@ $(V3_OBJ) $(ZSTD_OBJ) $(LD_OBJ) $(CUEW_OBJ) $(VKEW_OBJ)
 
 # GPU backend test (requires CUDA=1; skips at runtime with exit 77 if no device).
 EXR_IMAGES ?= $(HOME)/work/openexr-images
@@ -278,55 +280,96 @@ lean-check:
 	cd lean && $(LAKE) exe cache get && $(LAKE) build && $(LAKE) build exrcheck exrgen codecgen
 	@echo "lean-check: OK"
 
+PARSE_HARNESS = test/v3/parse_harness
+CODEC_DIFF = build/codec_diff
+
+.PHONY: lean-tools lean-validation-test lean-axiom-check
+lean-tools:
+	cd lean && $(LAKE) build
+
+lean-axiom-check: lean-tools
+	cd lean && $(LAKE) env lean AxiomAudit.lean
+
+lean-validation-test: $(CODEC_DIFF) $(PARSE_HARNESS) lean-tools
+	python3 test/v3/test_lean_validation.py
+
+.PHONY: lean-validation-sanitize
+lean-validation-sanitize: $(V3_TEST_OBJ) build/test-tinyexr_zstd.o $(LD_TEST_OBJ) $(PARSE_HARNESS) lean-tools
+	$(CC) $(V3_CSTD) $(V3_WARN) $(V3_DEFS) $(V3_INC) -O1 -g $(SAN) \
+	  test/v3/codec_diff.c $(V3_TEST_OBJ) build/test-tinyexr_zstd.o $(LD_TEST_OBJ) $(THREAD_LIBS) -lm -o build/codec_diff_sanitize
+	@set -e; for seed in $(CODEC_SEEDS); do \
+	  $(LEAN_CODECGEN) build/codec-vectors-sanitize.bin $$seed >/dev/null; \
+	  ./build/codec_diff_sanitize build/codec-vectors-sanitize.bin; \
+	  ./build/codec_diff_sanitize build/codec-vectors-sanitize.bin --intree; \
+	done
+	LEAN_CODEC_TEST_BIN="$(CURDIR)/build/codec_diff_sanitize" python3 test/v3/test_lean_validation.py
+
+.PHONY: lean-openexr-test
+build/openexr_zero_probe: test/v3/openexr_zero_probe.cpp | build
+	pkg-config --exists OpenEXR
+	$(CXX) -std=c++17 -Wall -Wextra -Werror $< $$(pkg-config --cflags --libs OpenEXR) -o $@
+
+build/rewrite_harness: test/v3/rewrite_harness.c build/libtinyexr3.a | build
+	$(CC) $(V3_CSTD) $(V3_WARN) -Iinclude -O2 $< build/libtinyexr3.a $(THREAD_LIBS) -lm -o $@
+
+lean-openexr-test: build/openexr_zero_probe build/rewrite_harness $(PARSE_HARNESS) lean-tools
+	LEAN_OPENEXR_TEST_BIN="$(CURDIR)/build/openexr_zero_probe" python3 test/v3/test_lean_validation.py ValidationTests.test_seeded_structures ValidationTests.test_openexr_probe_checks_samples ValidationTests.test_openexr_reads_c_deep_edge_tiles
+
 # Differential structural check: Lean model vs tinyexr v3 vs generated files.
 LEAN_EXRCHECK = lean/.lake/build/bin/exrcheck
 LEAN_EXRGEN = lean/.lake/build/bin/exrgen
 LEAN_CODECGEN = lean/.lake/build/bin/codecgen
-lean-diff: lib $(PARSE_HARNESS)
+lean-diff: lib $(PARSE_HARNESS) lean-tools
 	@mkdir -p build/lean-gen
-	@for k in scanline tiled mipmap ripmap deepscanline multipart; do \
+	@set -e; for k in scanline tiled mipmap ripmap deepscanline deeptiled multipart; do \
 	  $(LEAN_EXRGEN) build/lean-gen/$$k.exr 1 $$k >/dev/null; done
+	$(LEAN_EXRGEN) build/lean-gen/deeptiled-edge.exr 42 deeptiled >/dev/null
 	python3 test/v3/lean_diff.py test/unit/regression build/lean-gen $(EXR_IMAGES)
 
-# Codec-level differential harness (PXR24/B44 vs the Lean model).
-CODEC_DIFF = build/codec_diff
+# Codec differential: PXR24/B44/RLE/ZIP/PIZ vs the Lean model.
 CODEC_VECTORS = build/codec-vectors.bin
 
-$(CODEC_DIFF): test/v3/codec_diff.c build/libtinyexr3.a | build
+$(CODEC_DIFF): test/v3/codec_diff.c src/exr_piz.c build/libtinyexr3.a | build
 	$(CC) $(V3_CSTD) -Wall -Wextra -Iinclude -Isrc -Ideps/zstd -O2 \
 	  test/v3/codec_diff.c build/libtinyexr3.a -lm -o $(CODEC_DIFF)
 
 CODEC_SEEDS ?= 12345 1 7 42 999 20240101 65535
 
-codec-diff: $(CODEC_DIFF) lib
+codec-diff: $(CODEC_DIFF) lib lean-tools
 	@mkdir -p build
 	@set -e; for seed in $(CODEC_SEEDS); do \
 	  $(LEAN_CODECGEN) $(CODEC_VECTORS) $$seed >/dev/null; \
 	  echo "seed $$seed"; \
 	  ./$(CODEC_DIFF) $(CODEC_VECTORS); \
+	  ./$(CODEC_DIFF) $(CODEC_VECTORS) --intree; \
 	done
 
-lean-gen: lib
+lean-gen: lib lean-tools
 	@mkdir -p build/lean-gen
-	@for k in scanline tiled mipmap ripmap deepscanline multipart; do \
+	@set -e; for k in scanline tiled mipmap ripmap deepscanline deeptiled multipart; do \
 	  $(LEAN_EXRGEN) build/lean-gen/$$k.exr 1 $$k >/dev/null; done
-	@echo "lean-gen: build/lean-gen/{scanline,tiled,mipmap,ripmap,deepscanline,multipart}.exr"
+	$(LEAN_EXRGEN) build/lean-gen/deeptiled-edge.exr 42 deeptiled >/dev/null
+	@echo "lean-gen: build/lean-gen/{scanline,tiled,mipmap,ripmap,deepscanline,deeptiled,deeptiled-edge,multipart}.exr"
 
 # Regenerate the committed Lean fixtures in place (run after changing ExrGen).
-lean-gen-update: lib
-	@for k in scanline tiled mipmap ripmap deepscanline multipart; do \
+lean-gen-update: lib lean-tools
+	@set -e; for k in scanline tiled mipmap ripmap deepscanline deeptiled multipart; do \
 	  $(LEAN_EXRGEN) test/unit/regression/leangen-$$k.exr 1 $$k >/dev/null; done
+	$(LEAN_EXRGEN) test/unit/regression/leangen-deeptiled-edge.exr 42 deeptiled >/dev/null
 	@echo "lean-gen-update: test/unit/regression/leangen-*.exr regenerated"
 
 # Fail if the committed fixtures do not match the current exrgen.
-lean-gen-check: lib
+lean-gen-check: lib lean-tools
 	@mkdir -p build/lean-gen-check
-	@set -e; for k in scanline tiled mipmap ripmap deepscanline multipart; do \
+	@set -e; for k in scanline tiled mipmap ripmap deepscanline deeptiled multipart; do \
 	  $(LEAN_EXRGEN) build/lean-gen-check/$$k.exr 1 $$k >/dev/null; \
 	  cmp -s build/lean-gen-check/$$k.exr test/unit/regression/leangen-$$k.exr || { \
 	    echo "stale fixture: test/unit/regression/leangen-$$k.exr"; \
 	    echo "regenerate with: make lean-gen-update"; exit 1; }; \
 	done
+	$(LEAN_EXRGEN) build/lean-gen-check/deeptiled-edge.exr 42 deeptiled >/dev/null
+	@cmp -s build/lean-gen-check/deeptiled-edge.exr test/unit/regression/leangen-deeptiled-edge.exr || { \
+	  echo "stale deep edge fixture; run make lean-gen-update"; exit 1; }
 	@echo "lean-gen-check: fixtures current"
 
 .PHONY: FORCE
@@ -893,7 +936,6 @@ fuzz-corpus-asan: $(V3_TEST_OBJ) build/test-tinyexr_zstd.o $(LD_TEST_OBJ) test/f
 # Parse/load every *.exr under $(EXR_IMAGES) and classify PASS/XFAIL/FAIL.
 # Override the corpus dir with: make parse-test EXR_IMAGES=/path/to/images
 EXR_IMAGES ?= $(HOME)/work/openexr-images
-PARSE_HARNESS = test/v3/parse_harness
 
 $(PARSE_HARNESS): test/v3/parse_harness.c build/libtinyexr3.a | build
 	$(CC) $(V3_CSTD) -Wall -Wextra -Iinclude -O2 \
@@ -1355,7 +1397,7 @@ help:
 	@echo "make lean-gen  - generate valid structural EXR files with the Lean exrgen tool"
 	@echo "make lean-gen-update - regenerate test/unit/regression/leangen-*.exr"
 	@echo "make lean-gen-check  - fail if the committed Lean fixtures are stale"
-	@echo "make codec-diff - differential codec test: Lean vectors vs tinyexr v3 PXR24"
+	@echo "make codec-diff - differential codec test: Lean vs v3 PXR24/B44/RLE/ZIP/PIZ"
 	@echo "make bench  - codec/SIMD throughput benchmark (incl. HTJ2K SIMD tiers)"
 	@echo "make tools-test - run all self-contained tool gates (texcomp/resize/texpipe/envmap)"
 	@echo "make tools-test-all - tools-test + astcenc conformance cross-checks (needs C++)"
