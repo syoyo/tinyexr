@@ -875,6 +875,33 @@ tptex_status tptex_get_data(tptex_texture* t, int faceid, tptex_res res, void* b
   return TPTEX_OK;
 }
 
+tptex_status tptex_get_face_data(tptex_texture* t, int faceid, tptex_res res, tptex_face_data* out) {
+  fbuf b;
+  tptex_status st;
+  if (!t || !out) return TPTEX_E_INVALID_ARG;
+  memset(out, 0, sizeof *out);
+  if (faceid < 0 || (uint32_t)faceid >= t->nfaces) return TPTEX_E_RANGE;
+  if (res.ulog2 < 0 || res.vlog2 < 0 || res.ulog2 > MAX_RES_LOG2 || res.vlog2 > MAX_RES_LOG2)
+    return TPTEX_E_RANGE;
+  if ((st = face_buffer(t, (uint32_t)faceid, res, &b)) != TPTEX_OK) return st;
+  out->data = b.data;
+  out->is_constant = b.is_const;
+  out->size_ = b.size;
+  out->owned_ = b.owned;
+  return TPTEX_OK;
+}
+
+void tptex_release_face_data(tptex_texture* t, tptex_face_data* d) {
+  fbuf b;
+  if (!t || !d) return;
+  b.data = (uint8_t*)(uintptr_t)d->data;
+  b.size = d->size_;
+  b.is_const = d->is_constant;
+  b.owned = d->owned_;
+  fbuf_release(t, &b);
+  memset(d, 0, sizeof *d);
+}
+
 tptex_status tptex_get_constant(tptex_texture* t, int faceid, void* pixel) {
   if (!t || !pixel) return TPTEX_E_INVALID_ARG;
   if (faceid < 0 || (uint32_t)faceid >= t->nfaces) return TPTEX_E_RANGE;

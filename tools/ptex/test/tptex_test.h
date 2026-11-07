@@ -33,6 +33,7 @@ extern long g_tptex_checks;
 void test_half(void);
 void test_reader(void);
 void test_write(void);
+void test_filter(void);
 void test_utils(void);
 
 #endif /* TPTEX_TEST_H_ */

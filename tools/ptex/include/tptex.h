@@ -231,6 +231,19 @@ size_t tptex_pixel_size(const tptex_texture* texture);
 tptex_status tptex_get_data(tptex_texture* texture, int faceid, tptex_res res, void* buffer,
                             size_t stride);
 
+/* Borrowed face pixels at `res` for filtering. When is_constant the data is one
+ * pixel, otherwise a tight (1<<ulog2) x (1<<vlog2) image. Release it with
+ * tptex_release_face_data before closing the texture. */
+typedef struct tptex_face_data {
+  const void* data;
+  int is_constant;
+  size_t size_;  /* private */
+  int owned_;    /* private */
+} tptex_face_data;
+tptex_status tptex_get_face_data(tptex_texture* texture, int faceid, tptex_res res,
+                                 tptex_face_data* out);
+void tptex_release_face_data(tptex_texture* texture, tptex_face_data* data);
+
 /* The stored average pixel of a face (one pixel, pixel_size bytes). */
 tptex_status tptex_get_constant(tptex_texture* texture, int faceid, void* pixel);
 
