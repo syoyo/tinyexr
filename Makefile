@@ -46,7 +46,8 @@ tools-test: texcomp-c11-gate texcomp-test texcomp-uni-gate texcomp-xbc7-gate \
             texcomp-bc6h-gate \
             resize-c11-gate resize-test \
             texpipe-c11-gate texpipe-test \
-            envmap-c11-gate envmap-test envmap-pbr-test ptexatlas-c11-gate
+            envmap-c11-gate envmap-test envmap-pbr-test ptexatlas-c11-gate \
+            ptex-c11-gate ptex-test
 	@echo "tools-test: all self-contained tool gates passed"
 
 tools-test-all: tools-test texcomp-astc-hdr-gate texcomp-astc-arm-gate
@@ -58,6 +59,9 @@ tools-test-all: tools-test texcomp-astc-hdr-gate texcomp-astc-arm-gate
 ptexatlas-c11-gate:
 	$(CC) -std=c11 -Wall -Wextra -Werror -Itools/ptexatlas -Ideps/miniz \
 	  -fsyntax-only tools/ptexatlas/ptex.c tools/ptexatlas/texatlas.c
+
+# tptex: pure-C11 port of Ptex (tools/ptex); rules live in tools/ptex/ptex.mk.
+-include tools/ptex/ptex.mk
 
 # ---- pure-C11 v3 library + tests ------------------------------------------
 V3_INC   = -Iinclude -Isrc -Ideps/zstd

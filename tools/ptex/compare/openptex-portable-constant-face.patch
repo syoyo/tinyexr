@@ -1,0 +1,87 @@
+diff --git a/src/ptex/PtexHashMap.h b/src/ptex/PtexHashMap.h
+index f5277aa..07c2819 100644
+--- a/src/ptex/PtexHashMap.h
++++ b/src/ptex/PtexHashMap.h
+@@ -210,10 +210,10 @@ public:
+         for (uint32_t i = hash;; ++i) {
+             Entry& e = entries[i & mask];
+             if (e.key.matches(key)) {
+-                result = e.value;
++                result = AtomicLoad(&e.value);
+                 break;
+             }
+-            if (e.value == 0) {
++            if (AtomicLoad(&e.value) == 0) {
+                 break;
+             }
+         }
+@@ -235,12 +235,12 @@ public:
+                 ++_size;
+                 PtexMemoryFence();
+                 e.key.copy(key);
+-                result = e.value;
++                result = AtomicLoad(&e.value);
+                 break;
+             }
+             while (e.key.isEmpty()) ;
+             if (e.key.matches(key)) {
+-                result = e.value;
++                result = AtomicLoad(&e.value);
+                 break;
+             }
+         }
+@@ -253,7 +253,7 @@ public:
+     {
+         Entry* entries = getEntries();
+         for (uint32_t i = 0; i < _numEntries; ++i) {
+-            Value v = entries[i].value;
++            Value v = AtomicLoad(&entries[i].value);
+             if (v) fn(v);
+         }
+     }
+@@ -262,7 +262,7 @@ private:
+     Entry* getEntries()
+     {
+         while (1) {
+-            Entry* entries = _entries;
++            Entry* entries = AtomicLoad(&_entries);
+             if (entries) return entries;
+         }
+     }
+@@ -270,7 +270,7 @@ private:
+     Entry* lockEntries()
+     {
+         while (1) {
+-            Entry* entries = _entries;
++            Entry* entries = AtomicLoad(&_entries);
+             if (entries && AtomicCompareAndSwap(&_entries, entries, (Entry*)0)) {
+                 return entries;
+             }
+diff --git a/src/ptex/PtexPlatform.h b/src/ptex/PtexPlatform.h
+index 69314a0..11d3084 100644
+--- a/src/ptex/PtexPlatform.h
++++ b/src/ptex/PtexPlatform.h
+@@ -282,6 +282,23 @@ PTEX_INLINE bool AtomicCompareAndSwap(T volatile* target, T oldvalue, T newvalue
+     return AtomicCompareAndSwapImpl<T, sizeof(T)>()(target, oldvalue, newvalue);
+ }
+ 
++// Acquire load of a shared value.  Prefer this to a plain read of a
++// volatile object: volatile is not a C++ synchronization primitive, and a
++// pointer obtained through a volatile read can be mis-modelled by
++// optimizers (GCC 15 points-to analysis treats it as ANYTHING and then
++// loses the escape of other pointers returned from the same function).
++template <typename T>
++PTEX_INLINE T AtomicLoad(T volatile* target)
++{
++#ifdef PTEX_PLATFORM_WINDOWS
++    T value = *target;
++    MEM_FENCE();
++    return value;
++#else
++    return __atomic_load_n(const_cast<T*>(target), __ATOMIC_ACQUIRE);
++#endif
++}
++
+ template <typename T>
+ PTEX_INLINE void AtomicStore(T volatile* target, T value)
+ {
