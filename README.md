@@ -5,22 +5,26 @@
 **Pull request policy:** Only those who have made a one-time sponsorship
 contribution of US$5,000 or more are eligible to submit pull requests.
 
+**Release history**
+
+- **v3.4.0** — [Lean formalization and validation](lean/VERIFICATION.md).
+
 ![Example](https://github.com/syoyo/tinyexr/blob/release/asakusa.png?raw=true)
 
 ### 🚀 Live demos — all run entirely in your browser
 
-| 🌐 [**EXR viewer (v3)**](https://syoyo.github.io/tinyexr/) | 🎨 [**tocio — OCIO + ACES 2.0**](https://syoyo.github.io/tinyexr/tocio/) | 🧊 [**texcomp — GPU texture compression**](https://syoyo.github.io/tinyexr/texcomp/) |
+| 🌐 [**EXR viewer**](https://syoyo.github.io/tinyexr/) | 🎨 [**tocio — OCIO + ACES 2.0**](https://syoyo.github.io/tinyexr/tocio/) | 🧊 [**texcomp — GPU texture compression**](https://syoyo.github.io/tinyexr/texcomp/) |
 |---|---|---|
-| Decode and view `.exr` by drag-and-drop — all v3 codecs (ZIP / PIZ / PXR24 / B44 / ZSTD / HTJ2K). Spectral EXRs get a wavelength scrubber with **CIE→sRGB** preview, deep images a 3D point cloud. Mobile/touch-friendly, with a fullscreen mode. | Apply an **OpenColorIO** transform — including the **ACES 2.0** output transforms — on **WebGL2**, from a live, editable OCIO config that **JIT-compiles to a GLSL shader**. [More ↓](#tocio--tiny-pure-c11-opencolorio-engine) | Compress to **BC1/3/5/6H/7, ETC2, EAC, ASTC (LDR + HDR)** and decompress back, beside an amplified error view. HDR vs 8-bit under exposure, normal maps ranked by **angular error** (BC5 beats BC7), cubemap/octahedral, downloadable **KTX2 / DDS**. [More ↓](#texcomp--gpu-texture-compression) |
+| Decode and view `.exr` by drag-and-drop — supported codecs (ZIP / PIZ / PXR24 / B44 / ZSTD / HTJ2K). Spectral EXRs get a wavelength scrubber with **CIE→sRGB** preview, deep images a 3D point cloud. Mobile/touch-friendly, with a fullscreen mode. | Apply an **OpenColorIO** transform — including the **ACES 2.0** output transforms — on **WebGL2**, from a live, editable OCIO config that **JIT-compiles to a GLSL shader**. [More ↓](#tocio--tiny-pure-c11-opencolorio-engine) | Compress to **BC1/3/5/6H/7, ETC2, EAC, ASTC (LDR + HDR)** and decompress back, beside an amplified error view. HDR vs 8-bit under exposure, normal maps ranked by **angular error** (BC5 beats BC7), cubemap/octahedral, downloadable **KTX2 / DDS**. [More ↓](#texcomp--gpu-texture-compression) |
 
 [![CI](https://github.com/syoyo/tinyexr/actions/workflows/ci.yml/badge.svg?branch=release)](https://github.com/syoyo/tinyexr/actions/workflows/ci.yml)
 
 `tinyexr` is a small, pure-C11 library to load and save OpenEXR (.exr)
 images, designed to embed into your application. See the
-[v3 library overview](#v3--pure-c11-rewrite-recommended) for supported features
+[library overview](#tinyexr--pure-c11-library) for supported features
 and integration details.
 
-**Performance (v3) at a glance** — single-thread decode/encode vs the reference
+**Performance at a glance** — single-thread decode/encode vs the reference
 OpenEXR library, with the vendored **libdeflate** backend on/off (and HTJ2K,
 which has no deflate path). With the same backend TinyEXR meets or beats OpenEXR
 on the deflate family:
@@ -40,11 +44,10 @@ See [Performance vs OpenEXR](#performance-vs-openexr) below and
 [`doc/performance-vs-openexr.md`](doc/performance-vs-openexr.md) for the full
 codec-by-codec and multi-threaded numbers.
 
-# v3 — pure-C11 rewrite (recommended)
+# TinyEXR — pure-C11 library
 
-TinyEXR's main development line is a ground-up rewrite as a **pure-C11** library
-(`include/exr.h` + `src/*.c`) — the **v3 C API**. It is the recommended version
-going forward and will be the next major release.
+TinyEXR is a **pure-C11** library with a public C API in `include/exr.h` and
+implementations in `src/*.c`.
 
 Highlights:
 
@@ -108,7 +111,7 @@ too.
 
 ## Streaming block I/O (bounded working memory)
 
-The pure-C11 v3 API (`include/exr.h`) can decode and encode an EXR one block at
+The pure-C11 API (`include/exr.h`) can decode and encode an EXR one block at
 a time — one scanline block or one tile. File readers and callback sources fetch
 only the requested ranges: they retain metadata/offset tables and active chunk
 buffers rather than a copy of the whole encoded file. This covers scanline,
@@ -169,9 +172,9 @@ Tiles use `exr_writer_write_tile` (the caller supplies each level's tiles for
 mipmap/ripmap); deep parts use `exr_writer_write_deep_scanline_block` /
 `exr_writer_write_deep_tile`.
 
-## Spectral images (v3)
+## Spectral images
 
-The v3 API reads and writes spectral EXRs in the JCGT 2021 layout
+The API reads and writes spectral EXRs in the JCGT 2021 layout
 (afichet/[spectral-exr](https://github.com/afichet/spectral-exr)) — emissive
 (`S{n}.{wavelength}nm`), reflective (`T.{wavelength}nm`), and polarised
 (Stokes S0–S3) spectra, with the comma decimal convention. Helpers
@@ -187,7 +190,7 @@ selected part's pixels are decoded; deep spectral parts remain unsupported.
 
 ## Freestanding / embedded / WASM
 
-The v3 core (`src/*.c` except `src/exr_stdio.c`) is freestanding: it depends only
+The core (`src/*.c` except `src/exr_stdio.c`) is freestanding: it depends only
 on `<stdint.h>`, `<stddef.h>`, and `<limits.h>` — no `<stdio.h>`, `<stdlib.h>`,
 `<string.h>`, or `<math.h>`.
 
@@ -216,7 +219,7 @@ the core plus the pure-C binding `examples/wasm/exr_wasm.c`
 See `examples/wasm/README.md` and the `node examples/wasm/test.mjs` smoke test.
 
 **Browser viewer** (`web/viewer/`, needs `emcc` + CMake): a self-contained
-WebGL2 EXR viewer built on the v3 streaming block API — drag-and-drop / upload,
+WebGL2 EXR viewer built on the streaming block API — drag-and-drop / upload,
 load progress, exposure / gamma / channel controls, zoom / pan, data/display
 window + region overlays, a pixel picker, a deep-image 3D point cloud, a
 spectral wavelength scrubber + CIE→sRGB color + per-pixel spectrum plot, and a
@@ -231,7 +234,7 @@ python3 -m http.server   # then open http://localhost:8000/
 
 See `web/viewer/README.md` for details.
 
-## Input validation and profiling (v3)
+## Input validation and profiling
 
 Tiled channels require unit x/y sampling. Unsupported subsampling is rejected
 before mipmap/ripmap generation; scanline subsampling remains supported. The
@@ -262,7 +265,7 @@ the Lean proofs establish properties of the models rather than the C code.
 See the [Lean package documentation](lean/README.md) for the module inventory
 and build commands. DWAA/DWAB remain intentionally unsupported.
 
-## Third-party licenses (v3)
+## Third-party licenses
 
 - **Core** — 3-clause BSD, dependency-free. The HTJ2K/JPH and DEFLATE/PIZ/B44
   codec implementations are original in-tree code.
@@ -443,21 +446,9 @@ validation story.
 
 # License
 
-3-clause BSD. See [Third-party licenses (v3)](#third-party-licenses-v3) and
+3-clause BSD. See [Third-party licenses](#third-party-licenses) and
 [NOTICE](NOTICE) for third-party notices.
-
-# Similar or related projects
-
-* miniexr: https://github.com/aras-p/miniexr (Write OpenEXR)
-* stb_image_resize.h: https://github.com/nothings/stb (Good for HDR image resizing)
 
 # Author(s)
 
 Syoyo Fujita (syoyo@lighttransport.com)
-
-# Contributor(s)
-
-* Matt Ebb (http://mattebb.com): deep image example. Thanks!
-* Matt Pharr (http://pharr.org/matt/): Testing tinyexr with OpenEXR(IlmImf). Thanks!
-* Andrew Bell (https://github.com/andrewfb) & Richard Eakin (https://github.com/richardeakin): Improving TinyEXR API. Thanks!
-* Mike Wong (https://github.com/mwkm): ZIPS compression support in loading. Thanks!
