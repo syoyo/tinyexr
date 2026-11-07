@@ -55,3 +55,5 @@ void tptex__free(const tptex_allocator* a, void* ptr, size_t size) {
   free(ptr);
 #endif
 }
+
+void tptex_free(const tptex_allocator* a, void* ptr, size_t size) { tptex__free(a, ptr, size); }

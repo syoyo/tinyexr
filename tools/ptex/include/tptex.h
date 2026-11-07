@@ -68,13 +68,17 @@ typedef enum tptex_data_type {
 } tptex_data_type;
 typedef enum tptex_border_mode {
   TPTEX_BORDER_CLAMP = 0,
-  TPTEX_BORDER_WRAP = 1,
-  TPTEX_BORDER_BLACK = 2
+  TPTEX_BORDER_BLACK = 1,
+  TPTEX_BORDER_PERIODIC = 2
 } tptex_border_mode;
 typedef enum tptex_edge_filter_mode {
   TPTEX_EDGE_FILTER_NONE = 0,
   TPTEX_EDGE_FILTER_TANGENT = 1
 } tptex_edge_filter_mode;
+
+/* Release memory obtained from tptex (e.g. tptex_writer_finish_memory) with the
+ * allocator that produced it (NULL = the C library). */
+void tptex_free(const tptex_allocator* allocator, void* ptr, size_t size);
 
 /* Bytes per channel value of a data type; 0 for an invalid value. */
 size_t tptex_data_type_size(tptex_data_type type);

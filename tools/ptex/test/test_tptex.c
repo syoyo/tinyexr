@@ -20,6 +20,7 @@ int main(void) {
   run("half", test_half);
   run("utils", test_utils);
   run("reader", test_reader);
+  run("write", test_write);
   printf("tptex: %ld checks, %d failures\n", g_tptex_checks, g_tptex_failures);
   return g_tptex_failures ? 1 : 0;
 }
