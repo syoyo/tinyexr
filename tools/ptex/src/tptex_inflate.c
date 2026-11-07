@@ -10,7 +10,11 @@
 
 #ifndef TPTEX_ZLIB_HOOK
 #define MINIZ_NO_ZLIB_COMPATIBLE_NAMES
-#include "miniz.h"
+/* Override with -DTPTEX_MINIZ_HEADER="path/to/miniz.h" when it is not on the include path. */
+#ifndef TPTEX_MINIZ_HEADER
+#define TPTEX_MINIZ_HEADER "miniz.h"
+#endif
+#include TPTEX_MINIZ_HEADER
 #endif
 
 tptex_status tptex__inflate(const tptex_zlib_ops* ops, const void* src, size_t src_size,
