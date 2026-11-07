@@ -8,6 +8,9 @@
 #include <string.h>
 
 #include "../include/tptex.h"
+#include <stdio.h>
+
+#include "../include/tptex_file.h"
 #include "../include/tptex_write.h"
 #include "tptex_test.h"
 
@@ -62,6 +65,37 @@ static void roundtrip(tptex_data_type dt, int nch, int alpha, int mips, int ulog
       TPTEX_CHECK(tptex_meta_value(t, idx, &d, &cnt) == TPTEX_OK && cnt == 2 && ((const char*)d)[0] == 'v');
     }
     tptex_close(t);
+  }
+  /* NO_LAZY open and a real file round trip give the same pixels */
+  {
+    tptex_options opt;
+    tptex_texture* t2 = NULL;
+    const char* path = "build/tptex_test_roundtrip.ptx";
+    FILE* fp;
+    tptex_options_init(&opt);
+    opt.flags = TPTEX_OPEN_NO_LAZY;
+    TPTEX_CHECK(tptex_open_memory(file, fsize, &opt, &t2) == TPTEX_OK);
+    if (t2) {
+      memset(back, 0, n * es);
+      TPTEX_CHECK(tptex_get_data(t2, 0, tptex_make_res(ulog2, vlog2), back, 0) == TPTEX_OK);
+      TPTEX_CHECK(memcmp(px, back, n * es) == 0);
+      tptex_close(t2);
+    }
+    fp = fopen(path, "wb");
+    if (fp) {
+      fwrite(file, 1, fsize, fp);
+      fclose(fp);
+      t2 = NULL;
+      TPTEX_CHECK(tptex_open_file(path, &opt, &t2) == TPTEX_OK);
+      if (t2) {
+        memset(back, 0, n * es);
+        TPTEX_CHECK(tptex_get_data(t2, 0, tptex_make_res(ulog2, vlog2), back, 0) == TPTEX_OK);
+        TPTEX_CHECK(memcmp(px, back, n * es) == 0);
+        tptex_close(t2);
+      }
+      remove(path);
+    }
+    TPTEX_CHECK(tptex_open_file("build/does-not-exist.ptx", NULL, &t2) != TPTEX_OK);
   }
   tptex_free(NULL, file, fsize);
   free(px); free(back);

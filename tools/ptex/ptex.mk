@@ -29,16 +29,16 @@ ptex-c11-gate:
 	  if [ -n "$$bad" ]; then echo "FAIL: atomics/volatile/threads/alloca in tptex code:"; echo "$$bad"; exit 1; fi
 	@echo "ptex pure-C11 gate: OK"
 
-build/test_tptex: $(PTEX_LIB_SRC) $(PTEX_TEST_SRC) $(PTEX_HDRS) | build
+build/test_tptex: $(PTEX_ALL_SRC) $(PTEX_TEST_SRC) $(PTEX_HDRS) | build
 	$(CC) $(V3_CSTD) -Wall -Wextra -pedantic $(PTEX_FP) $(PTEX_INC) -O1 -g $(SAN) \
-	  $(PTEX_TEST_SRC) $(PTEX_LIB_SRC) $(PTEX_MINIZ) -lm -o $@
+	  $(PTEX_TEST_SRC) $(PTEX_ALL_SRC) $(PTEX_MINIZ) -lm -o $@
 
 ptex-test: build/test_tptex
 	./build/test_tptex
 
 ptex-half-exhaustive: $(PTEX_LIB_SRC) $(PTEX_TEST_SRC) $(PTEX_HDRS) | build
 	$(CC) $(V3_CSTD) -Wall -Wextra -pedantic $(PTEX_FP) $(PTEX_INC) -O2 \
-	  $(PTEX_TEST_SRC) $(PTEX_LIB_SRC) $(PTEX_MINIZ) -lm -o build/test_tptex_exhaustive
+	  $(PTEX_TEST_SRC) $(PTEX_ALL_SRC) $(PTEX_MINIZ) -lm -o build/test_tptex_exhaustive
 	TPTEX_EXHAUSTIVE=1 ./build/test_tptex_exhaustive
 
 ptex-compare:

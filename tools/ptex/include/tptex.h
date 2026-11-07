@@ -178,6 +178,10 @@ typedef struct tptex_limits {
 
 #define TPTEX_OPEN_PREMULTIPLY 1u /* multiply colour by alpha when reading level 0 */
 #define TPTEX_OPEN_NO_EDITS 2u    /* ignore edit blocks */
+/* Load every level header and all metadata at open, so afterwards tptex_get_data,
+ * tptex_get_face_data, tptex_get_pixel and the metadata getters never mutate the
+ * texture and may be called concurrently (with a stateless, thread-safe input). */
+#define TPTEX_OPEN_NO_LAZY 4u
 
 typedef struct tptex_options {
   tptex_allocator allocator;

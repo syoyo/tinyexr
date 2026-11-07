@@ -128,6 +128,9 @@ typedef struct fbuf {
   int owned;
 } fbuf;
 
+static tptex_status level_ensure(tptex_texture* t, uint32_t id);
+static tptex_status meta_load(tptex_texture* t);
+
 /* ------------------------------------------------------------------------- */
 /* allocation and I/O helpers                                                */
 
@@ -482,6 +485,21 @@ static tptex_status open_impl(tptex_texture* t, const char* path) {
   if ((st = parse_levels(t)) != TPTEX_OK) return st;
   if (!(t->flags & TPTEX_OPEN_NO_EDITS)) {
     if ((st = read_edit_data(t)) != TPTEX_OK) return st;
+  }
+
+  if (t->flags & TPTEX_OPEN_NO_LAZY) {
+    uint32_t li;
+    for (li = 0; li < t->nlevels; ++li)
+      if ((st = level_ensure(t, li)) != TPTEX_OK) return st;
+    if ((st = meta_load(t)) != TPTEX_OK) return st;
+    {
+      size_t mi;
+      for (mi = 0; mi < t->nmeta; ++mi) {
+        const void* d;
+        int cnt;
+        if ((st = tptex_meta_value(t, (int)mi, &d, &cnt)) != TPTEX_OK) return st;
+      }
+    }
   }
 
   t->info.mesh_type = (tptex_mesh_type)t->meshtype;
