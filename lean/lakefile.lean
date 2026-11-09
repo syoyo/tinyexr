@@ -41,3 +41,8 @@ lean_exe codecgen where
 @[default_target]
 lean_exe bc6hcheck where
   root := `Bc6hCheck
+
+/-- BC7 differential checker (C vectors vs Lean decoder). -/
+@[default_target]
+lean_exe bc7check where
+  root := `Bc7Check
