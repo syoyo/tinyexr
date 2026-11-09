@@ -139,7 +139,9 @@ validation checks, not library proofs.
   The CLF loader (Matrix, Range, Exponent, Log, ASC_CDL, LUT1D, LUT3D,
   bit-depth normalization, UNSUPPORTED-not-skip discipline) is total
   with a C differential gate (396 seeded vectors bit-exact including
-  error-kind parity and applied pixels). CSP reader remains open.
+  error-kind parity and applied pixels). The CSP loader (line reader,
+  case-insensitive prefixes, Rising-Sun spline preluts, 1D/3D LUTs) is
+  total with a C differential gate (74 seeded vectors bit-exact).
 - OpenEXR-compatible parser leniencies and C defects exposed by validation are
   documented in [README.md](README.md); keep those records synchronized when
   the executable model or C implementation changes.
