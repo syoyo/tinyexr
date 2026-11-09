@@ -151,7 +151,7 @@ def xskipElem (cs0 : List Char) (tag : String) : List Char :=
       | 0, _ => cs
       | _, [] => []
       | fuel + 1, '<' :: '/' :: rest =>
-        let nm := rest.takeWhile (fun c => c.val > 32)
+        let nm := rest.takeWhile (fun c => c.val > 32 && c != '>' )
         let matchTag := nm.take chars.length == chars &&
           (nm.length = chars.length &&
            (rest.drop nm.length == [] || (rest.drop nm.length).headD ' ' == '>' ||
