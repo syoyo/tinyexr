@@ -48,6 +48,12 @@ def applyOp (op : ClfOp) (px : Pixel) : Pixel :=
   match op with
   | .matrix m off => applyMatrix m off px
   | .range scale off mn mx clLo clHi => applyRange scale off mn mx clLo clHi px
+  | .exponent e mirror => applyExponent e mirror 4 px
+  | .expLinear sc off g br sl inv mir => applyExpLinear sc off g br sl inv mir 4 px
+  | .log base inv ls lo ns no => applyLog base ls lo ns no inv 4 px
+  | .logCam base inv ls lo ns no br ls2 lo2 =>
+    applyLogCam base ls lo ns no br ls2 lo2 inv 4 px
+  | .cdl sl of pw sat cl => applyCdl sl of pw sat [0.0, 0.0, 0.0] cl false px
   | _ => px
 
 def checkLine (line : String) (n : Nat) : IO Bool := do
@@ -76,14 +82,15 @@ def checkLine (line : String) (n : Nat) : IO Bool := do
   let nops := decNum (hp.getD 3 "")
   let mut idx := 4
   let mut ok := true
-  let mut wantOps : List (String × List Float32 × List Float32 × List Float32 × List Float32 × Nat × Nat) := []
+  let mut wantOps : List (String × List Float32 × List Float32 × List Float32 × List Float32 ×
+      List Float32 × List Float32 × List Float32 × List Float32 × Nat × Nat) := []
   for _ in List.range nops do
     let kind := hp.getD idx ""
     idx := idx + 1
     if kind == "matrix" then
       let (m, i1) := readF32s hp idx 16
       let (off, i2) := readF32s hp i1 4
-      wantOps := wantOps ++ [("matrix", m, off, [], [], 0, 0)]
+      wantOps := wantOps ++ [("matrix", m, off, [], [], [], [], [], [], 0, 0)]
       idx := i2
     else if kind == "range" then
       let (scale, i1) := readF32s hp idx 4
@@ -92,8 +99,52 @@ def checkLine (line : String) (n : Nat) : IO Bool := do
       let (mx, i4) := readF32s hp i3 4
       let cl := decNum (hp.getD i4 "")
       let ch := decNum (hp.getD (i4 + 1) "")
-      wantOps := wantOps ++ [("range", scale, off, mn, mx, cl, ch)]
+      wantOps := wantOps ++ [("range", scale, off, mn, mx, [], [], [], [], cl, ch)]
       idx := i4 + 2
+    else if kind == "exponent" then
+      let (e, i1) := readF32s hp idx 4
+      let mir := decNum (hp.getD i1 "")
+      wantOps := wantOps ++ [("exponent", e, [], [], [], [], [], [], [], mir, 0)]
+      idx := i1 + 1
+    else if kind == "explin" then
+      let (sc, i1) := readF32s hp idx 4
+      let (off, i2) := readF32s hp i1 4
+      let (g, i3) := readF32s hp i2 4
+      let (br, i4) := readF32s hp i3 4
+      let (sl, i5) := readF32s hp i4 4
+      let inv := decNum (hp.getD i5 "")
+      let mir := decNum (hp.getD (i5 + 1) "")
+      wantOps := wantOps ++ [("explin", sc, off, g, br, sl, [], [], [], inv, mir)]
+      idx := i5 + 2
+    else if kind == "log" then
+      let (base, i1) := readF32s hp idx 1
+      let inv := decNum (hp.getD i1 "")
+      let (ls, i2) := readF32s hp (i1 + 1) 3
+      let (lo, i3) := readF32s hp i2 3
+      let (ns, i4) := readF32s hp i3 3
+      let (no, i5) := readF32s hp i4 3
+      wantOps := wantOps ++ [("log", base, ls, lo, ns, no, [], [], [], inv, 0)]
+      idx := i5
+    else if kind == "logcam" then
+      let (base, i1) := readF32s hp idx 1
+      let inv := decNum (hp.getD i1 "")
+      let (ls, i2) := readF32s hp (i1 + 1) 3
+      let (lo, i3) := readF32s hp i2 3
+      let (ns, i4) := readF32s hp i3 3
+      let (no, i5) := readF32s hp i4 3
+      let (br, i6) := readF32s hp i5 3
+      let (ls2, i7) := readF32s hp i6 3
+      let (lo2, i8) := readF32s hp i7 3
+      wantOps := wantOps ++ [("logcam", base, ls, lo, ns, no, br, ls2, lo2, inv, 0)]
+      idx := i8
+    else if kind == "cdl" then
+      let (sl, i1) := readF32s hp idx 3
+      let (of, i2) := readF32s hp i1 3
+      let (pw, i3) := readF32s hp i2 3
+      let (sat, i4) := readF32s hp i3 1
+      let cl := decNum (hp.getD i4 "")
+      wantOps := wantOps ++ [("cdl", sl, of, pw, sat, [], [], [], [], cl, 0)]
+      idx := i4 + 1
     else
       IO.eprintln s!"line {n}: unknown op kind {kind}"
       ok := false
@@ -106,7 +157,8 @@ def checkLine (line : String) (n : Nat) : IO Bool := do
     if ops.length != nops then
       IO.eprintln s!"line {n}: op count got {ops.length}, want {nops}"
       ok := false
-    for (i, (kind, a, b, c, d, cl, ch)) in List.zip (List.range nops) wantOps do
+    for (i, w) in List.zip (List.range nops) wantOps do
+      let (kind, a, b, c, d, e, f, g, h, fl1, fl2) := w
       match ops[i]? with
       | none => pure ()
       | some op =>
@@ -116,11 +168,11 @@ def checkLine (line : String) (n : Nat) : IO Bool := do
           | .matrix m off =>
             for (k, v) in List.zip (List.range 16) a do
               if Float32.toBits (m.getD k 0.0) != Float32.toBits v then
-                IO.eprintln s!"line {n} op {i} matrix m[{k}] got {m.getD k 0.0}, want {v}"
+                IO.eprintln s!"line {n} op {i} matrix m[{k}]"
                 ok := false
             for (k, v) in List.zip (List.range 4) b do
               if Float32.toBits (off.getD k 0.0) != Float32.toBits v then
-                IO.eprintln s!"line {n} op {i} matrix off[{k}] got {off.getD k 0.0}, want {v}"
+                IO.eprintln s!"line {n} op {i} matrix off[{k}]"
                 ok := false
           | _ => pure ()
         | "range" =>
@@ -142,8 +194,77 @@ def checkLine (line : String) (n : Nat) : IO Bool := do
               if Float32.toBits (mx.getD k 0.0) != Float32.toBits v then
                 IO.eprintln s!"line {n} op {i} range max[{k}]"
                 ok := false
-            if clLo != (cl == 1) || clHi != (ch == 1) then
-              IO.eprintln s!"line {n} op {i} range clamps got {clLo} {clHi}, want {cl} {ch}"
+            if clLo != (fl1 == 1) || clHi != (fl2 == 1) then
+              IO.eprintln s!"line {n} op {i} range clamps"
+              ok := false
+          | _ => pure ()
+        | "exponent" =>
+          match op with
+          | .exponent en mir =>
+            for (k, v) in List.zip (List.range 4) a do
+              if Float32.toBits (en.getD k 0.0) != Float32.toBits v then
+                IO.eprintln s!"line {n} op {i} exponent e[{k}] got {en.getD k 0.0}, want {v}"
+                ok := false
+            if mir != (fl1 == 1) then
+              IO.eprintln s!"line {n} op {i} exponent mirror"
+              ok := false
+          | _ => pure ()
+        | "explin" =>
+          match op with
+          | .expLinear sc off g br sl inv mir =>
+            let groups := [("scale", sc, 4, a), ("offset", off, 4, b), ("gamma", g, 4, c),
+              ("breakpoint", br, 4, d), ("slope", sl, 4, e)]
+            for (nm, arr, cnt, wv) in groups do
+              for (k, v) in List.zip (List.range cnt) wv do
+                if Float32.toBits (arr.getD k 0.0) != Float32.toBits v then
+                  IO.eprintln s!"line {n} op {i} explin {nm}[{k}] got {arr.getD k 0.0}, want {v}"
+                  ok := false
+            if inv != (fl1 == 1) || mir != (fl2 == 1) then
+              IO.eprintln s!"line {n} op {i} explin flags"
+              ok := false
+          | _ => pure ()
+        | "log" =>
+          match op with
+          | .log base inv ls lo ns no =>
+            if Float32.toBits base != Float32.toBits (a.getD 0 0.0) ||
+               inv != (fl1 == 1) then
+              IO.eprintln s!"line {n} op {i} log base/flags"
+              ok := false
+            let groups := [("ls", ls, 3, b), ("lo", lo, 3, c), ("ns", ns, 3, d), ("no", no, 3, e)]
+            for (nm, arr, cnt, wv) in groups do
+              for (k, v) in List.zip (List.range cnt) wv do
+                if Float32.toBits (arr.getD k 0.0) != Float32.toBits v then
+                  IO.eprintln s!"line {n} op {i} log {nm}[{k}]"
+                  ok := false
+          | _ => pure ()
+        | "logcam" =>
+          match op with
+          | .logCam base inv ls lo ns no br ls2 lo2 =>
+            if Float32.toBits base != Float32.toBits (a.getD 0 0.0) ||
+               inv != (fl1 == 1) then
+              IO.eprintln s!"line {n} op {i} logcam base/flags"
+              ok := false
+            let groups := [("ls", ls, 3, b), ("lo", lo, 3, c), ("ns", ns, 3, d),
+              ("no", no, 3, e), ("br", br, 3, f), ("ls2", ls2, 3, g),
+              ("lo2", lo2, 3, h)]
+            for (nm, arr, cnt, wv) in groups do
+              for (k, v) in List.zip (List.range cnt) wv do
+                if Float32.toBits (arr.getD k 0.0) != Float32.toBits v then
+                  IO.eprintln s!"line {n} op {i} logcam {nm}[{k}] got {arr.getD k 0.0}, want {v}"
+                  ok := false
+          | _ => pure ()
+        | "cdl" =>
+          match op with
+          | .cdl sl of pw sat cl =>
+            let groups := [("slope", sl, 3, a), ("offset", of, 3, b), ("power", pw, 3, c),
+              ("saturation", [sat], 1, d)]
+            for (nm, arr, cnt, wv) in groups do
+              for (k, v) in List.zip (List.range cnt) wv do
+                if Float32.toBits (arr.getD k 0.0) != Float32.toBits v then
+                  IO.eprintln s!"line {n} op {i} cdl {nm}[{k}]"
+                  ok := false
+            if cl != (fl1 == 1) then
+              IO.eprintln s!"line {n} op {i} cdl clamp"
               ok := false
           | _ => pure ()
         | _ => pure ()

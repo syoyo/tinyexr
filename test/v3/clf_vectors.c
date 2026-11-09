@@ -56,6 +56,44 @@ static void emit_ok(FILE *out, const toc_op_list *list, const char *src,
             print_f32bits(out, op->u.range.min, 4);
             print_f32bits(out, op->u.range.max, 4);
             fprintf(out, " %d %d", op->u.range.clamp_lo, op->u.range.clamp_hi);
+        } else if (op->kind == TOC_OP_EXPONENT) {
+            fprintf(out, " exponent");
+            print_f32bits(out, op->u.exponent.e, 4);
+            fprintf(out, " %d", op->u.exponent.mirror);
+        } else if (op->kind == TOC_OP_EXP_LINEAR) {
+            fprintf(out, " explin");
+            print_f32bits(out, op->u.exp_linear.scale, 4);
+            print_f32bits(out, op->u.exp_linear.offset, 4);
+            print_f32bits(out, op->u.exp_linear.gamma, 4);
+            print_f32bits(out, op->u.exp_linear.breakpoint, 4);
+            print_f32bits(out, op->u.exp_linear.slope, 4);
+            fprintf(out, " %d %d", op->u.exp_linear.inverse, op->u.exp_linear.mirror);
+        } else if (op->kind == TOC_OP_LOG) {
+            fprintf(out, " log");
+            print_f32bits(out, &op->u.log.base, 1);
+            fprintf(out, " %d", op->u.log.inverse);
+            print_f32bits(out, op->u.log.log_slope, 3);
+            print_f32bits(out, op->u.log.log_offset, 3);
+            print_f32bits(out, op->u.log.lin_slope, 3);
+            print_f32bits(out, op->u.log.lin_offset, 3);
+        } else if (op->kind == TOC_OP_LOG_CAMERA) {
+            fprintf(out, " logcam");
+            print_f32bits(out, &op->u.logcam.base, 1);
+            fprintf(out, " %d", op->u.logcam.inverse);
+            print_f32bits(out, op->u.logcam.log_slope, 3);
+            print_f32bits(out, op->u.logcam.log_offset, 3);
+            print_f32bits(out, op->u.logcam.lin_slope, 3);
+            print_f32bits(out, op->u.logcam.lin_offset, 3);
+            print_f32bits(out, op->u.logcam.lin_break, 3);
+            print_f32bits(out, op->u.logcam.linear_slope, 3);
+            print_f32bits(out, op->u.logcam.linear_offset, 3);
+        } else if (op->kind == TOC_OP_CDL) {
+            fprintf(out, " cdl");
+            print_f32bits(out, op->u.cdl.slope, 3);
+            print_f32bits(out, op->u.cdl.offset, 3);
+            print_f32bits(out, op->u.cdl.power, 3);
+            print_f32bits(out, &op->u.cdl.saturation, 1);
+            fprintf(out, " %d", op->u.cdl.clamp);
         } else {
             fprintf(out, " other%d", (int)op->kind);
         }
@@ -216,6 +254,83 @@ static void gen_sequence(FILE *out) {
     free(buf);
 }
 
+
+static void gen_exponent(FILE *out, int mode) {
+    const char *styles[] = {"basicFwd", "basicRev", "basicMirrorFwd",
+        "monCurveFwd", "monCurveRev", "monCurveMirrorFwd",
+        "basicPassThruFwd", "weirdStyle"};
+    char *buf = malloc(65536);
+    char body[32768];
+    char *p = body;
+    float e = 0.5f + randf();
+    p += sprintf(p, "<Exponent style=\"%s\">\n", styles[mode % 8]);
+    if (mode % 8 == 7) {
+        p += sprintf(p, "</Exponent>\n"); /* no params at all -> PARSE/UNSUPPORTED */
+    } else {
+        if (splitmix64() & 1)
+            p += sprintf(p, "<ExponentParams exponent=\"%.6f\" channel=\"R\"/>\n", e);
+        else
+            p += sprintf(p, "<ExponentParams exponent=\"%.6f\"/>\n", e);
+        if (strstr(styles[mode % 8], "monCurve"))
+            p += sprintf(p, "<ExponentParams offset=\"%.6f\"/>\n", randf());
+        p += sprintf(p, "</Exponent>\n");
+    }
+    size_t len;
+    wrap(buf, &len, body);
+    run_one(out, buf, len);
+    free(buf);
+}
+
+static void gen_log(FILE *out, int mode) {
+    const char *styles[] = {"log10", "log2", "antiLog10", "antiLog2",
+        "linToLog", "logToLin", "cameraLinToLog", "cameraLogToLin"};
+    char *buf = malloc(65536);
+    char body[32768];
+    char *p = body;
+    if (mode == 8) { /* self-closing simple log */
+        p += sprintf(p, "<Log style=\"log10\"/>\n");
+    } else if (mode == 9) { /* unknown style -> UNSUPPORTED */
+        p += sprintf(p, "<Log style=\"linToLogEcho\"/>\n</Log>\n");
+    } else {
+        p += sprintf(p, "<Log style=\"%s\">\n", styles[mode % 8]);
+        if (mode % 8 < 4) {
+            p += sprintf(p, "</Log>\n");
+        } else {
+            p += sprintf(p, "<LogParams base=\"%.6f\" logSideSlope=\"%.6f\" "
+                            "linearSlope=\"%.6f\"\n", 2.0f + randf(),
+                         1.0f + randf(), 1.0f + randf());
+            if (mode % 8 >= 6)
+                p += sprintf(p, " linSideBreak=\"%.6f\"\n", randf() + 0.1f);
+            p += sprintf(p, "/>\n</Log>\n");
+        }
+    }
+    size_t len;
+    wrap(buf, &len, body);
+    run_one(out, buf, len);
+    free(buf);
+}
+
+static void gen_cdl(FILE *out, int mode) {
+    const char *styles[] = {"Fwd", "Rev", "FwdNoClamp", "RevNoClamp", "xyzStyle"};
+    char *buf = malloc(65536);
+    char body[32768];
+    char *p = body;
+    p += sprintf(p, "<ASC_CDL style=\"%s\">\n", styles[mode % 5]);
+    p += sprintf(p, "<SOPNode>\n<Slope>%.6f %.6f %.6f</Slope>\n"
+                    "<Offset>%.6f %.6f %.6f</Offset>\n"
+                    "<Power>%.6f %.6f %.6f</Power>\n</SOPNode>\n",
+                 1.0f + randf(), 1.0f + randf(), 1.0f + randf(),
+                 randf(), randf(), randf(),
+                 1.0f + randf(), 1.0f + randf(), 1.0f + randf());
+    if (mode % 5 != 4 || (splitmix64() & 1))
+        p += sprintf(p, "<SatNode>\n<Saturation>%.6f</Saturation>\n</SatNode>\n", randf());
+    p += sprintf(p, "</ASC_CDL>\n");
+    size_t len;
+    wrap(buf, &len, body);
+    run_one(out, buf, len);
+    free(buf);
+}
+
 int main(int argc, char **argv) {
     FILE *out = stdout;
     if (argc > 1) {
@@ -232,6 +347,9 @@ int main(int argc, char **argv) {
     for (int s = 0; s < 12; s++) gen_unknown(out);
     for (int s = 0; s < 4; s++) gen_noprocess(out);    /* PARSE */
     for (int s = 0; s < 16; s++) gen_sequence(out);
+    for (int s = 0; s < 48; s++) gen_exponent(out, (int)(splitmix64() % 10u));
+    for (int s = 0; s < 48; s++) gen_log(out, (int)(splitmix64() % 10u));
+    for (int s = 0; s < 40; s++) gen_cdl(out, (int)(splitmix64() % 5u));
     fclose(out);
     return 0;
 }
