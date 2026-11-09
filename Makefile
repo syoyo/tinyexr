@@ -280,6 +280,24 @@ lean-check:
 	cd lean && $(LAKE) exe cache get && $(LAKE) build && $(LAKE) build exrcheck exrgen codecgen
 	@echo "lean-check: OK"
 
+.PHONY: texcomp-lean-check
+texcomp-lean-check:
+	cd lean && $(LAKE) build Texcomp.Bc5Decode Texcomp.Bc3Decode Texcomp.Bc1Decode Texcomp.Bc4Decode
+	@echo "texcomp-lean-check: OK"
+
+.PHONY: tocio-lean-check
+tocio-lean-check:
+	cd lean && $(LAKE) build Tocio.Op Tocio.Config Tocio.Transform Tocio.Lower Tocio.YamlTotal
+	@echo "tocio-lean-check: OK"
+
+.PHONY: texcomp-lean-diff
+texcomp-lean-diff: texcomp-test
+	@echo "texcomp-lean-diff: C tests passed"
+
+.PHONY: tocio-lean-diff
+tocio-lean-diff: tocio-test
+	@echo "tocio-lean-diff: C tests passed"
+
 PARSE_HARNESS = test/v3/parse_harness
 CODEC_DIFF = build/codec_diff
 

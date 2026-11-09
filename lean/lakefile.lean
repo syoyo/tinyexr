@@ -20,7 +20,7 @@ require mathlib from git
 
 @[default_target]
 lean_lib ExrSpec where
-  globs := #[`ExrSpec, `Exr.+]
+  globs := #[`ExrSpec, `Exr.+, `Texcomp.+, `Tocio.+]
 
 /-- Structural conformance checker (machine-readable report). -/
 @[default_target]
