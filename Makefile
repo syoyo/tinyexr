@@ -435,6 +435,16 @@ texcomp-bc7-enc-diff: texcomp lean-tools
 	cd lean && $(LAKE) build ExrSpec bc7enccheck2
 	./lean/.lake/build/bin/bc7enccheck2 build/lean-gen/bc7_enc_vectors.txt
 
+.PHONY: texcomp-bc6h-kern-diff
+texcomp-bc6h-kern-diff: texcomp lean-tools
+	mkdir -p build/lean-gen
+	$(CC) -std=c11 -Wall -Wextra -Itools/texcomp/include -Iinclude -Isrc -Iexamples/common \
+	  test/v3/bc6h_kernel_vectors.c build/libtexcomp.a build/libtinyexr3.a -lm -pthread \
+	  -o build/bc6h_kern_gen
+	./build/bc6h_kern_gen build/lean-gen/bc6h_kernel_vectors.txt
+	cd lean && $(LAKE) build ExrSpec bc6hkerncheck
+	./lean/.lake/build/bin/bc6hkerncheck build/lean-gen/bc6h_kernel_vectors.txt
+
 .PHONY: tocio-lean-check
 tocio-lean-check:
 	cd lean && $(LAKE) build Tocio.Op Tocio.Config Tocio.Transform Tocio.Lower Tocio.YamlTotal Tocio.Math Tocio.Ops Tocio.FixedFunc
