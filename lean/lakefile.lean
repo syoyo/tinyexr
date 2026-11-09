@@ -102,6 +102,16 @@ lean_exe bc7packcheck where
 lean_exe bc7m6check where
   root := `Bc7Mode6Check
 
+/-- BC7 per-mode candidate differential checker (C vectors vs Lean). -/
+@[default_target]
+lean_exe bc7seedcheck where
+  root := `Bc7SeedCheck
+
+/-- BC7 full block-encoder differential checker (C vectors vs Lean). -/
+@[default_target]
+lean_exe bc7enccheck2 where
+  root := `Bc7EncCheck
+
 /-- Tocio op differential checker (C vectors vs Lean kernels). -/
 @[default_target]
 lean_exe tociocheck where

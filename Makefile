@@ -415,6 +415,26 @@ texcomp-bc7-m6-diff: texcomp lean-tools
 	cd lean && $(LAKE) build ExrSpec bc7m6check
 	./lean/.lake/build/bin/bc7m6check build/lean-gen/bc7_mode6_vectors.txt
 
+.PHONY: texcomp-bc7-seed-diff
+texcomp-bc7-seed-diff: texcomp lean-tools
+	mkdir -p build/lean-gen
+	$(CC) -std=c11 -Wall -Wextra -Itools/texcomp/include -Iinclude -Isrc -Iexamples/common \
+	  test/v3/bc7_seed_vectors.c build/libtexcomp.a build/libtinyexr3.a -lm -pthread \
+	  -o build/bc7_seed_gen
+	./build/bc7_seed_gen build/lean-gen/bc7_seed_vectors.txt
+	cd lean && $(LAKE) build ExrSpec bc7seedcheck
+	./lean/.lake/build/bin/bc7seedcheck build/lean-gen/bc7_seed_vectors.txt
+
+.PHONY: texcomp-bc7-enc-diff
+texcomp-bc7-enc-diff: texcomp lean-tools
+	mkdir -p build/lean-gen
+	$(CC) -std=c11 -Wall -Wextra -Itools/texcomp/include -Iinclude -Isrc -Iexamples/common \
+	  test/v3/bc7_enc_vectors.c build/libtexcomp.a build/libtinyexr3.a -lm -pthread \
+	  -o build/bc7_enc_gen
+	./build/bc7_enc_gen build/lean-gen/bc7_enc_vectors.txt
+	cd lean && $(LAKE) build ExrSpec bc7enccheck2
+	./lean/.lake/build/bin/bc7enccheck2 build/lean-gen/bc7_enc_vectors.txt
+
 .PHONY: tocio-lean-check
 tocio-lean-check:
 	cd lean && $(LAKE) build Tocio.Op Tocio.Config Tocio.Transform Tocio.Lower Tocio.YamlTotal Tocio.Math Tocio.Ops Tocio.FixedFunc
