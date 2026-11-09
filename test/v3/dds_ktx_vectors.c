@@ -16,6 +16,13 @@ static void print_bytes(FILE *out, const uint8_t *p, size_t n) {
 
 /* Read back a little-endian u32 from the written header, so the vector
  * records what the C writer actually emitted (not what the test assumed). */
+/* Deterministic payload byte, reproduced independently by the Lean checker. */
+static uint8_t pat(size_t i) { return (uint8_t)((i * 37u + 11u) & 0xffu); }
+
+static void fill_pat(uint8_t *p, size_t n) {
+    for (size_t i = 0; i < n; i++) p[i] = pat(i);
+}
+
 static uint32_t rd32(const uint8_t *p) {
     return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) |
            ((uint32_t)p[3] << 24);
@@ -38,6 +45,7 @@ int main(int argc, char **argv) {
         size_t need = 148u + bc_size;
         uint8_t *buf = (uint8_t *)malloc(need);
         uint8_t *bc = (uint8_t *)calloc(bc_size, 1);
+        fill_pat(bc, bc_size);
         tc_result rc = TC_ERROR_UNSUPPORTED;
         if (!buf || !bc) return 1;
         if (ci == 0 || ci == 1) {
@@ -63,7 +71,7 @@ int main(int argc, char **argv) {
         }
         fprintf(out, "dds %u %u %u %u | ", rd32(buf + 16), rd32(buf + 12),
                 rd32(buf + 112), rd32(buf + 20) / (((w + 3u) / 4u) ? ((w + 3u) / 4u) : 1u));
-        print_bytes(out, buf, 148);
+        print_bytes(out, buf, need);
         fprintf(out, "\n");
         free(buf);
         free(bc);
@@ -78,6 +86,7 @@ int main(int argc, char **argv) {
         size_t need = 68u + payload;
         uint8_t *buf = (uint8_t *)malloc(need);
         uint8_t *etc = (uint8_t *)calloc(payload, 1);
+        fill_pat(etc, payload);
         tc_result rc;
         if (!buf || !etc) return 1;
         if (ci & 1) {
@@ -95,7 +104,9 @@ int main(int argc, char **argv) {
         }
         fprintf(out, "ktx %u %u %u %u %u | ", rd32(buf + 36), rd32(buf + 40),
                 rd32(buf + 28), rd32(buf + 32), rd32(buf + 64));
-        print_bytes(out, buf, 68);
+        /* EAC R11 stores 8 bytes per block, so the writer's real payload can
+         * be smaller than `payload`: print exactly what the header declares. */
+        print_bytes(out, buf, 68u + (size_t)rd32(buf + 64));
         fprintf(out, "\n");
         free(buf);
         free(etc);

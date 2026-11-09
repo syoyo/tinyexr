@@ -129,7 +129,8 @@ validation checks, not library proofs.
   (no example-only checks), payload-carrying `DdsFile`/`KtxFile`
   round trips (`parse (emit (h, payload)) = (h, payload)`), and a
   byte-layout gate against the C writers (`make texcomp-container-diff`,
-  14 headers). Encoder models: the BC1
+  14 complete files — header *and* payload — with the payload pattern
+  recomputed independently on both sides). Encoder models: the BC1
   colour-block encoder (`tc_encode_bc1_color_block`, 1200 blocks) and the
   BC4/BC5 alpha-block encoders UNORM+SNORM (`tc_encode_bc4_block*`,
   800 blocks) are byte-exact with the C encoders. Remaining Texcomp work:
