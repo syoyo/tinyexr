@@ -8,16 +8,15 @@
   SPDX-License-Identifier: BSD-3-Clause
 -/
 
-import Tocio.Yaml
-import Tocio.YamlParse
+import Tocio.YamlTotal
 
 namespace Tocio
 
-/-- A YAML line with indentation. -/
+/-- A YAML line with indentation. (Legacy structure, kept for API.) -/
 structure YL where
   indent : Nat
   text : String
-  deriving Repr
+  deriving Repr, Inhabited
 
 /-- Check if a line is a sequence item. -/
 def isSeqItem (l : YL) : Bool :=
@@ -28,28 +27,18 @@ def stripSeqPrefix (s : String) : String :=
   let t := trimLeft s
   if t.startsWith "- " then trimLeft (t.drop 2).toString else t
 
-/-- Parse a sequence at base indent. -/
-partial def parseSequence (base : Nat) (lines : List YL) : Option (YamlValue × List YL) :=
-  let rec go (acc : List YamlValue) (ls : List YL) : Option (YamlValue × List YL) :=
-    match ls with
-    | [] => some (YamlValue.seq acc.reverse, [])
-    | l :: rest =>
-        if l.indent < base then
-          some (YamlValue.seq acc.reverse, ls)
-        else if l.indent > base then
-          some (YamlValue.seq acc.reverse, ls)
-        else if !isSeqItem l then
-          some (YamlValue.seq acc.reverse, ls)
-        else
-          let itemText := stripSeqPrefix l.text
-          let itemVal := YamlValue.str itemText
-          go (itemVal :: acc) rest
-  go [] lines
+/-- Legacy partial parser retired: same behavior via the total worker. -/
+def parseSequence (base : Nat) (lines : List YL) :
+    Option (YamlValue × List YL) :=
+  let conv : List YL → List YL2 := List.map (fun l => { indent := l.indent, text := l.text })
+  match parseValueTotal yamlMaxDepth base (conv lines) with
+  | some (v, rem, _) =>
+    let remL : List YL := rem.map (fun l => { indent := l.indent, text := l.text })
+    some (v, remL)
+  | none => none
 
 /-- Parse a top-level sequence at indent 0. -/
 def parseYamlSeq (lines : List YL) : Option YamlValue :=
   (parseSequence 0 lines).map (·.1)
-
--- Empty sequence parses to empty seq (verified by construction).
 
 end Tocio

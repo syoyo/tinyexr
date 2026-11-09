@@ -41,7 +41,7 @@ import Texcomp.AstcDecode
 import Tocio.Math
 import Tocio.Ops
 import Tocio.FixedFunc
-import Tocio.FixedFunc
+import Tocio.CdlInverse
 import Texcomp.Astc
 import Texcomp.AstcImage
 import Texcomp.Bc7
@@ -104,7 +104,6 @@ import Tocio.Transform
 import Tocio.Resolve
 import Tocio.Lower
 import Tocio.LowerAll
-import Tocio.CdlInverse
 import Tocio.ExpLinear
 import Tocio.LogCamera
 import Exr.Version

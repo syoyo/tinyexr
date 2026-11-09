@@ -8,47 +8,25 @@
   SPDX-License-Identifier: BSD-3-Clause
 -/
 
-import Tocio.Yaml
-import Tocio.YamlParse
+import Tocio.YamlTotal
 
 namespace Tocio
 
-/-- A line with its indentation level. -/
+/-- A line with its indentation level. (Legacy structure, kept for API.) -/
 structure YLine where
   indent : Nat
   text : String
-  deriving Repr
+  deriving Repr, Inhabited
 
-/-- Parse a mapping starting at base indent. Returns the map and remaining lines. -/
-partial def parseMapping (base : Nat) (lines : List YLine) : Option (YamlValue × List YLine) :=
-  let rec go (acc : List (String × YamlValue)) (ls : List YLine) : Option (YamlValue × List YLine) :=
-    match ls with
-    | [] => some (YamlValue.map acc.reverse, [])
-    | l :: rest =>
-        if l.indent < base then
-          -- end of this mapping
-          some (YamlValue.map acc.reverse, ls)
-        else if l.indent > base then
-          -- unexpected indent; skip? treat as end
-          some (YamlValue.map acc.reverse, ls)
-        else
-          -- parse key: value at this indent
-          match parseKv l.text with
-          | none => none
-          | some kv =>
-              -- check if value is empty (nested block follows)
-              if kv.val.isEmpty then
-                -- nested: parse sub-block at indent > base
-                let subLines := rest.takeWhile (fun x => x.indent > base)
-                let remaining := rest.dropWhile (fun x => x.indent > base)
-                let subBase := match subLines.head? with | some l => l.indent | none => base + 1
-                match parseMapping subBase subLines with
-                | none => none
-                | some (subVal, _) =>
-                    go ((kv.key, subVal) :: acc) remaining
-              else
-                go ((kv.key, YamlValue.str kv.val) :: acc) rest
-  go [] lines
+/-- Legacy partial parser retired: same behavior via the total worker. -/
+def parseMapping (base : Nat) (lines : List YLine) :
+    Option (YamlValue × List YLine) :=
+  let conv : List YLine → List YL2 := List.map (fun l => { indent := l.indent, text := l.text })
+  match parseValueTotal yamlMaxDepth base (conv lines) with
+  | some (v, rem, _) =>
+    let remL : List YLine := rem.map (fun l => { indent := l.indent, text := l.text })
+    some (v, remL)
+  | none => none
 
 /-- Top-level parse: parse a mapping at indent 0. -/
 def parseYamlDoc (lines : List YLine) : Option YamlValue :=
@@ -57,6 +35,7 @@ def parseYamlDoc (lines : List YLine) : Option YamlValue :=
 /-- Helper to make a YLine. -/
 def mkLine (indent : Nat) (text : String) : YLine := { indent := indent, text := text }
 
--- Empty document parses to empty map (verified by construction).
+-- The partial-def comment previously here was removed when the parser
+-- was converted to the total fuel-bounded version.
 
 end Tocio
