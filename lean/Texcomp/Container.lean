@@ -155,13 +155,65 @@ theorem emitDdsHeader_size (h : DdsHeader) : (emitDdsHeader h ByteArray.empty).s
   rw [wordsConcat_size]
   simp [ddsWords]
 
-/-- General DDS header round trip (not just a sample): parsing the emitted
-  header recovers every field, provided the width is non-zero (so the
-  block-row count is non-zero) and the pitch fits in a `UInt32`. -/
-theorem parseDdsHeader_emit (h : DdsHeader) (hw : h.width.toNat ≥ 1)
-    (hp : ddsPitch h < 2 ^ 32) :
-    parseDdsHeader (emitDdsHeader h ByteArray.empty) = some h := by
-  have hbx : (h.width.toNat + 3) / 4 ≠ 0 := by omega
+/-- Header-only reads are unaffected by a trailing payload. -/
+theorem dds_read_ext {h : DdsHeader} {p : Bytes} {off : Nat} {v : UInt32}
+    (hoff : off + 4 ≤ (wordsConcat (ddsWords h)).size)
+    (hv : getU32LE (wordsConcat (ddsWords h)) off = some v) :
+    getU32LE (wordsConcat (ddsWords h) ++ p) off = some v := by
+  rw [getU32LE_append_left hoff]
+  exact hv
+
+/-- Named offsets of the DDS header words the parser reads. -/
+theorem dds_read_magic (h : DdsHeader) :
+    getU32LE (wordsConcat (ddsWords h)) 0 = some 0x20534444 := by
+  have hk : 0 < (ddsWords h).length := by simp [ddsWords]
+  have h := word_read (ws := ddsWords h) 0 hk 0x20534444 (by simp [ddsWords])
+  rwa [show 4 * 0 = 0 from rfl] at h
+
+theorem dds_read_dwsize (h : DdsHeader) :
+    getU32LE (wordsConcat (ddsWords h)) 4 = some 124 := by
+  have hk : 1 < (ddsWords h).length := by simp [ddsWords]
+  have h := word_read (ws := ddsWords h) 1 hk 124 (by simp [ddsWords])
+  rwa [show 4 * 1 = 4 from rfl] at h
+
+theorem dds_read_height (h : DdsHeader) :
+    getU32LE (wordsConcat (ddsWords h)) 12 = some h.height := by
+  have hk : 3 < (ddsWords h).length := by simp [ddsWords]
+  have h := word_read (ws := ddsWords h) 3 hk h.height (by simp [ddsWords])
+  rwa [show 4 * 3 = 12 from rfl] at h
+
+theorem dds_read_width (h : DdsHeader) :
+    getU32LE (wordsConcat (ddsWords h)) 16 = some h.width := by
+  have hk : 4 < (ddsWords h).length := by simp [ddsWords]
+  have h := word_read (ws := ddsWords h) 4 hk h.width (by simp [ddsWords])
+  rwa [show 4 * 4 = 16 from rfl] at h
+
+theorem dds_read_pitch (h : DdsHeader) :
+    getU32LE (wordsConcat (ddsWords h)) 20 = some (UInt32.ofNat (ddsPitch h)) := by
+  have hk : 5 < (ddsWords h).length := by simp [ddsWords]
+  have h := word_read (ws := ddsWords h) 5 hk (UInt32.ofNat (ddsPitch h)) (by simp [ddsWords])
+  rwa [show 4 * 5 = 20 from rfl] at h
+
+theorem dds_read_fourcc (h : DdsHeader) :
+    getU32LE (wordsConcat (ddsWords h)) 84 = some 0x30315844 := by
+  have hk : 21 < (ddsWords h).length := by simp [ddsWords]
+  have h := word_read (ws := ddsWords h) 21 hk 0x30315844 (by simp [ddsWords])
+  rwa [show 4 * 21 = 84 from rfl] at h
+
+theorem dds_read_dxgi (h : DdsHeader) :
+    getU32LE (wordsConcat (ddsWords h)) 112 = some h.dxgi := by
+  have hk : 28 < (ddsWords h).length := by simp [ddsWords]
+  have h := word_read (ws := ddsWords h) 28 hk h.dxgi (by simp [ddsWords])
+  rwa [show 4 * 28 = 112 from rfl] at h
+
+/-- Parsing an emitted header recovers every field, even when more bytes
+  (the payload) follow it. Requires a non-zero width and a pitch that fits
+  in a `UInt32`. -/
+theorem parseDdsHeader_append (h : DdsHeader) (p : Bytes)
+    (hw : h.width.toNat ≥ 1) (hp : ddsPitch h < 2 ^ 32) :
+    parseDdsHeader (wordsConcat (ddsWords h) ++ p) = some h := by
+  have hsz : (wordsConcat (ddsWords h)).size = 148 := by
+    rw [wordsConcat_size]; simp [ddsWords]
   have hbxpos : 0 < (h.width.toNat + 3) / 4 := by omega
   have hmod : ddsPitch h % ((h.width.toNat + 3) / 4) = 0 := by
     unfold ddsPitch; exact Nat.mul_mod_right _ _
@@ -169,38 +221,21 @@ theorem parseDdsHeader_emit (h : DdsHeader) (hw : h.width.toNat ≥ 1)
     unfold ddsPitch; exact Nat.mul_div_right _ hbxpos
   have hof : (UInt32.ofNat (ddsPitch h)).toNat = ddsPitch h :=
     Nat.mod_eq_of_lt hp
-  have h1 : getU32LE (wordsConcat (ddsWords h)) 0 = some 0x20534444 := by
-    have hk : 0 < (ddsWords h).length := by simp [ddsWords]
-    have h := word_read (ws := ddsWords h) 0 hk 0x20534444 (by simp [ddsWords])
-    rwa [show 4 * 0 = 0 from rfl] at h
-  have h2 : getU32LE (wordsConcat (ddsWords h)) 4 = some 124 := by
-    have hk : 1 < (ddsWords h).length := by simp [ddsWords]
-    have h := word_read (ws := ddsWords h) 1 hk 124 (by simp [ddsWords])
-    rwa [show 4 * 1 = 4 from rfl] at h
-  have h3 : getU32LE (wordsConcat (ddsWords h)) 12 = some h.height := by
-    have hk : 3 < (ddsWords h).length := by simp [ddsWords]
-    have h := word_read (ws := ddsWords h) 3 hk h.height (by simp [ddsWords])
-    rwa [show 4 * 3 = 12 from rfl] at h
-  have h4 : getU32LE (wordsConcat (ddsWords h)) 16 = some h.width := by
-    have hk : 4 < (ddsWords h).length := by simp [ddsWords]
-    have h := word_read (ws := ddsWords h) 4 hk h.width (by simp [ddsWords])
-    rwa [show 4 * 4 = 16 from rfl] at h
-  have h5 : getU32LE (wordsConcat (ddsWords h)) 20
-      = some (UInt32.ofNat (ddsPitch h)) := by
-    have hk : 5 < (ddsWords h).length := by simp [ddsWords]
-    have h := word_read (ws := ddsWords h) 5 hk (UInt32.ofNat (ddsPitch h)) (by simp [ddsWords])
-    rwa [show 4 * 5 = 20 from rfl] at h
-  have h6 : getU32LE (wordsConcat (ddsWords h)) 84 = some 0x30315844 := by
-    have hk : 21 < (ddsWords h).length := by simp [ddsWords]
-    have h := word_read (ws := ddsWords h) 21 hk 0x30315844 (by simp [ddsWords])
-    rwa [show 4 * 21 = 84 from rfl] at h
-  have h7 : getU32LE (wordsConcat (ddsWords h)) 112 = some h.dxgi := by
-    have hk : 28 < (ddsWords h).length := by simp [ddsWords]
-    have h := word_read (ws := ddsWords h) 28 hk h.dxgi (by simp [ddsWords])
-    rwa [show 4 * 28 = 112 from rfl] at h
-  have hemit : emitDdsHeader h ByteArray.empty = wordsConcat (ddsWords h) := rfl
-  rw [hemit]
+  have h1 := dds_read_ext (p := p) (by rw [hsz]; omega) (dds_read_magic h)
+  have h2 := dds_read_ext (p := p) (by rw [hsz]; omega) (dds_read_dwsize h)
+  have h3 := dds_read_ext (p := p) (by rw [hsz]; omega) (dds_read_height h)
+  have h4 := dds_read_ext (p := p) (by rw [hsz]; omega) (dds_read_width h)
+  have h5 := dds_read_ext (p := p) (by rw [hsz]; omega) (dds_read_pitch h)
+  have h6 := dds_read_ext (p := p) (by rw [hsz]; omega) (dds_read_fourcc h)
+  have h7 := dds_read_ext (p := p) (by rw [hsz]; omega) (dds_read_dxgi h)
   simp [parseDdsHeader, h1, h2, h3, h4, h5, h6, h7, hof, hdiv, hmod, hw]
+
+/-- General DDS header round trip (no payload). -/
+theorem parseDdsHeader_emit (h : DdsHeader) (hw : h.width.toNat ≥ 1)
+    (hp : ddsPitch h < 2 ^ 32) :
+    parseDdsHeader (emitDdsHeader h ByteArray.empty) = some h := by
+  have := parseDdsHeader_append h ByteArray.empty hw hp
+  simpa [emitDdsHeader] using this
 
 theorem ddsFileSize_eq (h : DdsHeader) :
     ddsFileSize h = ddsHeaderSize +
@@ -265,49 +300,91 @@ theorem emitKtxHeader_size (h : KtxHeader) : (emitKtxHeader h ByteArray.empty).s
   rw [wordsConcat_size]
   simp [ktxWords]
 
-/-- General KTX header round trip: parsing the emitted header recovers
-  every field. -/
+/-- Named offsets of the KTX header words the parser reads. -/
+theorem ktx_read_magic0 (h : KtxHeader) :
+    getU32LE (wordsConcat (ktxWords h)) 0 = some 0x58544BAB := by
+  have hk : 0 < (ktxWords h).length := by simp [ktxWords]
+  have h := word_read (ws := ktxWords h) 0 hk 0x58544BAB (by simp [ktxWords])
+  rwa [show 4 * 0 = 0 from rfl] at h
+
+theorem ktx_read_magic1 (h : KtxHeader) :
+    getU32LE (wordsConcat (ktxWords h)) 4 = some 0xBB313120 := by
+  have hk : 1 < (ktxWords h).length := by simp [ktxWords]
+  have h := word_read (ws := ktxWords h) 1 hk 0xBB313120 (by simp [ktxWords])
+  rwa [show 4 * 1 = 4 from rfl] at h
+
+theorem ktx_read_magic2 (h : KtxHeader) :
+    getU32LE (wordsConcat (ktxWords h)) 8 = some 0x0A1A0A0D := by
+  have hk : 2 < (ktxWords h).length := by simp [ktxWords]
+  have h := word_read (ws := ktxWords h) 2 hk 0x0A1A0A0D (by simp [ktxWords])
+  rwa [show 4 * 2 = 8 from rfl] at h
+
+theorem ktx_read_endian (h : KtxHeader) :
+    getU32LE (wordsConcat (ktxWords h)) 12 = some ktxEndianMarker := by
+  have hk : 3 < (ktxWords h).length := by simp [ktxWords]
+  have h := word_read (ws := ktxWords h) 3 hk ktxEndianMarker (by simp [ktxWords])
+  rwa [show 4 * 3 = 12 from rfl] at h
+
+theorem ktx_read_internal (h : KtxHeader) :
+    getU32LE (wordsConcat (ktxWords h)) 28 = some h.internalFormat := by
+  have hk : 7 < (ktxWords h).length := by simp [ktxWords]
+  have h := word_read (ws := ktxWords h) 7 hk h.internalFormat (by simp [ktxWords])
+  rwa [show 4 * 7 = 28 from rfl] at h
+
+theorem ktx_read_base (h : KtxHeader) :
+    getU32LE (wordsConcat (ktxWords h)) 32 = some h.baseFormat := by
+  have hk : 8 < (ktxWords h).length := by simp [ktxWords]
+  have h := word_read (ws := ktxWords h) 8 hk h.baseFormat (by simp [ktxWords])
+  rwa [show 4 * 8 = 32 from rfl] at h
+
+theorem ktx_read_width (h : KtxHeader) :
+    getU32LE (wordsConcat (ktxWords h)) 36 = some h.width := by
+  have hk : 9 < (ktxWords h).length := by simp [ktxWords]
+  have h := word_read (ws := ktxWords h) 9 hk h.width (by simp [ktxWords])
+  rwa [show 4 * 9 = 36 from rfl] at h
+
+theorem ktx_read_height (h : KtxHeader) :
+    getU32LE (wordsConcat (ktxWords h)) 40 = some h.height := by
+  have hk : 10 < (ktxWords h).length := by simp [ktxWords]
+  have h := word_read (ws := ktxWords h) 10 hk h.height (by simp [ktxWords])
+  rwa [show 4 * 10 = 40 from rfl] at h
+
+theorem ktx_read_payload (h : KtxHeader) :
+    getU32LE (wordsConcat (ktxWords h)) 64 = some h.payloadSize := by
+  have hk : 16 < (ktxWords h).length := by simp [ktxWords]
+  have h := word_read (ws := ktxWords h) 16 hk h.payloadSize (by simp [ktxWords])
+  rwa [show 4 * 16 = 64 from rfl] at h
+
+/-- Header-only reads are unaffected by a trailing payload. -/
+theorem ktx_read_ext {h : KtxHeader} {p : Bytes} {off : Nat} {v : UInt32}
+    (hoff : off + 4 ≤ (wordsConcat (ktxWords h)).size)
+    (hv : getU32LE (wordsConcat (ktxWords h)) off = some v) :
+    getU32LE (wordsConcat (ktxWords h) ++ p) off = some v := by
+  rw [getU32LE_append_left hoff]
+  exact hv
+
+/-- Parsing an emitted KTX header recovers every field, even when the
+  image payload follows it. -/
+theorem parseKtxHeader_append (h : KtxHeader) (p : Bytes) :
+    parseKtxHeader (wordsConcat (ktxWords h) ++ p) = some h := by
+  have hsz : (wordsConcat (ktxWords h)).size = 68 := by
+    rw [wordsConcat_size]; simp [ktxWords]
+  have h0 := ktx_read_ext (p := p) (by rw [hsz]; omega) (ktx_read_magic0 h)
+  have h1 := ktx_read_ext (p := p) (by rw [hsz]; omega) (ktx_read_magic1 h)
+  have h2 := ktx_read_ext (p := p) (by rw [hsz]; omega) (ktx_read_magic2 h)
+  have h3 := ktx_read_ext (p := p) (by rw [hsz]; omega) (ktx_read_endian h)
+  have h4 := ktx_read_ext (p := p) (by rw [hsz]; omega) (ktx_read_internal h)
+  have h5 := ktx_read_ext (p := p) (by rw [hsz]; omega) (ktx_read_base h)
+  have h6 := ktx_read_ext (p := p) (by rw [hsz]; omega) (ktx_read_width h)
+  have h7 := ktx_read_ext (p := p) (by rw [hsz]; omega) (ktx_read_height h)
+  have h8 := ktx_read_ext (p := p) (by rw [hsz]; omega) (ktx_read_payload h)
+  simp [parseKtxHeader, h0, h1, h2, h3, h4, h5, h6, h7, h8, ktxEndianMarker]
+
+/-- General KTX header round trip (no payload). -/
 theorem parseKtxHeader_emit (h : KtxHeader) :
     parseKtxHeader (emitKtxHeader h ByteArray.empty) = some h := by
-  have h0 : getU32LE (wordsConcat (ktxWords h)) 0 = some 0x58544BAB := by
-    have hk : 0 < (ktxWords h).length := by simp [ktxWords]
-    have h := word_read (ws := ktxWords h) 0 hk 0x58544BAB (by simp [ktxWords])
-    rwa [show 4 * 0 = 0 from rfl] at h
-  have h1 : getU32LE (wordsConcat (ktxWords h)) 4 = some 0xBB313120 := by
-    have hk : 1 < (ktxWords h).length := by simp [ktxWords]
-    have h := word_read (ws := ktxWords h) 1 hk 0xBB313120 (by simp [ktxWords])
-    rwa [show 4 * 1 = 4 from rfl] at h
-  have h2 : getU32LE (wordsConcat (ktxWords h)) 8 = some 0x0A1A0A0D := by
-    have hk : 2 < (ktxWords h).length := by simp [ktxWords]
-    have h := word_read (ws := ktxWords h) 2 hk 0x0A1A0A0D (by simp [ktxWords])
-    rwa [show 4 * 2 = 8 from rfl] at h
-  have h3 : getU32LE (wordsConcat (ktxWords h)) 12 = some ktxEndianMarker := by
-    have hk : 3 < (ktxWords h).length := by simp [ktxWords]
-    have h := word_read (ws := ktxWords h) 3 hk ktxEndianMarker (by simp [ktxWords])
-    rwa [show 4 * 3 = 12 from rfl] at h
-  have h4 : getU32LE (wordsConcat (ktxWords h)) 28 = some h.internalFormat := by
-    have hk : 7 < (ktxWords h).length := by simp [ktxWords]
-    have h := word_read (ws := ktxWords h) 7 hk h.internalFormat (by simp [ktxWords])
-    rwa [show 4 * 7 = 28 from rfl] at h
-  have h5 : getU32LE (wordsConcat (ktxWords h)) 32 = some h.baseFormat := by
-    have hk : 8 < (ktxWords h).length := by simp [ktxWords]
-    have h := word_read (ws := ktxWords h) 8 hk h.baseFormat (by simp [ktxWords])
-    rwa [show 4 * 8 = 32 from rfl] at h
-  have h6 : getU32LE (wordsConcat (ktxWords h)) 36 = some h.width := by
-    have hk : 9 < (ktxWords h).length := by simp [ktxWords]
-    have h := word_read (ws := ktxWords h) 9 hk h.width (by simp [ktxWords])
-    rwa [show 4 * 9 = 36 from rfl] at h
-  have h7 : getU32LE (wordsConcat (ktxWords h)) 40 = some h.height := by
-    have hk : 10 < (ktxWords h).length := by simp [ktxWords]
-    have h := word_read (ws := ktxWords h) 10 hk h.height (by simp [ktxWords])
-    rwa [show 4 * 10 = 40 from rfl] at h
-  have h8 : getU32LE (wordsConcat (ktxWords h)) 64 = some h.payloadSize := by
-    have hk : 16 < (ktxWords h).length := by simp [ktxWords]
-    have h := word_read (ws := ktxWords h) 16 hk h.payloadSize (by simp [ktxWords])
-    rwa [show 4 * 16 = 64 from rfl] at h
-  have hemit : emitKtxHeader h ByteArray.empty = wordsConcat (ktxWords h) := rfl
-  rw [hemit]
-  simp [parseKtxHeader, h0, h1, h2, h3, h4, h5, h6, h7, h8, ktxEndianMarker]
+  have := parseKtxHeader_append h ByteArray.empty
+  simpa [emitKtxHeader] using this
 
 theorem ktxFileSize_eq (h : KtxHeader) :
     ktxFileSize h = ktxHeaderSize + h.payloadSize.toNat := by
@@ -354,5 +431,114 @@ theorem ddsWords_length (h : DdsHeader) : (ddsWords h).length = 37 := by
 /-- `ktxWords` has the 17 words (68 bytes) of `tc_ktx_write_compressed_memory`. -/
 theorem ktxWords_length (h : KtxHeader) : (ktxWords h).length = 17 := by
   simp [ktxWords]
+
+
+/-! ### Payload-carrying containers
+
+A DDS/KTX file is the fixed header followed by the codec's block payload.
+The models below pair the two and prove that the parse/emit round trip
+recovers the payload byte-exactly, so a container writer can be checked
+against its reader without modelling the codec itself. -/
+
+/-- Byte size of the DDS block payload implied by this header. -/
+def ddsPayloadSize (h : DdsHeader) : Nat :=
+  ((h.width.toNat + 3) / 4) * ((h.height.toNat + 3) / 4) * h.blockBytes.toNat
+
+structure DdsFile where
+  (header : DdsHeader)
+  (payload : Bytes)
+  deriving Repr
+
+/-- Emit a complete DDS file: the 148-byte header, then the block payload. -/
+def emitDdsFile (f : DdsFile) : Bytes :=
+  wordsConcat (ddsWords f.header) ++ f.payload
+
+/-- Parse a complete DDS file. The payload length is derived from the header
+  (width/height/block size), so a truncated file is rejected. -/
+def parseDdsFile (b : Bytes) : Option DdsFile := do
+  let h ← parseDdsHeader b
+  if b.size < ddsHeaderSize + ddsPayloadSize h then none else pure ()
+  pure ⟨h, b.extract ddsHeaderSize (ddsHeaderSize + ddsPayloadSize h)⟩
+
+/-- A complete DDS file is the header size plus the payload size. -/
+theorem emitDdsFile_size (f : DdsFile) :
+    (emitDdsFile f).size = ddsHeaderSize + f.payload.size := by
+  rw [emitDdsFile, ByteArray.size_append, wordsConcat_size, ddsWords_length]
+  rfl
+
+/-- Complete DDS file round trip: parsing an emitted file recovers the header
+  fields and the payload bytes exactly, provided the payload length matches
+  what the header implies. -/
+theorem parseDdsFile_emit (f : DdsFile) (hs : f.payload.size = ddsPayloadSize f.header)
+    (hw : f.header.width.toNat ≥ 1) (hp : ddsPitch f.header < 2 ^ 32) :
+    parseDdsFile (emitDdsFile f) = some f := by
+  have hHdr : parseDdsHeader (wordsConcat (ddsWords f.header) ++ f.payload) = some f.header :=
+    parseDdsHeader_append f.header f.payload hw hp
+  have hszH : (wordsConcat (ddsWords f.header)).size = ddsHeaderSize := by
+    rw [wordsConcat_size, ddsWords_length]; rfl
+  have hlen : ByteArray.size (wordsConcat (ddsWords f.header) ++ f.payload)
+      = ddsHeaderSize + ddsPayloadSize f.header := by
+    rw [ByteArray.size_append, hszH, hs]
+  have hnot : ¬ ByteArray.size (wordsConcat (ddsWords f.header) ++ f.payload)
+      < ddsHeaderSize + ddsPayloadSize f.header := by omega
+  show parseDdsFile (wordsConcat (ddsWords f.header) ++ f.payload) = some f
+  have hempty : (wordsConcat (ddsWords f.header)).extract ddsHeaderSize
+      (ddsHeaderSize + ddsPayloadSize f.header) = ByteArray.empty := by
+    rw [ByteArray.extract_eq_empty_iff, hszH]
+    omega
+  have hext : (wordsConcat (ddsWords f.header) ++ f.payload).extract ddsHeaderSize
+      (ddsHeaderSize + ddsPayloadSize f.header) = f.payload := by
+    rw [ByteArray.extract_append, hszH, hempty, ByteArray.empty_append]
+    rw [show ddsHeaderSize - ddsHeaderSize = 0 from by simp [ddsHeaderSize]]
+    rw [show ddsHeaderSize + ddsPayloadSize f.header - ddsHeaderSize
+        = ddsPayloadSize f.header from by simp only [ddsHeaderSize]; omega]
+    rw [← hs, ByteArray.extract_zero_size]
+  simp [parseDdsFile, hHdr, hext, hlen]
+
+/-- A complete KTX file is the 68-byte header plus the image payload. -/
+structure KtxFile where
+  (header : KtxHeader)
+  (payload : Bytes)
+  deriving Repr
+
+def emitKtxFile (f : KtxFile) : Bytes :=
+  wordsConcat (ktxWords f.header) ++ f.payload
+
+def parseKtxFile (b : Bytes) : Option KtxFile := do
+  let h ← parseKtxHeader b
+  if b.size < ktxHeaderSize + h.payloadSize.toNat then none else pure ()
+  pure ⟨h, b.extract ktxHeaderSize (ktxHeaderSize + h.payloadSize.toNat)⟩
+
+theorem emitKtxFile_size (f : KtxFile) :
+    (emitKtxFile f).size = ktxHeaderSize + f.payload.size := by
+  rw [emitKtxFile, ByteArray.size_append, wordsConcat_size, ktxWords_length]
+  rfl
+
+/-- Complete KTX file round trip. -/
+theorem parseKtxFile_emit (f : KtxFile)
+    (hs : f.payload.size = f.header.payloadSize.toNat) :
+    parseKtxFile (emitKtxFile f) = some f := by
+  have hHdr : parseKtxHeader (wordsConcat (ktxWords f.header) ++ f.payload) = some f.header :=
+    parseKtxHeader_append f.header f.payload
+  have hszH : (wordsConcat (ktxWords f.header)).size = ktxHeaderSize := by
+    rw [wordsConcat_size, ktxWords_length]; rfl
+  have hlen : ByteArray.size (wordsConcat (ktxWords f.header) ++ f.payload)
+      = ktxHeaderSize + f.header.payloadSize.toNat := by
+    rw [ByteArray.size_append, hszH, hs]
+  have hnot : ¬ ByteArray.size (wordsConcat (ktxWords f.header) ++ f.payload)
+      < ktxHeaderSize + f.header.payloadSize.toNat := by omega
+  show parseKtxFile (wordsConcat (ktxWords f.header) ++ f.payload) = some f
+  have hempty : (wordsConcat (ktxWords f.header)).extract ktxHeaderSize
+      (ktxHeaderSize + f.header.payloadSize.toNat) = ByteArray.empty := by
+    rw [ByteArray.extract_eq_empty_iff, hszH]
+    omega
+  have hext : (wordsConcat (ktxWords f.header) ++ f.payload).extract ktxHeaderSize
+      (ktxHeaderSize + f.header.payloadSize.toNat) = f.payload := by
+    rw [ByteArray.extract_append, hszH, hempty, ByteArray.empty_append]
+    rw [show ktxHeaderSize - ktxHeaderSize = 0 from by simp [ktxHeaderSize]]
+    rw [show ktxHeaderSize + f.header.payloadSize.toNat - ktxHeaderSize
+        = f.header.payloadSize.toNat from by simp only [ktxHeaderSize]; omega]
+    rw [← hs, ByteArray.extract_zero_size]
+  simp [parseKtxFile, hHdr, hext, hlen]
 
 end Texcomp

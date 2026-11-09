@@ -126,8 +126,10 @@ validation checks, not library proofs.
   `cem7Pack`, `hdrAlphaPack` — encoder side) are also byte-exact against the
   C packers at the block encoders' colour-quant level (1800 vectors).
   DDS/KTX header models now have general `parse (emit h) = h` round trips
-  (no example-only checks) and a byte-layout gate against the C writers
-  (`make texcomp-container-diff`, 14 headers). Encoder models: the BC1
+  (no example-only checks), payload-carrying `DdsFile`/`KtxFile`
+  round trips (`parse (emit (h, payload)) = (h, payload)`), and a
+  byte-layout gate against the C writers (`make texcomp-container-diff`,
+  14 headers). Encoder models: the BC1
   colour-block encoder (`tc_encode_bc1_color_block`, 1200 blocks) and the
   BC4/BC5 alpha-block encoders UNORM+SNORM (`tc_encode_bc4_block*`,
   800 blocks) are byte-exact with the C encoders. Remaining Texcomp work:
@@ -146,7 +148,10 @@ validation checks, not library proofs.
   The CLF loader (Matrix, Range, Exponent, Log, ASC_CDL, LUT1D, LUT3D,
   bit-depth normalization, UNSUPPORTED-not-skip discipline) is total
   with a C differential gate (396 seeded vectors bit-exact including
-  error-kind parity and applied pixels). The CSP loader (line reader,
+  error-kind parity and applied pixels). Loader safety invariants are
+  proved for the SPI path (`spi1dVals` collects exactly `want` samples;
+  `spiValuesFit` is sound), which is what stops a short sample buffer from
+  reaching the stride-3 kernels. The CSP loader (line reader,
   case-insensitive prefixes, Rising-Sun spline preluts, 1D/3D LUTs) is
   total with a C differential gate (74 seeded vectors bit-exact).
 - OpenEXR-compatible parser leniencies and C defects exposed by validation are
