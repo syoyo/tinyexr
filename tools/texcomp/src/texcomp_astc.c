@@ -4918,6 +4918,10 @@ int tc_astc_hdr_color_roundtrip(uint32_t level, int value) {
     if (value < 0) value = 0;
     if (value > 255) value = 255;
     if (level >= 20u) return value; /* 256 levels == identity */
+    /* Levels 0..3 have no colour table (`tc_astc_color_pquant_to_uquant` starts
+     * at level 4), so treat them as unquantised instead of indexing below the
+     * table base (an out-of-bounds read found while validating the Lean model). */
+    if (level < 4u) return value;
     tc_hdr_ctx_ensure();
     return (int)tc_astc_color_roundtrip(&tc_hdr_ctx, level, (uint32_t)value);
 }

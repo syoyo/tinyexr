@@ -496,3 +496,17 @@ B44 reconstruction now composes fully for both forms:
 actual emitted bytes decode to the quantized reference; `quantized_error` gives
 the selected t-code bound. The byte-field proof is separate from the bounded
 shift-search facts, keeping the proof fast enough for the normal Lake build.
+
+### Texcomp: C defect found by the colour-quantizer gate
+
+`tc_astc_hdr_color_roundtrip` (exposed in `texcomp_internal.h` for the ASTC HDR
+endpoint packers) dispatched any `level < 20` to
+`tc_astc_color_roundtrip`, which indexes `tc_astc_color_pquant_to_uquant[level - 4]`.
+Levels 0..3 therefore read below the table base — an out-of-bounds read
+(a segfault under the differential harness). The block encoders never request
+those levels (the budget search yields 4..20 or 0xFF, and 0xFF takes the
+identity path), but the helper itself was not defensive. It now returns the
+unquantized value for `level < 4`, matching the "no table means no
+quantization" reading used by the Lean model
+(`Texcomp.hdrColorRoundtrip`). The gate `make texcomp-astc-quant-diff`
+checks all 21 levels x 256 values plus the clamp edges (5394 values).

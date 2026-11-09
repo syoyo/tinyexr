@@ -87,6 +87,11 @@ lean_exe bc1enccheck where
 lean_exe bc4enccheck where
   root := `Bc4EncCheck
 
+/-- ASTC colour-quantizer differential checker (C vectors vs Lean model). -/
+@[default_target]
+lean_exe astcquantcheck where
+  root := `AstcQuantCheck
+
 /-- Tocio op differential checker (C vectors vs Lean kernels). -/
 @[default_target]
 lean_exe tociocheck where

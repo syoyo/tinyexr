@@ -385,6 +385,16 @@ texcomp-bc4-enc-diff: texcomp lean-tools
 	cd lean && $(LAKE) build ExrSpec bc4enccheck
 	./lean/.lake/build/bin/bc4enccheck build/lean-gen/bc4_enc_vectors.txt
 
+.PHONY: texcomp-astc-quant-diff
+texcomp-astc-quant-diff: texcomp lean-tools
+	mkdir -p build/lean-gen
+	$(CC) -std=c11 -Wall -Wextra -Itools/texcomp/include -Iinclude -Isrc -Iexamples/common \
+	  test/v3/astc_quant_vectors.c build/libtexcomp.a build/libtinyexr3.a -lm -pthread \
+	  -o build/astc_quant_gen
+	./build/astc_quant_gen build/lean-gen/astc_quant_vectors.txt
+	cd lean && $(LAKE) build ExrSpec astcquantcheck
+	./lean/.lake/build/bin/astcquantcheck build/lean-gen/astc_quant_vectors.txt
+
 .PHONY: tocio-lean-check
 tocio-lean-check:
 	cd lean && $(LAKE) build Tocio.Op Tocio.Config Tocio.Transform Tocio.Lower Tocio.YamlTotal Tocio.Math Tocio.Ops Tocio.FixedFunc
