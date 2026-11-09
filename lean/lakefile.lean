@@ -157,6 +157,11 @@ lean_exe bc6hsf16check where
 lean_exe bc6hblockcheck where
   root := `Bc6hBlockCheck
 
+/-- BC7 RDO pass differential checker (C vectors vs Lean). -/
+@[default_target]
+lean_exe bc7rdocheck where
+  root := `Bc7RdoCheck
+
 /-- Tocio op differential checker (C vectors vs Lean kernels). -/
 @[default_target]
 lean_exe tociocheck where

@@ -73,6 +73,7 @@ The final implementation validation on 2026-11-09 produced:
 | `make texcomp-lean-check tocio-lean-check` | New-module builds passed. |
 | `make texcomp-bc6h-diff` | 1028 BC6H blocks (all 14 modes, signed + unsigned), C vs Lean byte-exact. |
 | `make texcomp-bc6h-*-diff` | BC6H encoder models byte-exact against C: shared kernels (4215 values), unsigned modes 0/1/2/3/4/5/6/7/8/9/10/12/13 (400 + 520 + 1040 + 780 + 900 blocks), signed modes 0–8/12/13 (1800 blocks), and the per-block mode-selection drivers `tc_encode_bc6h_block_uf16`/`_sf16` (480 blocks, both variants). |
+| `make texcomp-bc7-rdo-diff` | 768 blocks through the decoder-driven RDO pass (`tc_bc7_rdo_pass`, two rate-distortion budgets over a 384-block synthetic image), C vs Lean byte-exact incl. the 64-block decode ring. |
 | `make texcomp-bc7-diff` | 530 BC7 blocks (all 8 modes), C vs Lean byte-exact. |
 | `make texcomp-bc135-diff` | 1536 BC1/BC3/BC5 blocks, C vs Lean byte-exact (BC5 snorm float step excluded, see Boundaries). |
 | `make texcomp-etc2-diff` | 1024 ETC2/EAC blocks (all 5 RGB modes + EAC alpha), C vs Lean byte-exact. |
@@ -156,9 +157,14 @@ validation checks, not library proofs.
   blocks covering both variants), including the `48 * 256 * 256`
   early-stop threshold, the fixed candidate order, and the fact that the
   signed driver's seed compares the luma key *signed* while modes 12/13
-  compare it as `uint32_t`. Remaining Texcomp work: BC7 encoders beyond
-  the pack/seed/mode-6 slices, DDS/KTX pixel payloads, and the sub-256
-  colour-roundtrip LUT used by ASTC HDR 2-subset encoding.
+  compare it as `uint32_t`. The BC7 decoder-driven RDO pass
+  (`tc_bc7_rdo_pass`) is modelled on top of `bc7DecodeBlock`
+  (`Texcomp/Bc7Rdo.lean`, `make texcomp-bc7-rdo-diff`, 768 blocks with
+  72 reuses), covering the 64-block decoded-pixel ring, the
+  first-best-wins slot scan and the `rdo^2 * 16 * 4` distortion budget.
+  Remaining Texcomp work: DDS/KTX pixel-payload parity beyond the
+  14-file container gate and the sub-256 colour-roundtrip LUT used by
+  ASTC HDR 2-subset encoding.
 - Tocio: Float64-vs-f32 note aside, the seven op kernels (matrix, range,
   exponent, exp-linear, log, log-camera, CDL) are bit-exact `Float32` ports
   with a C differential gate (3072 seeded groups). FixedFunction helpers

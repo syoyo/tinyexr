@@ -27,6 +27,7 @@ import Texcomp.Bc6hEncMode1
 import Texcomp.Bc6hEncMode9
 import Texcomp.Bc6hEncSf16
 import Texcomp.Bc6hEncodeBlock
+import Texcomp.Bc7Rdo
 import Tocio.Op
 import Tocio.Config
 import Texcomp.Bc1
