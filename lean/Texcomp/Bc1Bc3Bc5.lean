@@ -38,7 +38,7 @@ def snormByte (b : UInt8) : Int :=
   if v >= 128 then (Int.ofNat v) - 256 else Int.ofNat v
 
 /-- BC1 colour palette: 4 entries of RGBA8. -/
-def bc1Palette (c0 c1 : UInt16) (dxt1 : Bool) : List (Nat × Nat × Nat × Nat) :=
+def bc1PaletteF (c0 c1 : UInt16) (dxt1 : Bool) : List (Nat × Nat × Nat × Nat) :=
   let (p0r, p0g, p0b) := rgb565Unpack c0
   let (p1r, p1g, p1b) := rgb565Unpack c1
   let three := dxt1 && c0 <= c1
@@ -60,11 +60,11 @@ def bc1ColorDecode (bytes : Fin 8 → UInt8) (dxt1 : Bool) :
       ||| ((bytes 6).toUInt32 <<< 16)
       ||| ((bytes 7).toUInt32 <<< 24)
     let idx := ((bits >>> (UInt32.ofNat (2 * texel.val))) &&& 3).toNat
-    let (r, g, b, a) := (bc1Palette c0 c1 dxt1).getD idx (0, 0, 0, 255)
+    let (r, g, b, a) := (bc1PaletteF c0 c1 dxt1).getD idx (0, 0, 0, 255)
     (UInt8.ofNat r, UInt8.ofNat g, UInt8.ofNat b, UInt8.ofNat a)
 
 /-- BC4 palette (unsigned): 8 values. -/
-def bc4Palette (r0 r1 : Nat) : List Nat :=
+def bc4PaletteU (r0 r1 : Nat) : List Nat :=
   if r0 > r1 then
     [r0, r1,
      (6 * r0 + 1 * r1 + 3) / 7, (5 * r0 + 2 * r1 + 3) / 7,
@@ -88,7 +88,7 @@ def bc4Decode (bytes : Fin 8 → UInt8) : Fin 16 → UInt8 :=
       ||| ((bytes 6).toUInt64 <<< 32)
       ||| ((bytes 7).toUInt64 <<< 40)
     let idx := ((bits >>> (UInt64.ofNat (3 * texel.val))) &&& 7).toNat
-    UInt8.ofNat ((bc4Palette r0 r1).getD idx 0)
+    UInt8.ofNat ((bc4PaletteU r0 r1).getD idx 0)
 
 /-- C-style truncating division (toward zero), for signed palettes. -/
 def truncDiv (a b : Int) : Int :=
@@ -154,8 +154,8 @@ theorem bc1ColorDecode_total (_bytes : Fin 8 → UInt8) (_dxt1 : Bool)
   trivial
 
 /-- BC4 palette has 8 entries. -/
-theorem bc4Palette_length (r0 r1 : Nat) : (bc4Palette r0 r1).length = 8 := by
-  unfold bc4Palette
+theorem bc4PaletteU_length (r0 r1 : Nat) : (bc4PaletteU r0 r1).length = 8 := by
+  unfold bc4PaletteU
   split <;> rfl
 
 
