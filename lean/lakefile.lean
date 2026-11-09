@@ -62,6 +62,11 @@ lean_exe etc2check where
 lean_exe astccheck where
   root := `AstcCheck
 
+/-- ASTC HDR differential checker (C vectors vs Lean decoder). -/
+@[default_target]
+lean_exe astchdrcheck where
+  root := `AstcHdrCheck
+
 /-- Tocio op differential checker (C vectors vs Lean kernels). -/
 @[default_target]
 lean_exe tociocheck where
