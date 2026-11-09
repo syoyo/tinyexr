@@ -2,8 +2,9 @@
   TinyEXR - BC6H mode-12/13 encoder differential checker (C vs Lean).
 
   Reads vectors emitted by `test/v3/bc6h_mode1213_vectors.c`
-  (`m12|m13 <16x3 float bits> | ok <16 bytes> <sse>` / `... | fail`) and
-  compares `Texcomp.bc6hEncMode12Uf16` / `bc6hEncMode13Uf16` with the C
+  (`m10|m12|m13 <16x3 float bits> | ok <16 bytes> <sse>` / `... | fail`) and
+  compares `Texcomp.bc6hEncMode10Uf16` / `bc6hEncMode12Uf16` /
+  `bc6hEncMode13Uf16` with the C `tc_bc6h_mode10_uf16` /
   `tc_bc6h_mode12_uf16` / `tc_bc6h_mode13_uf16`.
 
   Copyright (c) 2026 Syoyo Fujita and TinyEXR authors
@@ -44,7 +45,8 @@ def main (args : List String) : IO Unit := do
       (List.range 3).map (fun c =>
         UInt32.ofNat (hexNat (toks.getD (1 + i * 3 + c) ""))))
     let res := if kind == "m13" then bc6hEncMode13Uf16 px
-               else bc6hEncMode12Uf16 px
+               else if kind == "m12" then bc6hEncMode12Uf16 px
+               else bc6hEncMode10Uf16 px
     let status := outp.getD 0 ""
     match res with
     | none =>
@@ -66,4 +68,4 @@ def main (args : List String) : IO Unit := do
             IO.eprintln s!"line {idx + 1} {kind}: got {bytes} err {err}\n  want {want} err {wantErr}"
   IO.println s!"{lines.length} blocks checked ({okC} encoded, {failC} no-fit), {bad} mismatches"
   if bad != 0 then
-    throw (IO.userError "bc6h mode 12/13 mismatch")
+    throw (IO.userError "bc6h mode 10/12/13 mismatch")

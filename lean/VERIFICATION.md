@@ -133,9 +133,19 @@ validation checks, not library proofs.
   recomputed independently on both sides). Encoder models: the BC1
   colour-block encoder (`tc_encode_bc1_color_block`, 1200 blocks) and the
   BC4/BC5 alpha-block encoders UNORM+SNORM (`tc_encode_bc4_block*`,
-  800 blocks) are byte-exact with the C encoders. Remaining Texcomp work:
-  BC6H/BC7 encoders, DDS/KTX pixel payloads, and the sub-256
-  colour-roundtrip LUT used by ASTC HDR 2-subset encoding.
+  800 blocks) are byte-exact with the C encoders.
+- BC6H unsigned encoders: modes 0, 2, 3, 4, 5, 6, 7, 8, 10, 12, 13 are
+  byte-exact against the C block encoders, each with its own C-vs-Lean
+  differential gate over seeded random blocks (mode 0: 400 blocks;
+  modes 2/3/4 plus mode 5: 1040; modes 6/7/8: 780; modes 10/12/13: 900),
+  including the no-fit (`UINT64_MAX`) path and the exact SSE return.
+  The shared kernels (10/N-bit quant + unquant, TOPK partition prefilter,
+  least-squares refinement, anchor fix-up, `pack_delta5` clamping) are
+  modelled once and reused. Remaining Texcomp work: BC6H modes 1/9/11,
+  the signed (`sf16`) variants, BC6H/BC7 multi-mode winner selection,
+  BC7 encoders beyond the pack/seed/mode-6 slices, DDS/KTX pixel
+  payloads, and the sub-256 colour-roundtrip LUT used by ASTC HDR
+  2-subset encoding.
 - Tocio: Float64-vs-f32 note aside, the seven op kernels (matrix, range,
   exponent, exp-linear, log, log-camera, CDL) are bit-exact `Float32` ports
   with a C differential gate (3072 seeded groups). FixedFunction helpers

@@ -485,6 +485,16 @@ texcomp-bc6h-m234-diff: texcomp lean-tools
 	cd lean && $(LAKE) build ExrSpec bc6hm234check
 	./lean/.lake/build/bin/bc6hm234check build/lean-gen/bc6h_mode234_vectors.txt
 
+.PHONY: texcomp-bc6h-m678-diff
+texcomp-bc6h-m678-diff: texcomp lean-tools
+	mkdir -p build/lean-gen
+	$(CC) -std=c11 -Wall -Wextra -Itools/texcomp/include -Iinclude -Isrc -Iexamples/common \
+	  test/v3/bc6h_mode678_vectors.c build/libtexcomp.a build/libtinyexr3.a -lm -pthread \
+	  -o build/bc6h_m678_gen
+	./build/bc6h_m678_gen build/lean-gen/bc6h_mode678_vectors.txt
+	cd lean && $(LAKE) build ExrSpec bc6hm678check
+	./lean/.lake/build/bin/bc6hm678check build/lean-gen/bc6h_mode678_vectors.txt
+
 .PHONY: tocio-lean-check
 tocio-lean-check:
 	cd lean && $(LAKE) build Tocio.Op Tocio.Config Tocio.Transform Tocio.Lower Tocio.YamlTotal Tocio.Math Tocio.Ops Tocio.FixedFunc

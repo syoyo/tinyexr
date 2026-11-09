@@ -95,6 +95,27 @@ def bc6hEncOneRegion (qbits maxv : Nat) (pix : List (List UInt32)) :
     |> fun (a, b, c) => (q, target, a, b, c)
   else (q, target, rlo, rhi, rsel)
 
+/-- `tc_bc6h_mode10_uf16`: 10.10.10 direct endpoints, one region. Same
+  refinement as mode 12 at 10 bits, but all six endpoint values are stored
+  explicitly (10 bits each) instead of using deltas. -/
+def bc6hEncMode10Uf16 (pix : List (List UInt32)) :
+    Option (List Nat × Nat) :=
+  let (q, target, lo, hi, sel) := bc6hEncOneRegion 10 1023 pix
+  let step := fun (acc : Nat × Nat) (v n : Nat) =>
+    (acc.1 ||| ((v &&& ((1 <<< n) - 1)) <<< acc.2), acc.2 + n)
+  let (a1, p1) := step (0, 0) 0x03 5
+  let (a2, p2) := step (a1, p1) (lo.getD 0 0) 10
+  let (a3, p3) := step (a2, p2) (lo.getD 1 0) 10
+  let (a4, p4) := step (a3, p3) (lo.getD 2 0) 10
+  let (a5, p5) := step (a4, p4) (hi.getD 0 0) 10
+  let (a6, p6) := step (a5, p5) (hi.getD 1 0) 10
+  let (a7, p7) := step (a6, p6) (hi.getD 2 0) 10
+  let (a8, p8) := step (a7, p7) (sel.getD 0 0) 3
+  let (aF, _) := (List.range 15).foldl (fun (st : Nat × Nat) k =>
+    step st (sel.getD (k + 1) 0) 4) (a8, p8)
+  let err := (bc6hChooseSelectorsUf16 target lo hi).2
+  some ((List.range 16).map (fun i => (aF >>> (8 * i)) &&& 0xFF), err)
+
 /-- `tc_bc6h_mode12_uf16`: 12-bit primary + 8-bit signed delta, one region. -/
 def bc6hEncMode12Uf16 (pix : List (List UInt32)) :
     Option (List Nat × Nat) :=

@@ -22,6 +22,7 @@ import Texcomp.Bc6hKernels
 import Texcomp.Bc6hEncMode0
 import Texcomp.Bc6hEncMode1213
 import Texcomp.Bc6hEncMode234
+import Texcomp.Bc6hEncMode678
 import Tocio.Op
 import Tocio.Config
 import Texcomp.Bc1

@@ -1,7 +1,7 @@
-/* BC6H mode-12/13 block encoder vectors: C vs Lean.
+/* BC6H mode-10/12/13 block encoder vectors: C vs Lean.
  *
  * Both encoders are static, so this translation unit includes them.
- * Per line: `m<mode> <16 x 3 float bits> | ok <16 bytes> <sse>` or `... | fail`
+ * Per line: `m<10|12|13> <16 x 3 float bits> | ok <16 bytes> <sse>` or `... | fail`
  */
 #include <stdint.h>
 #include <stdio.h>
@@ -58,6 +58,40 @@ int main(int argc, char **argv) {
                 for (int i = 0; i < 16; i++) fprintf(out, " %02x", blk[i]);
                 fprintf(out, " %llu\n", (unsigned long long)err);
             }
+        }
+    }
+    /* Mode 10: one region, six explicit 10-bit endpoints (no delta limit, so
+     * it never fails). */
+    for (int s = 0; s < 300; s++) {
+        uint32_t px[16][3];
+        float fp[16][3];
+        uint8_t blk[16];
+        uint64_t err;
+        uint32_t e = 118u + (uint32_t)(rnd() % 20u);
+        uint32_t mbase = (uint32_t)(rnd() % 400u) * 0x2000u;
+        int spread = (s % 3 == 2) ? 200 + (int)(rnd() % 400u)
+                                  : (int)(rnd() % 40u);
+        for (int i = 0; i < 16; i++) {
+            for (int c = 0; c < 3; c++) {
+                int32_t d = (spread == 0) ? 0
+                    : (int32_t)(rnd() % (uint32_t)(2 * spread + 1)) - spread;
+                int64_t m = (int64_t)mbase + (int64_t)d * 0x2000;
+                if (m < 0) m = 0;
+                if (m > 0x7fffff) m = 0x7fffff;
+                px[i][c] = (e << 23) | (uint32_t)m;
+                fp[i][c] = F(px[i][c]);
+            }
+        }
+        err = tc_bc6h_mode10_uf16(fp, blk);
+        fprintf(out, "m10");
+        for (int i = 0; i < 16; i++)
+            for (int c = 0; c < 3; c++) fprintf(out, " %08x", px[i][c]);
+        if (err == (uint64_t)-1) {
+            fprintf(out, " | fail\n");
+        } else {
+            fprintf(out, " | ok");
+            for (int i = 0; i < 16; i++) fprintf(out, " %02x", blk[i]);
+            fprintf(out, " %llu\n", (unsigned long long)err);
         }
     }
     fclose(out);
