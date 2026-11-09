@@ -46,7 +46,7 @@ run_cmd do
         -- by the theorem itself. These are regression checks, not library proofs.
         let fixture := (approvedFixtures.contains name.toString &&
           s.startsWith (name.toString ++ "._native.native_decide.ax_")) ||
-          (name.toString.startsWith "Tocio." &&
+          ((name.toString.startsWith "Tocio." || name.toString.startsWith "Texcomp.") &&
             s.startsWith (name.toString ++ "._native.native_decide.ax_"))
         unless standard || certificate || fixture do
           throwError "unexpected axiom {ax} in {name}"

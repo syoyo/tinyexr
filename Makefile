@@ -23,7 +23,7 @@ MINIZ_SRC = ./deps/miniz/miniz.c
 # ---- legacy v1 single-header test (unchanged) -----------------------------
 TARGET = test_tinyexr
 
-.PHONY: all test clean help lib test-c test-c-threads test-c-tsan c11-gate lean-check lean-diff lean-gen lean-gen-update lean-gen-check codec-diff texcomp-web fuzz fuzz-threads tocio-fuzz fuzz-jph fuzz-libdeflate fuzz-corpus fuzz-corpus-asan parse-test wasm freestanding-gate freestanding-zstd-gate examples-c bench bench-compare bench-htj2k arm-smoke host-smoke gpu-test vk-test jph-gpu-test bench-gpu-jph texcomp texcomp-arm texcomp-c11-gate texcomp-test texcomp-bench texcomp-astc-psnr texcomp-astc-arm-smoke texcomp-astc-arm-gate texcomp-astc-hdr-gate texcomp-uni-gate texcomp-bc6h-gate texcomp-wasm texcomp-wasm-simd wasm-texcomp wasm-texcomp-simd ptexatlas-c11-gate
+.PHONY: all test clean help lib test-c test-c-threads test-c-tsan c11-gate lean-check lean-diff lean-gen lean-gen-update lean-gen-check codec-diff texcomp-web texcomp-bc6h-diff fuzz fuzz-threads tocio-fuzz fuzz-jph fuzz-libdeflate fuzz-corpus fuzz-corpus-asan parse-test wasm freestanding-gate freestanding-zstd-gate examples-c bench bench-compare bench-htj2k arm-smoke host-smoke gpu-test vk-test jph-gpu-test bench-gpu-jph texcomp texcomp-arm texcomp-c11-gate texcomp-test texcomp-bench texcomp-astc-psnr texcomp-astc-arm-smoke texcomp-astc-arm-gate texcomp-astc-hdr-gate texcomp-uni-gate texcomp-bc6h-gate texcomp-wasm texcomp-wasm-simd wasm-texcomp wasm-texcomp-simd ptexatlas-c11-gate
 
 all: $(TARGET)
 
@@ -282,8 +282,18 @@ lean-check:
 
 .PHONY: texcomp-lean-check
 texcomp-lean-check:
-	cd lean && $(LAKE) build Texcomp.Bc5Decode Texcomp.Bc3Decode Texcomp.Bc1Decode Texcomp.Bc4Decode
+	cd lean && $(LAKE) build Texcomp.Bc5Decode Texcomp.Bc3Decode Texcomp.Bc1Decode Texcomp.Bc4Decode Texcomp.Bc6hFull
 	@echo "texcomp-lean-check: OK"
+
+.PHONY: texcomp-bc6h-diff
+texcomp-bc6h-diff: texcomp lean-tools
+	mkdir -p build/lean-gen
+	$(CC) -std=c11 -Wall -Wextra -Itools/texcomp/include -Iinclude -Isrc -Iexamples/common \
+	  test/v3/bc6h_vectors.c build/libtexcomp.a build/libtinyexr3.a -lm -pthread \
+	  -o build/bc6h_gen
+	./build/bc6h_gen build/lean-gen/bc6h_vectors.txt
+	cd lean && $(LAKE) build ExrSpec bc6hcheck
+	./lean/.lake/build/bin/bc6hcheck build/lean-gen/bc6h_vectors.txt
 
 .PHONY: tocio-lean-check
 tocio-lean-check:
