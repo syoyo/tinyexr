@@ -364,8 +364,18 @@ tocio-lut-diff: tocio-lib lean-tools
 	cd lean && $(LAKE) build ExrSpec lutcheck
 	./lean/.lake/build/bin/lutcheck build/lean-gen/lutfile_vectors.txt
 
+.PHONY: tocio-spi-diff
+tocio-spi-diff: tocio-lib lean-tools
+	mkdir -p build/lean-gen
+	$(CC) -std=c11 -Wall -Wextra -Isandbox/tocio/include -Isandbox/tocio/src -O1 -ffp-contract=off \
+	  test/v3/spi_vectors.c sandbox/tocio/src/*.c -lm -ldl \
+	  -o build/spi_gen
+	./build/spi_gen build/lean-gen/spi_vectors.txt
+	cd lean && $(LAKE) build ExrSpec spicheck
+	./lean/.lake/build/bin/spicheck build/lean-gen/spi_vectors.txt
+
 .PHONY: tocio-lean-diff
-tocio-lean-diff: tocio-test tocio-diff tocio-lut-diff
+tocio-lean-diff: tocio-test tocio-diff tocio-lut-diff tocio-spi-diff
 	@echo "tocio-lean-diff: C tests + Lean differential passed"
 
 PARSE_HARNESS = test/v3/parse_harness

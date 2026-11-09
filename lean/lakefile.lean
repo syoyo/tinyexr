@@ -72,6 +72,11 @@ lean_exe tociocheck where
 lean_exe lutcheck where
   root := `LutCheck
 
+/-- SPI file differential checker (C vectors vs Lean parsers). -/
+@[default_target]
+lean_exe spicheck where
+  root := `SpiCheck
+
 /-- ASTC debug dump (Lean side). -/
 @[default_target]
 lean_exe astcdebug where
