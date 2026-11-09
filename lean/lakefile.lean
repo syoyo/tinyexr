@@ -82,6 +82,11 @@ lean_exe ddsktxcheck where
 lean_exe bc1enccheck where
   root := `Bc1EncCheck
 
+/-- BC4/BC5 encoder differential checker (C vectors vs Lean encoder). -/
+@[default_target]
+lean_exe bc4enccheck where
+  root := `Bc4EncCheck
+
 /-- Tocio op differential checker (C vectors vs Lean kernels). -/
 @[default_target]
 lean_exe tociocheck where

@@ -127,9 +127,12 @@ validation checks, not library proofs.
   C packers at the block encoders' colour-quant level (1800 vectors).
   DDS/KTX header models now have general `parse (emit h) = h` round trips
   (no example-only checks) and a byte-layout gate against the C writers
-  (`make texcomp-container-diff`, 14 headers). Remaining Texcomp work:
-  DDS/KTX pixel payloads, BC6H/BC7 encoder models (only decode is proved),
-  and the sub-256 colour-roundtrip LUT used by ASTC HDR 2-subset encoding.
+  (`make texcomp-container-diff`, 14 headers). Encoder models: the BC1
+  colour-block encoder (`tc_encode_bc1_color_block`, 1200 blocks) and the
+  BC4/BC5 alpha-block encoders UNORM+SNORM (`tc_encode_bc4_block*`,
+  800 blocks) are byte-exact with the C encoders. Remaining Texcomp work:
+  BC6H/BC7 encoders, DDS/KTX pixel payloads, and the sub-256
+  colour-roundtrip LUT used by ASTC HDR 2-subset encoding.
 - Tocio: Float64-vs-f32 note aside, the seven op kernels (matrix, range,
   exponent, exp-linear, log, log-camera, CDL) are bit-exact `Float32` ports
   with a C differential gate (3072 seeded groups). FixedFunction helpers

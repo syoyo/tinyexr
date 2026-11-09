@@ -375,6 +375,16 @@ texcomp-bc1-enc-diff: texcomp lean-tools
 	cd lean && $(LAKE) build ExrSpec bc1enccheck
 	./lean/.lake/build/bin/bc1enccheck build/lean-gen/bc1_enc_vectors.txt
 
+.PHONY: texcomp-bc4-enc-diff
+texcomp-bc4-enc-diff: texcomp lean-tools
+	mkdir -p build/lean-gen
+	$(CC) -std=c11 -Wall -Wextra -Itools/texcomp/include -Iinclude -Isrc -Iexamples/common \
+	  test/v3/bc4_enc_vectors.c build/libtexcomp.a build/libtinyexr3.a -lm -pthread \
+	  -o build/bc4_enc_gen
+	./build/bc4_enc_gen build/lean-gen/bc4_enc_vectors.txt
+	cd lean && $(LAKE) build ExrSpec bc4enccheck
+	./lean/.lake/build/bin/bc4enccheck build/lean-gen/bc4_enc_vectors.txt
+
 .PHONY: tocio-lean-check
 tocio-lean-check:
 	cd lean && $(LAKE) build Tocio.Op Tocio.Config Tocio.Transform Tocio.Lower Tocio.YamlTotal Tocio.Math Tocio.Ops Tocio.FixedFunc
