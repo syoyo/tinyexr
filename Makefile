@@ -365,6 +365,16 @@ texcomp-container-diff: texcomp lean-tools
 	cd lean && $(LAKE) build ExrSpec ddsktxcheck
 	./lean/.lake/build/bin/ddsktxcheck build/lean-gen/dds_ktx_vectors.txt
 
+.PHONY: texcomp-bc1-enc-diff
+texcomp-bc1-enc-diff: texcomp lean-tools
+	mkdir -p build/lean-gen
+	$(CC) -std=c11 -Wall -Wextra -Itools/texcomp/include -Iinclude -Isrc -Iexamples/common \
+	  test/v3/bc1_enc_vectors.c build/libtexcomp.a build/libtinyexr3.a -lm -pthread \
+	  -o build/bc1_enc_gen
+	./build/bc1_enc_gen build/lean-gen/bc1_enc_vectors.txt
+	cd lean && $(LAKE) build ExrSpec bc1enccheck
+	./lean/.lake/build/bin/bc1enccheck build/lean-gen/bc1_enc_vectors.txt
+
 .PHONY: tocio-lean-check
 tocio-lean-check:
 	cd lean && $(LAKE) build Tocio.Op Tocio.Config Tocio.Transform Tocio.Lower Tocio.YamlTotal Tocio.Math Tocio.Ops Tocio.FixedFunc
