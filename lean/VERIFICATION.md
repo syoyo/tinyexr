@@ -69,8 +69,13 @@ The final implementation validation on 2026-11-09 produced:
 
 | Gate | Result |
 | --- | --- |
-| `make lean-tools lean-axiom-check` | Full build passed; 3439 first-party theorems (EXR + Texcomp + Tocio), 152 with bit-vector certificate dependencies, 86 with approved native checks (10 EXR fixture checks + Tocio concrete Float checks); no unexpected axioms. |
+| `make lean-tools lean-axiom-check` | Full build passed; 3479 first-party theorems (EXR + Texcomp + Tocio), 152 with bit-vector certificate dependencies, 98 with approved native checks; no unexpected axioms. |
 | `make texcomp-lean-check tocio-lean-check` | New-module builds passed. |
+| `make texcomp-bc6h-diff` | 1028 BC6H blocks (all 14 modes, signed + unsigned), C vs Lean byte-exact. |
+| `make texcomp-bc7-diff` | 530 BC7 blocks (all 8 modes), C vs Lean byte-exact. |
+| `make texcomp-bc135-diff` | 1536 BC1/BC3/BC5 blocks, C vs Lean byte-exact (BC5 snorm float step excluded, see Boundaries). |
+| `make texcomp-etc2-diff` | 1024 ETC2/EAC blocks (all 5 RGB modes + EAC alpha), C vs Lean byte-exact. |
+| `make texcomp-astc-diff` | 1024 ASTC LDR blocks (C-encoder output, all partition/CEM paths exercised), C vs Lean byte-exact. |
 | `make codec-diff` | 8192 comparisons across seven seeds and both libdeflate/in-tree backends; zero failures. Includes PIZ primitives, frequency tables, malformed/lenient packets and whole blocks. |
 | `make lean-validation-test` | 20 tests, two optional skips; all executed tests passed. Includes gate negative controls and axiom-audit rejection tests. |
 | `make lean-diff` | 126 structural files checked; zero disagreements. |
