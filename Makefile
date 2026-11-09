@@ -23,7 +23,7 @@ MINIZ_SRC = ./deps/miniz/miniz.c
 # ---- legacy v1 single-header test (unchanged) -----------------------------
 TARGET = test_tinyexr
 
-.PHONY: all test clean help lib test-c test-c-threads test-c-tsan c11-gate lean-check lean-diff lean-gen lean-gen-update lean-gen-check codec-diff texcomp-web texcomp-bc6h-diff texcomp-bc7-diff texcomp-bc135-diff fuzz fuzz-threads tocio-fuzz fuzz-jph fuzz-libdeflate fuzz-corpus fuzz-corpus-asan parse-test wasm freestanding-gate freestanding-zstd-gate examples-c bench bench-compare bench-htj2k arm-smoke host-smoke gpu-test vk-test jph-gpu-test bench-gpu-jph texcomp texcomp-arm texcomp-c11-gate texcomp-test texcomp-bench texcomp-astc-psnr texcomp-astc-arm-smoke texcomp-astc-arm-gate texcomp-astc-hdr-gate texcomp-uni-gate texcomp-bc6h-gate texcomp-wasm texcomp-wasm-simd wasm-texcomp wasm-texcomp-simd ptexatlas-c11-gate
+.PHONY: all test clean help lib test-c test-c-threads test-c-tsan c11-gate lean-check lean-diff lean-gen lean-gen-update lean-gen-check codec-diff texcomp-web texcomp-bc6h-diff texcomp-bc7-diff texcomp-bc135-diff texcomp-etc2-diff fuzz fuzz-threads tocio-fuzz fuzz-jph fuzz-libdeflate fuzz-corpus fuzz-corpus-asan parse-test wasm freestanding-gate freestanding-zstd-gate examples-c bench bench-compare bench-htj2k arm-smoke host-smoke gpu-test vk-test jph-gpu-test bench-gpu-jph texcomp texcomp-arm texcomp-c11-gate texcomp-test texcomp-bench texcomp-astc-psnr texcomp-astc-arm-smoke texcomp-astc-arm-gate texcomp-astc-hdr-gate texcomp-uni-gate texcomp-bc6h-gate texcomp-wasm texcomp-wasm-simd wasm-texcomp wasm-texcomp-simd ptexatlas-c11-gate
 
 all: $(TARGET)
 
@@ -282,7 +282,7 @@ lean-check:
 
 .PHONY: texcomp-lean-check
 texcomp-lean-check:
-	cd lean && $(LAKE) build Texcomp.Bc5Decode Texcomp.Bc3Decode Texcomp.Bc1Decode Texcomp.Bc4Decode Texcomp.Bc6hFull Texcomp.Bc7AllModes Texcomp.Bc1Bc3Bc5
+	cd lean && $(LAKE) build Texcomp.Bc5Decode Texcomp.Bc3Decode Texcomp.Bc1Decode Texcomp.Bc4Decode Texcomp.Bc6hFull Texcomp.Bc7AllModes Texcomp.Bc1Bc3Bc5 Texcomp.Etc2AllModes
 	@echo "texcomp-lean-check: OK"
 
 .PHONY: texcomp-bc6h-diff
@@ -314,6 +314,16 @@ texcomp-bc135-diff: texcomp lean-tools
 	./build/bc135_gen build/lean-gen/bc135_vectors.txt
 	cd lean && $(LAKE) build ExrSpec bc135check
 	./lean/.lake/build/bin/bc135check build/lean-gen/bc135_vectors.txt
+
+.PHONY: texcomp-etc2-diff
+texcomp-etc2-diff: texcomp lean-tools
+	mkdir -p build/lean-gen
+	$(CC) -std=c11 -Wall -Wextra -Itools/texcomp/include -Iinclude -Isrc -Iexamples/common \
+	  test/v3/etc2_vectors.c build/libtexcomp.a build/libtinyexr3.a -lm -pthread \
+	  -o build/etc2_gen
+	./build/etc2_gen build/lean-gen/etc2_vectors.txt
+	cd lean && $(LAKE) build ExrSpec etc2check
+	./lean/.lake/build/bin/etc2check build/lean-gen/etc2_vectors.txt
 
 .PHONY: tocio-lean-check
 tocio-lean-check:

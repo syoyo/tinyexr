@@ -51,3 +51,8 @@ lean_exe bc7check where
 @[default_target]
 lean_exe bc135check where
   root := `Bc135Check
+
+/-- ETC2/EAC differential checker (C vectors vs Lean decoder). -/
+@[default_target]
+lean_exe etc2check where
+  root := `Etc2Check
