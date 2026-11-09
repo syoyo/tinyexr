@@ -38,6 +38,8 @@ import Texcomp.Bc7AllModes
 import Texcomp.Bc1Bc3Bc5
 import Texcomp.Etc2AllModes
 import Texcomp.AstcDecode
+import Tocio.Math
+import Tocio.Ops
 import Texcomp.Astc
 import Texcomp.AstcImage
 import Texcomp.Bc7
