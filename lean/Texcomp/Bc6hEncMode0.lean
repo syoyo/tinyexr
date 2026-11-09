@@ -60,24 +60,30 @@ def bc6hEncPart2 : List (List Nat) :=
 def bc6hEncPart2Anchor : List Nat :=
   [15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 2, 8, 2, 2, 8, 8, 15, 2, 8, 2, 2, 8, 8, 2, 2]
 
-/-- Region bounds (min/max of the quantised endpoints) for a partition. -/
-def bc6hEncRegionBounds (q : List (List Nat)) (part : List Nat) :
+/-- Region bounds (min/max of the quantised endpoints) for a partition,
+  with the maximum quantised value `maxv` as the "no texel yet" sentinel. -/
+def bc6hEncRegionBoundsM (maxv : Nat) (q : List (List Nat)) (part : List Nat) :
     List (List Nat) × List (List Nat) × Bool × Bool :=
-  let initLo : List (List Nat) := [[1023, 1023, 1023], [1023, 1023, 1023]]
+  let initLo : List (List Nat) := [[maxv, maxv, maxv], [maxv, maxv, maxv]]
   let initHi : List (List Nat) := [[0, 0, 0], [0, 0, 0]]
   (List.range 16).foldl (fun (acc : List (List Nat) × List (List Nat) × Bool × Bool) i =>
     let reg := part.getD i 0
     let (lo, hi, h0, h1) := acc
     let row := q.getD i [0, 0, 0]
     let lo := (List.range 2).map (fun r =>
-      if r != reg then lo.getD r [1023, 1023, 1023]
+      if r != reg then lo.getD r [maxv, maxv, maxv]
       else (List.range 3).map (fun c =>
-        Nat.min ((lo.getD r [1023, 1023, 1023]).getD c 1023) (row.getD c 0)))
+        Nat.min ((lo.getD r [maxv, maxv, maxv]).getD c maxv) (row.getD c 0)))
     let hi := (List.range 2).map (fun r =>
       if r != reg then hi.getD r [0, 0, 0]
       else (List.range 3).map (fun c =>
         Nat.max ((hi.getD r [0, 0, 0]).getD c 0) (row.getD c 0)))
     (lo, hi, h0 || reg == 0, h1 || reg == 1)) (initLo, initHi, false, false)
+
+/-- The 10-bit-sentinel specialisation used by modes 0 and 1. -/
+def bc6hEncRegionBounds (q : List (List Nat)) (part : List Nat) :
+    List (List Nat) × List (List Nat) × Bool × Bool :=
+  bc6hEncRegionBoundsM 1023 q part
 
 /-- The partition prefilter score: sum of squared endpoint ranges. -/
 def bc6hEncPartScore (lo hi : List (List Nat)) : Nat :=
