@@ -40,6 +40,8 @@ import Texcomp.Etc2AllModes
 import Texcomp.AstcDecode
 import Tocio.Math
 import Tocio.Ops
+import Tocio.FixedFunc
+import Tocio.FixedFunc
 import Texcomp.Astc
 import Texcomp.AstcImage
 import Texcomp.Bc7

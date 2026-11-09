@@ -124,6 +124,15 @@ validation checks, not library proofs.
   with C differential gates. Remaining Texcomp work: ASTC HDR path (float
   endpoints), DDS/KTX pixel payloads, BC6H/BC7 encoder models (only decode is
   proved).
+- Tocio: Float64-vs-f32 note aside, the seven op kernels (matrix, range,
+  exponent, exp-linear, log, log-camera, CDL) are bit-exact `Float32` ports
+  with a C differential gate (3072 seeded groups). FixedFunction helpers
+  (RedMod/Glow/DarkToDim/GamutComp/HSV/XYZ/PQ/HLG/Surround) are ported and
+  differentially tested; ≈1% of seed groups mismatch at the 1e-4–1e-3
+  relative level concentrated in RedMod breakpoint/quadratic cases, where
+  the freestanding `atan2f` polynomial's behavior near B-spline segment
+  seams deviates by amplified ulps from the C evaluation. YAML totality,
+  config lowering, and LUT loaders remain open (scaffolding only).
 - OpenEXR-compatible parser leniencies and C defects exposed by validation are
   documented in [README.md](README.md); keep those records synchronized when
   the executable model or C implementation changes.

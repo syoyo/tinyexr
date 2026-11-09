@@ -6,6 +6,8 @@
 #include "tocio.h"
 #include "toc_internal.h"
 
+void toc_fixedfunc_apply_pixel(const toc_op *op, float *px, int ch);
+
 static uint64_t rng_state;
 static uint64_t splitmix64(void) {
     uint64_t z = (rng_state += 0x9e3779b97f4a7c15ULL);
@@ -446,6 +448,48 @@ int main(int argc, char **argv) {
         }
         fprintf(out, "\n");
         free(list.ops);
+    }
+
+    /* FixedFunc vectors: random pixels per style. */
+    for (int s = 0; s < 1024; s++) {
+        toc_op op;
+        memset(&op, 0, sizeof(op));
+        op.kind = TOC_OP_FIXEDFUNC;
+        int style = (int)(splitmix64() % 26u) + 0;  /* 0..25 */
+        op.u.fixedfunc.style = style;
+        int np = 0;
+        /* baked defaults used by the node parser */
+        float p[] = {0};
+        if (style >= TOC_FF_ACES_GLOW03 && style <= TOC_FF_ACES_GLOW10_INV) { np = 2; p[0] = 0.05f; p[1] = 0.08f; if (style == TOC_FF_ACES_GLOW03 || style == TOC_FF_ACES_GLOW03_INV) { p[0] = 0.075f; p[1] = 0.1f; } }
+        else if (style >= TOC_FF_ACES_DARKTODIM10 && style <= TOC_FF_ACES_DARKTODIM10_INV) { np = 1; p[0] = (style & 1) ? 1.0192640913260627f : 0.9811f; }
+        else if (style >= TOC_FF_ACES_GAMUTCOMP13 && style <= TOC_FF_ACES_GAMUTCOMP13_INV) { np = 7; for (int k = 0; k < 6; k++) p[k] = randf(); p[6] = 1.0f + randf(); }
+        else if (style >= TOC_FF_REC2100_SURROUND && style <= TOC_FF_REC2100_SURROUND_INV) { np = 1; p[0] = 0.9f + randf(); }
+        for (int k = 0; k < np; k++) op.u.fixedfunc.params[k] = p[k];
+        op.u.fixedfunc.nparams = np;
+        float img4[4];
+        for (int k = 0; k < 4; k++) img4[k] = randf();
+        float img_copy[4];
+        memcpy(img_copy, img4, sizeof(img4));
+        toc_fixedfunc_apply_pixel(&op, img4, 4);
+        fprintf(out, "ff %d %d ", style, np);
+        for (int k = 0; k < np; k++) {
+            uint32_t u;
+            memcpy(&u, op.u.fixedfunc.params + k, 4);
+            fprintf(out, "%08x", u);
+        }
+        fprintf(out, " |");
+        for (int k = 0; k < 4; k++) {
+            uint32_t u;
+            memcpy(&u, img_copy + k, 4);
+            fprintf(out, " %08x", u);
+        }
+        fprintf(out, " |");
+        for (int k = 0; k < 4; k++) {
+            uint32_t u;
+            memcpy(&u, img4 + k, 4);
+            fprintf(out, " %08x", u);
+        }
+        fprintf(out, "\n");
     }
     fclose(out);
     return 0;

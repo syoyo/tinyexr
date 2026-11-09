@@ -337,7 +337,7 @@ texcomp-astc-diff: texcomp lean-tools
 
 .PHONY: tocio-lean-check
 tocio-lean-check:
-	cd lean && $(LAKE) build Tocio.Op Tocio.Config Tocio.Transform Tocio.Lower Tocio.YamlTotal Tocio.Math Tocio.Ops
+	cd lean && $(LAKE) build Tocio.Op Tocio.Config Tocio.Transform Tocio.Lower Tocio.YamlTotal Tocio.Math Tocio.Ops Tocio.FixedFunc
 	@echo "tocio-lean-check: OK"
 
 .PHONY: tocio-diff
