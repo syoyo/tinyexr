@@ -162,6 +162,11 @@ lean_exe bc6hblockcheck where
 lean_exe bc7rdocheck where
   root := `Bc7RdoCheck
 
+/-- ASTC weight-decimation differential checker (C vectors vs Lean). -/
+@[default_target]
+lean_exe astcdecimcheck where
+  root := `AstcDecimCheck
+
 /-- Tocio op differential checker (C vectors vs Lean kernels). -/
 @[default_target]
 lean_exe tociocheck where
