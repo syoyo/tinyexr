@@ -22,7 +22,7 @@ implementation, its compiler, or memory safety for every possible input.
 | B44/B44A | Quantization, block packing and reconstruction, including flat blocks and bit-field bounds. Perceptual lookup tables are tested separately rather than re-proved. |
 | RLE and ZIP wrapper | Interleave and predictor inverses, greedy RLE round trip and raw fallback; Adler-32 and ZIP wrapper structure/checksum. DEFLATE payload coding is outside the model. |
 | PIZ | Complete successful encoder/decoder round trip through bitmap framing, frequency-derived canonical Huffman coding, both wavelet modes, sampled channel/lane traversal, LUT restoration, reordering and raw fallback. |
-| Texcomp (scaffolding) | Container headers + sizes; BC1/BC3/BC5 decoders; BC6H modes 0–4, 10; BC7 modes 0 (simplified), 4; ETC2 individual/T-mode and ASTC footprint slices. Differential harness not yet built — see [Boundaries](#boundaries). |
+| Texcomp | Container headers/sizes and full DDS/KTX payload round trips; BC1/BC3/BC4/BC5 decoders and BC1/BC4/BC5 encoders; BC6H decoder modes plus every C block encoder (unsigned modes 0–13, signed modes 0–8/12/13) byte-exact against C; BC7 pack path, mode 6, seeds and the full default-option encoder; ETC2 individual/T-mode/EAC and ASTC LDR + HDR endpoint packers/colour quantizer. Each has a C-vs-Lean differential gate (`make texcomp-*-diff`) — see [Boundaries](#boundaries). |
 | Tocio (scaffolding) | Op-kind + FixedFunction-style enums with inverse-pair invariants; Matrix/Range/Exponent/Log/CDL/LUT/YAML/Config/Resolve/Lower/Processor skeletons. Float semantics and YAML totality not yet proved — see [Boundaries](#boundaries). |
 
 ## PIZ proof chain and preconditions
@@ -117,10 +117,11 @@ validation checks, not library proofs.
   C execution semantics to Lean remain outside the proved model.
 - Structural acceptance does not imply every compressed payload is valid.
   Differential/sanitizer gates supply independent implementation evidence.
-- Texcomp/Tocio models are scaffolding: decoders cover a subset of modes, Tocio
-  Float/YAML reasoning is incomplete, and no engine differential harness exists
-  yet (`texcomp-lean-diff`/`tocio-lean-diff` currently run only the C tests).
-  Plan for completion is in `~/.opencode/plan/lean-remaining-tasks.md` (outside repo).
+- Tocio models are scaffolding: Tocio Float/YAML reasoning is incomplete, and no
+  engine differential harness exists yet (`tocio-lean-diff` currently runs only
+  the C tests). Texcomp is covered by implementation-level differential gates
+  rather than an engine-level one. Plan for completion is in
+  `~/.opencode/plan/lean-remaining-tasks.md` (outside repo).
 - Texcomp BC/RG/ETC2/EAC/ASTC block decoders are now faithful byte-exact ports
   with C differential gates. The ASTC HDR *endpoint packers* (`cem11Pack`,
   `cem7Pack`, `hdrAlphaPack` — encoder side) are also byte-exact against the
@@ -144,11 +145,14 @@ validation checks, not library proofs.
   `pack_delta5` clamp of its 6-bit delta fields to [-16, 15].
   The shared kernels (10/N-bit quant + unquant, TOPK partition prefilter,
   least-squares refinement, anchor fix-up, `pack_delta5` clamping) are
-  modelled once and reused. Remaining Texcomp work: the signed (`sf16`)
-  BC6H variants, multi-mode winner selection,
-  BC7 encoders beyond the pack/seed/mode-6 slices, DDS/KTX pixel
-  payloads, and the sub-256 colour-roundtrip LUT used by ASTC HDR
-  2-subset encoding.
+  modelled once and reused. The signed (`sf16`) BC6H encoders are also
+  byte-exact for every C `_sf16` mode (0–8, 12, 13; `make
+  texcomp-bc6h-sf16-diff`, 1650 blocks, 825 encoded, 825 no-fit), including
+  the C's `(uint32_t)` two's-complement bit extraction and its hard-coded
+  ±511 clamp inside `tc_bc6h_refine_sf16`. Remaining Texcomp work: BC6H
+  mode selection across the per-mode encoders, BC7 encoders beyond the
+  pack/seed/mode-6 slices, DDS/KTX pixel payloads, and the sub-256
+  colour-roundtrip LUT used by ASTC HDR 2-subset encoding.
 - Tocio: Float64-vs-f32 note aside, the seven op kernels (matrix, range,
   exponent, exp-linear, log, log-camera, CDL) are bit-exact `Float32` ports
   with a C differential gate (3072 seeded groups). FixedFunction helpers
