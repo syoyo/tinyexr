@@ -77,11 +77,12 @@ def redmodHueWeight (red grn blu invWidth : Float32) : Float32 :=
   if j < 0 || j >= 4 then 0.0
   else
     let q : Float32 := (Float32.ofBits 0x3e800000)
+    let wn25 : Float32 := (Float32.ofBits 0xbe800000)
     let w75 : Float32 := (Float32.ofBits 0x3f400000)
     let w75n : Float32 := (Float32.ofBits 0xbf400000)
     let w150 : Float32 := (Float32.ofBits 0xbfc00000)
     let c0 : Float32 := if j == 0 then q else if j == 1 then w75n
-                        else if j == 2 then w75 else w75n
+                        else if j == 2 then w75 else wn25
     let c1 : Float32 := if j == 0 then 0.0 else if j == 1 then w75
                         else if j == 2 then w150 else w75
     let c2 : Float32 := if j == 0 then 0.0 else if j == 1 then w75

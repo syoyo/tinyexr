@@ -129,10 +129,9 @@ validation checks, not library proofs.
   exponent, exp-linear, log, log-camera, CDL) are bit-exact `Float32` ports
   with a C differential gate (3072 seeded groups). FixedFunction helpers
   (RedMod/Glow/DarkToDim/GamutComp/HSV/XYZ/PQ/HLG/Surround) are ported and
-  differentially tested; ≈1% of seed groups mismatch at the 1e-4–1e-3
-  relative level concentrated in RedMod breakpoint/quadratic cases, where
-  the freestanding `atan2f` polynomial's behavior near B-spline segment
-  seams deviates by amplified ulps from the C evaluation. YAML totality,
+  differentially tested bit-exact (the only RedMod B-spline coefficient
+  error in the port, a −0.75-for−0.25 constant in the j=3 branch, was
+  caught by this gate and fixed in `Tocio/FixedFunc.lean`). YAML totality,
   config lowering, and the .cube/.spi LUT loaders are total with C
   differential gates (192 .cube seeded blocks bit-exact; 200 .spi1d/.spi3d
   vectors bit-exact including parse-failure parity and applied pixels).
