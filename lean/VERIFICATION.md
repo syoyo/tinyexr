@@ -125,9 +125,11 @@ validation checks, not library proofs.
   with C differential gates. The ASTC HDR *endpoint packers* (`cem11Pack`,
   `cem7Pack`, `hdrAlphaPack` — encoder side) are also byte-exact against the
   C packers at the block encoders' colour-quant level (1800 vectors).
-  Remaining Texcomp work: DDS/KTX pixel payloads, BC6H/BC7 encoder models
-  (only decode is proved), and the sub-256 colour-roundtrip LUT used by ASTC
-  HDR 2-subset encoding.
+  DDS/KTX header models now have general `parse (emit h) = h` round trips
+  (no example-only checks) and a byte-layout gate against the C writers
+  (`make texcomp-container-diff`, 14 headers). Remaining Texcomp work:
+  DDS/KTX pixel payloads, BC6H/BC7 encoder models (only decode is proved),
+  and the sub-256 colour-roundtrip LUT used by ASTC HDR 2-subset encoding.
 - Tocio: Float64-vs-f32 note aside, the seven op kernels (matrix, range,
   exponent, exp-linear, log, log-camera, CDL) are bit-exact `Float32` ports
   with a C differential gate (3072 seeded groups). FixedFunction helpers

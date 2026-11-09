@@ -72,6 +72,11 @@ lean_exe astchdrcheck where
 lean_exe astcpackcheck where
   root := `AstcPackCheck
 
+/-- DDS/KTX header byte-layout checker (C writers vs Lean model). -/
+@[default_target]
+lean_exe ddsktxcheck where
+  root := `DdsKtxCheck
+
 /-- Tocio op differential checker (C vectors vs Lean kernels). -/
 @[default_target]
 lean_exe tociocheck where
