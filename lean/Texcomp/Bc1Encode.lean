@@ -36,14 +36,14 @@ structure RgbF where
   deriving Repr
 
 /-- `tc_rgb565_pack`: RGB888 → RGB565 with per-channel clamping. -/
-def rgb565Pack (r g b : Int) : Nat :=
+def encRgb565Pack (r g b : Int) : Nat :=
   let r := (clampI r 0 255).toNat
   let g := (clampI g 0 255).toNat
   let b := (clampI b 0 255).toNat
   ((r / 8) <<< 11) ||| ((g / 4) <<< 5) ||| (b / 8)
 
 /-- `tc_rgb565_unpack`: RGB565 → RGB888 (bit replication). -/
-def rgb565Unpack (c : Nat) : RgbI :=
+def encRgb565Unpack (c : Nat) : RgbI :=
   let r := (c >>> 11) &&& 0x1f
   let g := (c >>> 5) &&& 0x3f
   let b := c &&& 0x1f
@@ -52,7 +52,7 @@ def rgb565Unpack (c : Nat) : RgbI :=
    Int.ofNat ((b <<< 3) ||| (b >>> 2))⟩
 
 /-- The 4-entry interpolation palette for the two endpoints. -/
-def bc1Palette (p0 p1 : RgbI) : List RgbI :=
+def encBc1Palette (p0 p1 : RgbI) : List RgbI :=
   let third := fun (a b : Int) => (2 * a + b + 1) / 3
   let twothird := fun (a b : Int) => (a + 2 * b + 1) / 3
   [p0, p1,
@@ -87,9 +87,9 @@ def bc1Pass (px : List (Nat × Nat × Nat × Nat)) (e0 e1 : RgbF) :
     List Nat × Lsq :=
   let af : List Float := [1.0, 0.0, 2.0 / 3.0, 1.0 / 3.0]
   let bf : List Float := [0.0, 1.0, 1.0 / 3.0, 2.0 / 3.0]
-  let c0 := rgb565Pack (f2i (e0.r + 0.5)) (f2i (e0.g + 0.5)) (f2i (e0.b + 0.5))
-  let c1 := rgb565Pack (f2i (e1.r + 0.5)) (f2i (e1.g + 0.5)) (f2i (e1.b + 0.5))
-  let pal := bc1Palette (rgb565Unpack c0) (rgb565Unpack c1)
+  let c0 := encRgb565Pack (f2i (e0.r + 0.5)) (f2i (e0.g + 0.5)) (f2i (e0.b + 0.5))
+  let c1 := encRgb565Pack (f2i (e1.r + 0.5)) (f2i (e1.g + 0.5)) (f2i (e1.b + 0.5))
+  let pal := encBc1Palette (encRgb565Unpack c0) (encRgb565Unpack c1)
   let rec go (i : Nat) (idxAcc : List Nat) (acc : Lsq) : List Nat × Lsq :=
     if i ≥ 16 then (idxAcc, acc)
     else
@@ -141,13 +141,13 @@ def encodeBc1ColorBlock (px : List (Nat × Nat × Nat × Nat)) (dxt1 : Bool) :
     (⟨Float.ofInt bb.2.r, Float.ofInt bb.2.g, Float.ofInt bb.2.b⟩,
      ⟨Float.ofInt bb.1.r, Float.ofInt bb.1.g, Float.ofInt bb.1.b⟩)
   let refined := (List.range 2).foldl step init
-  let c0a := rgb565Pack (f2i (refined.1.r + 0.5)) (f2i (refined.1.g + 0.5))
+  let c0a := encRgb565Pack (f2i (refined.1.r + 0.5)) (f2i (refined.1.g + 0.5))
     (f2i (refined.1.b + 0.5))
-  let c1a := rgb565Pack (f2i (refined.2.r + 0.5)) (f2i (refined.2.g + 0.5))
+  let c1a := encRgb565Pack (f2i (refined.2.r + 0.5)) (f2i (refined.2.g + 0.5))
     (f2i (refined.2.b + 0.5))
   -- 4-colour interpolation needs colour0 > colour1.
   let (c0, c1) := if c0a < c1a then (c1a, c0a) else (c0a, c1a)
-  let pal := bc1Palette (rgb565Unpack c0) (rgb565Unpack c1)
+  let pal := encBc1Palette (encRgb565Unpack c0) (encRgb565Unpack c1)
   let jmax := if dxt1 && c0 == c1 then 3 else 4
   let idx := (List.range 16).map (fun i =>
     let p := px.getD i (0, 0, 0, 0)
@@ -156,5 +156,11 @@ def encodeBc1ColorBlock (px : List (Nat × Nat × Nat × Nat)) (dxt1 : Bool) :
     idx.getD a 0 ||| (idx.getD b 0 <<< 2) ||| (idx.getD c 0 <<< 4) ||| (idx.getD d 0 <<< 6)
   [c0 &&& 0xff, c0 >>> 8, c1 &&& 0xff, c1 >>> 8,
    pack4 0 1 2 3, pack4 4 5 6 7, pack4 8 9 10 11, pack4 12 13 14 15]
+
+/-- Every BC1 colour block is exactly 8 bytes. -/
+theorem encodeBc1ColorBlock_length (px : List (Nat × Nat × Nat × Nat)) (dxt1 : Bool) :
+    (encodeBc1ColorBlock px dxt1).length = 8 := by
+  simp [encodeBc1ColorBlock]
+  try omega
 
 end Texcomp

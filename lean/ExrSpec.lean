@@ -11,6 +11,8 @@
 
 import Exr.Bytes
 import Texcomp.Container
+import Texcomp.Bc1Encode
+import Texcomp.Bc4Encode
 import Tocio.Op
 import Tocio.Config
 import Texcomp.Bc1

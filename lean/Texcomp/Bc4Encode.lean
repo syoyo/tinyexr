@@ -89,4 +89,21 @@ def encodeBc5BlockSnorm (r g : List Nat) : List Nat :=
   encodeBc4BlockSnorm ((List.range 16).map (fun i => unorm8ToSnorm8 (r.getD i 0)))
     ++ encodeBc4BlockSnorm ((List.range 16).map (fun i => unorm8ToSnorm8 (g.getD i 0)))
 
+/-- A BC4 block is exactly 8 bytes. -/
+theorem encodeBc4Block_length (v : List Nat) : (encodeBc4Block v).length = 8 := by
+  simp [encodeBc4Block]
+
+/-- A signed BC4 block is exactly 8 bytes. -/
+theorem encodeBc4BlockSnorm_length (v : List Int) : (encodeBc4BlockSnorm v).length = 8 := by
+  simp [encodeBc4BlockSnorm]
+
+/-- A BC5 block is exactly 16 bytes (two BC4 planes). -/
+theorem encodeBc5Block_length (r g : List Nat) : (encodeBc5Block r g).length = 16 := by
+  simp [encodeBc5Block, encodeBc4Block_length]
+
+/-- A signed BC5 block is exactly 16 bytes. -/
+theorem encodeBc5BlockSnorm_length (r g : List Nat) :
+    (encodeBc5BlockSnorm r g).length = 16 := by
+  simp [encodeBc5BlockSnorm, encodeBc4BlockSnorm_length]
+
 end Texcomp
