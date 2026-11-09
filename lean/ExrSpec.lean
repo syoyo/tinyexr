@@ -20,6 +20,7 @@ import Texcomp.Bc7Seed
 import Texcomp.Bc7EncodeAll
 import Texcomp.Bc6hKernels
 import Texcomp.Bc6hEncMode0
+import Texcomp.Bc6hEncMode1213
 import Tocio.Op
 import Tocio.Config
 import Texcomp.Bc1

@@ -127,6 +127,11 @@ lean_exe bc6hm0check where
 lean_exe sqrtcheck where
   root := `SqrtCheck
 
+/-- BC6H mode-12/13 encoder differential checker (C vectors vs Lean). -/
+@[default_target]
+lean_exe bc6hm1213check where
+  root := `Bc6hM1213Check
+
 /-- Tocio op differential checker (C vectors vs Lean kernels). -/
 @[default_target]
 lean_exe tociocheck where

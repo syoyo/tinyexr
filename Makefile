@@ -465,6 +465,16 @@ tocio-sqrt-diff: tocio-lib lean-tools
 	cd lean && $(LAKE) build ExrSpec sqrtcheck
 	./lean/.lake/build/bin/sqrtcheck build/lean-gen/sqrt_vectors.txt
 
+.PHONY: texcomp-bc6h-m1213-diff
+texcomp-bc6h-m1213-diff: texcomp lean-tools
+	mkdir -p build/lean-gen
+	$(CC) -std=c11 -Wall -Wextra -Itools/texcomp/include -Iinclude -Isrc -Iexamples/common \
+	  test/v3/bc6h_mode1213_vectors.c build/libtexcomp.a build/libtinyexr3.a -lm -pthread \
+	  -o build/bc6h_m1213_gen
+	./build/bc6h_m1213_gen build/lean-gen/bc6h_mode1213_vectors.txt
+	cd lean && $(LAKE) build ExrSpec bc6hm1213check
+	./lean/.lake/build/bin/bc6hm1213check build/lean-gen/bc6h_mode1213_vectors.txt
+
 .PHONY: tocio-lean-check
 tocio-lean-check:
 	cd lean && $(LAKE) build Tocio.Op Tocio.Config Tocio.Transform Tocio.Lower Tocio.YamlTotal Tocio.Math Tocio.Ops Tocio.FixedFunc
