@@ -110,6 +110,8 @@ float toc_log2f(float x);
 float toc_exp2f(float x);
 float toc_powf(float x, float y);
 float toc_sqrtf(float x);
+/* Correctly-rounded (libm/hardware-identical) square root. */
+float toc_sqrtf_exact(float x);
 /* base^x without naming pow/exp: = exp2(x*log2(base)). */
 float toc_raisef(float base, float x);
 /* Parse a float (libm-free, no strtod). Advances *pp; returns 1 on success. */

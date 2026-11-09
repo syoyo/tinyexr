@@ -20,7 +20,7 @@
   SPDX-License-Identifier: BSD-3-Clause
 -/
 
-import Texcomp.Bc7Seed
+import Texcomp.Bc7Pca
 import Texcomp.Bc7Mode6
 
 namespace Texcomp
@@ -125,30 +125,39 @@ def bc7SelectPartition2 (quick : Bool) (mode : Nat) (pix : List (List Nat)) : Na
 
 /-- One mode's candidate: luma seed for the selected partition, plus the
   mode-6 refinement. -/
-def bc7ModeCandidate (quick : Bool) (mode : Nat) (pix : List (List Nat)) :
+def bc7ModeCandidate (quick pca : Bool) (mode : Nat) (pix : List (List Nat)) :
     Bc7Candidate × Nat :=
   let partition := if mode == 1 || mode == 7 then bc7SelectPartition2 quick mode pix else 0
-  let (cand, err) := bc7SeedLuma mode partition pix
+  let (cand, err) := bc7BuildCandidate mode partition pix pca
   if mode == 6 then bc7RefineMode6 pix cand err else (cand, err)
 
 /-- `tc_encode_bc7_all_modes_block` at the default options: drop the
   opaque-only modes for translucent blocks, score each remaining mode, and
   keep the first strict winner. -/
-def bc7EncodeBlockQuick (quick : Bool) (pix : List (List Nat)) : List Nat :=
+def bc7EncodeBlockQuickPca (quick pca : Bool) (pix : List (List Nat)) : List Nat :=
   let hasAlpha := (List.range 16).any (fun i => ((pix.getD i [0, 0, 0, 0]).getD 3 0) < 255)
   let mask := if hasAlpha then 0xF0 else 0xFF
   let best := (List.range 8).foldl (fun (acc : List Nat × Nat) mode =>
     if (mask >>> mode) &&& 1 == 0 then acc
     else
-      let (cand, err) := bc7ModeCandidate quick mode pix
+      let (cand, err) := bc7ModeCandidate quick pca mode pix
       if err < acc.2 then (bc7PackCandidate cand, err) else acc)
     ((List.range 16).map (fun _ => 0), 0xFFFFFFFFFFFFFFFF)
   best.1
 
+/-- `tc_encode_bc7_all_modes_block` with an explicit `quick` flag and PCA
+  seeding choice. -/
+def bc7EncodeBlockQuick (quick : Bool) (pix : List (List Nat)) : List Nat :=
+  bc7EncodeBlockQuickPca quick false pix
+
 /-- `tc_encode_bc7_all_modes_block` with the default options
-  (`quick = 2`). -/
+  (`quick = 2`, `pca_endpoints = 0`). -/
 def bc7EncodeBlockDefault (pix : List (List Nat)) : List Nat :=
-  bc7EncodeBlockQuick true pix
+  bc7EncodeBlockQuickPca true false pix
+
+/-- The same driver with `pca_endpoints = 1`. -/
+def bc7EncodeBlockPca (pix : List (List Nat)) : List Nat :=
+  bc7EncodeBlockQuickPca true true pix
 
 /-- The same driver with `opt->quick = 0`, i.e. the exhaustive partition
   search for modes 1 and 7. -/

@@ -113,4 +113,59 @@ def raisef (base x : Float32) : Float32 :=
   if !(base > 0.0) then 0.0
   else exp2f (x * log2f base)
 
+/-- Number of significant bits in `n > 0` (`floor(log2 n) + 1`). -/
+def bitLen (n : Nat) : Nat :=
+  let rec go (fuel n k : Nat) : Nat :=
+    match fuel with
+    | 0 => k
+    | fuel + 1 => if n == 0 then k else go fuel (n >>> 1) (k + 1)
+  go 64 n 0
+
+/-- Correctly-rounded IEEE-754 binary32 square root, on the raw bit pattern.
+
+  Mirrors `toc_sqrtf_exact` in `sandbox/tocio/src/toc_math.c`: write
+  `x = M * 2^s` with `M ∈ [2^23, 2^24)` (normalising subnormals), set
+  `A = M` or `2M` so `s` halves exactly, take `S = isqrt(A << 38)`, and
+  round the top 24 bits of `S` with one guard bit and an exact sticky bit
+  (including `S*S != N`), i.e. round-to-nearest-even. This matches a
+  hardware/libm `sqrtf` bit-for-bit for every input, including the
+  signalling-NaN quieting and the negative-operand NaN. -/
+def sqrtfExactBits (u0 : UInt32) : UInt32 :=
+  let u := u0.toNat
+  let sign := u >>> 31
+  let expo := (u >>> 23) &&& 0xFF
+  let mant := u &&& 0x7FFFFF
+  if expo == 255 then
+    if mant != 0 then UInt32.ofNat (u ||| 0x00400000)
+    else if sign == 1 then UInt32.ofNat 0xFFC00000
+    else UInt32.ofNat u
+  else if u == 0 || u == 0x80000000 then UInt32.ofNat u
+  else if sign == 1 then UInt32.ofNat 0xFFC00000
+  else
+    let (M, s) : Nat × Int :=
+      if expo == 0 then
+        let rec norm (fuel mm lz : Nat) : Nat × Nat :=
+          match fuel with
+          | 0 => (mm, lz)
+          | fuel + 1 => if mm &&& 0x800000 != 0 then (mm, lz) else norm fuel (mm <<< 1) (lz + 1)
+        let (mm, lz) := norm 24 mant 0
+        (mm, -149 - (lz : Int))
+      else (mant ||| 0x800000, (expo : Int) - 127 - 23)
+    let (A, t) : Nat × Int :=
+      if Int.emod s 2 != 0 then (M <<< 1, (s - 1) / 2) else (M, s / 2)
+    let N : Nat := A <<< 38
+    let S := Nat.sqrt N
+    let d := bitLen S - 24
+    let hi0 := S >>> d
+    let roundBit := (S >>> (d - 1)) &&& 1
+    let sticky := ((S &&& ((1 <<< (d - 1)) - 1)) != 0) || (S * S != N)
+    let hi1 := if roundBit == 1 && (sticky || hi0 &&& 1 == 1) then hi0 + 1 else hi0
+    let e0 : Int := (d : Int) + t + 4
+    let (hi, e) : Nat × Int := if hi1 == (1 <<< 24) then (hi1 >>> 1, e0 + 1) else (hi1, e0)
+    UInt32.ofNat ((((e + 127).toNat) <<< 23) ||| (hi &&& 0x7FFFFF))
+
+/-- Correctly-rounded `sqrtf` (libm/hardware-identical). -/
+def sqrtfExact (x : Float32) : Float32 := Float32.ofBits (sqrtfExactBits (Float32.toBits x))
+
+
 end Tocio

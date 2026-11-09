@@ -83,6 +83,106 @@ float toc_sqrtf(float x) {
     return toc_exp2f(0.5f * toc_log2f(x));
 }
 
+/* ============================================================================
+ * Correctly-rounded libm-free sqrtf.
+ *
+ * `toc_sqrtf` above is the fast polynomial approximation the ACES/HDR kernels
+ * use. Where an *exact* IEEE-754 single-precision square root is required
+ * (e.g. to reproduce a libm `sqrtf` bit-for-bit in a formal model) this
+ * integer implementation rounds once, from an exact integer square root, so
+ * it matches hardware `sqrtss` (and hence glibc's `sqrtf`) for every input.
+ *
+ * Method: write x = M * 2^s with M in [2^23, 2^24) (normalising subnormals),
+ * A = M or 2M so that s can be halved, and S = isqrt(A << 38). Then
+ * sqrt(x) = S * 2^-19 * 2^t, which carries 31-32 significant bits; the top
+ * 24 plus a guard and the exact sticky bit give round-to-nearest-even.
+ * ========================================================================== */
+
+/* Exact integer square root (digit-by-digit, no overflow). */
+static uint64_t toc_isqrt64(uint64_t n) {
+    uint64_t res = 0;
+    uint64_t bit = (uint64_t)1 << 62;
+    while (bit > n) bit >>= 2;
+    while (bit) {
+        if (n >= res + bit) {
+            n -= res + bit;
+            res = (res >> 1) + bit;
+        } else {
+            res >>= 1;
+        }
+        bit >>= 2;
+    }
+    return res;
+}
+
+float toc_sqrtf_exact(float x) {
+    union {
+        float f;
+        uint32_t u;
+    } v;
+    uint32_t sign, expo, mant;
+    uint64_t M, A, N, S, hi, round_bit, sticky;
+    int s, t, d, e;
+
+    v.f = x;
+    sign = v.u >> 31;
+    expo = (v.u >> 23) & 0xffu;
+    mant = v.u & 0x7fffffu;
+
+    if (expo == 255u) {
+        if (mant) return bits_to_f(v.u | 0x00400000u); /* quiet, keep payload */
+        if (sign) return bits_to_f(0xffc00000u);       /* sqrt(-inf) -> NaN */
+        return v.f;                                   /* +inf */
+    }
+    if (v.u == 0u || v.u == 0x80000000u) return v.f;   /* +-0 */
+    if (sign) return bits_to_f(0xffc00000u);           /* negative -> NaN */
+
+    if (expo == 0u) {
+        /* Subnormal: shift the mantissa up until its MSB sits at bit 23. */
+        int lz = 0;
+        uint32_t mm = mant;
+        while (!(mm & 0x800000u)) {
+            mm <<= 1;
+            ++lz;
+        }
+        M = mm;
+        s = -149 - lz;
+    } else {
+        M = mant | 0x800000u;
+        s = (int)expo - 127 - 23;
+    }
+
+    if (s & 1) {
+        A = M << 1;
+        t = (s - 1) / 2;
+    } else {
+        A = M;
+        t = s / 2;
+    }
+
+    N = A << 38; /* A < 2^25 -> N < 2^63 */
+    S = toc_isqrt64(N);
+
+    d = 0;
+    {
+        uint64_t tmp = S;
+        while (tmp >>= 1) ++d;
+    }
+    d -= 23; /* bitlen(S) - 24 */
+    hi = S >> d;
+    round_bit = (S >> (uint32_t)(d - 1)) & 1u;
+    sticky = ((S & ((((uint64_t)1) << (uint32_t)(d - 1)) - 1u)) != 0u) ||
+             (S * S != N);
+    if (round_bit && (sticky || (hi & 1u))) hi += 1u;
+    e = d + t + 4;
+    if (hi == (((uint64_t)1) << 24)) {
+        hi >>= 1;
+        ++e;
+    }
+    v.u = ((uint32_t)(e + 127) << 23) | ((uint32_t)hi & 0x7fffffu);
+    return v.f;
+}
+
 float toc_raisef(float base, float x) {
     if (!(base > 0.0f)) return 0.0f;
     return toc_exp2f(x * toc_log2f(base));

@@ -47,10 +47,12 @@ structure Bc7SubEndpoints where
   (lo hi pb : List Nat)
   deriving Repr
 
-/-- `tc_build_candidate_seed` for an explicit mode/partition with the luma
-  seed (`fast_select = 0`). Returns `(candidate, totalErr)`. -/
-def bc7SeedLuma (mode partition : Nat) (pix : List (List Nat)) :
-    Bc7Candidate × Nat :=
+/-- `tc_build_candidate_seed` for an explicit mode/partition
+  (`fast_select = 0`), parameterised by the endpoint-texel chooser so the
+  luma and PCA seeds share the quantisation/index code. Returns
+  `(candidate, totalErr)`. -/
+def bc7SeedWith (extremes : List Nat → Nat → Nat × Nat)
+    (mode partition : Nat) (pix : List (List Nat)) : Bc7Candidate × Nat :=
   let part := bc7PartitionFor mode partition
   let subsets := bc7NumSubsets.getD mode 1
   let colPrec := bc7ColorPrecision.getD mode 0
@@ -59,7 +61,7 @@ def bc7SeedLuma (mode partition : Nat) (pix : List (List Nat)) :
   let sharedP := bc7SharedPbits.getD mode 0
   let sepA := bc7SepAlpha.getD mode 0
   let quantSubset (subset : Nat) : Bc7SubEndpoints :=
-    let (minI, maxI) := bc7SubsetExtremes pix part subset
+    let (minI, maxI) := extremes part subset
     let pmin := pix.getD minI [0, 0, 0, 0]
     let pmax := pix.getD maxI [0, 0, 0, 0]
     (List.range 4).foldl (fun (acc : Bc7SubEndpoints) c =>
@@ -112,6 +114,11 @@ def bc7SeedLuma (mode partition : Nat) (pix : List (List Nat)) :
   let asels := picks.map (fun pr => pr.2.1)
   let cand : Bc7Candidate := { cand0 with selectors := sels, alphaSelectors := asels }
   (cand, err)
+
+/-- The luma-extreme seed (`tc_build_candidate_seed` with `use_pca = 0`). -/
+def bc7SeedLuma (mode partition : Nat) (pix : List (List Nat)) :
+    Bc7Candidate × Nat :=
+  bc7SeedWith (fun part subset => bc7SubsetExtremes pix part subset) mode partition pix
 
 /-- Encode one 4x4 block with a single explicit mode's luma-seeded
   candidate and pack it (no refinement; mode 6 uses `bc7EncodeBlockMode6`). -/
