@@ -5,7 +5,7 @@ SPDX-License-Identifier: BSD-3-Clause
 
 # Lean formalization and verification status
 
-Updated: 2026-11-07. Toolchain: Lean 4.35.0 and the pinned mathlib dependency.
+Updated: 2026-11-09. Toolchain: Lean 4.35.0 and the pinned mathlib dependency.
 See [README.md](README.md) for the module inventory and format compatibility details.
 
 The Lean model has machine-checked proofs. TinyEXR v3 C is validated against
@@ -22,6 +22,8 @@ implementation, its compiler, or memory safety for every possible input.
 | B44/B44A | Quantization, block packing and reconstruction, including flat blocks and bit-field bounds. Perceptual lookup tables are tested separately rather than re-proved. |
 | RLE and ZIP wrapper | Interleave and predictor inverses, greedy RLE round trip and raw fallback; Adler-32 and ZIP wrapper structure/checksum. DEFLATE payload coding is outside the model. |
 | PIZ | Complete successful encoder/decoder round trip through bitmap framing, frequency-derived canonical Huffman coding, both wavelet modes, sampled channel/lane traversal, LUT restoration, reordering and raw fallback. |
+| Texcomp (scaffolding) | Container headers + sizes; BC1/BC3/BC5 decoders; BC6H modes 0–4, 10; BC7 modes 0 (simplified), 4; ETC2 individual/T-mode and ASTC footprint slices. Differential harness not yet built — see [Boundaries](#boundaries). |
+| Tocio (scaffolding) | Op-kind + FixedFunction-style enums with inverse-pair invariants; Matrix/Range/Exponent/Log/CDL/LUT/YAML/Config/Resolve/Lower/Processor skeletons. Float semantics and YAML totality not yet proved — see [Boundaries](#boundaries). |
 
 ## PIZ proof chain and preconditions
 
@@ -63,11 +65,12 @@ or expanded input. Whole-block differential vectors check both interfaces.
 
 ## Verification evidence
 
-The final implementation validation on 2026-11-07 produced:
+The final implementation validation on 2026-11-09 produced:
 
 | Gate | Result |
 | --- | --- |
-| `make lean-tools lean-axiom-check` | Full build passed; 2980 first-party theorems, 152 with bit-vector certificate dependencies, 10 with approved native fixture-check dependencies; no unexpected axioms. |
+| `make lean-tools lean-axiom-check` | Full build passed; 3439 first-party theorems (EXR + Texcomp + Tocio), 152 with bit-vector certificate dependencies, 86 with approved native checks (10 EXR fixture checks + Tocio concrete Float checks); no unexpected axioms. |
+| `make texcomp-lean-check tocio-lean-check` | New-module builds passed. |
 | `make codec-diff` | 8192 comparisons across seven seeds and both libdeflate/in-tree backends; zero failures. Includes PIZ primitives, frequency tables, malformed/lenient packets and whole blocks. |
 | `make lean-validation-test` | 20 tests, two optional skips; all executed tests passed. Includes gate negative controls and axiom-audit rejection tests. |
 | `make lean-diff` | 126 structural files checked; zero disagreements. |
@@ -108,6 +111,10 @@ validation checks, not library proofs.
   C execution semantics to Lean remain outside the proved model.
 - Structural acceptance does not imply every compressed payload is valid.
   Differential/sanitizer gates supply independent implementation evidence.
+- Texcomp/Tocio models are scaffolding: decoders cover a subset of modes, Tocio
+  Float/YAML reasoning is incomplete, and no engine differential harness exists
+  yet (`texcomp-lean-diff`/`tocio-lean-diff` currently run only the C tests).
+  Plan for completion is in `~/.opencode/plan/lean-remaining-tasks.md` (outside repo).
 - OpenEXR-compatible parser leniencies and C defects exposed by validation are
   documented in [README.md](README.md); keep those records synchronized when
   the executable model or C implementation changes.

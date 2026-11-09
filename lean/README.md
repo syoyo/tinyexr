@@ -80,6 +80,8 @@ make lean-validation-sanitize # sanitized codec vectors and malformed-vector reg
 | `Exr/Piz.lean` | Range bitmap/alphabet and rank inverse with 16-bit bounds; signed 14-bit and modular 16-bit wavelet pairs and 2×2 cells; inverse composition for arbitrary distinct-position lifting schedules; descending canonical Huffman assignment, length-table zero-run serialization and payload symbol/RLE bits; prefix-tree symbol-stream inversion under explicit path hypotheses. |
 | `Exr/Zip.lean` | ZIP predictor/interleave composition with inverse, validated reconstruction after external inflate, bad header/checksum rejection; container layer: ADLER32 checksum (pure fold, with the block-boundary deferred-mod equivalence), zlib header validation (CM/CINFO/FDICT/check digits), the big-endian trailer, block validation, 16-line ZIP geometry. |
 | `CodecGen.lean` | `codecgen <out.bin> <seed>`: PXR24 (uint/half/float, mixed sampled blocks), B44/B44A, RLE, ZIP, ADLER32 and PIZ kernel/Huffman vectors for `test/v3/codec_diff.c`. |
+| `Texcomp/*` | Texture-codec scaffolding: `Container` (DDS/KTX), BC1/BC3/BC4/BC5 decoders, BC6H modes 0–4 + 10, BC7 modes 0 (simplified) + 4 (+6 stub), ETC2 individual/T-mode, ASTC footprint. Differential harness pending. |
+| `Tocio/*` | OCIO scaffolding: `Op` (op kinds + FixedFunction styles), Matrix/Range/Exponent/Log/CDL/LUT/YAML/Config/Resolve/Lower/Processor. Float semantics + YAML totality pending. |
 
 ## Conformance matrix
 
