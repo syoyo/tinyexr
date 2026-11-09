@@ -92,6 +92,11 @@ lean_exe bc4enccheck where
 lean_exe astcquantcheck where
   root := `AstcQuantCheck
 
+/-- BC7 pack/palette differential checker (C vectors vs Lean encoder). -/
+@[default_target]
+lean_exe bc7packcheck where
+  root := `Bc7PackCheck
+
 /-- Tocio op differential checker (C vectors vs Lean kernels). -/
 @[default_target]
 lean_exe tociocheck where
