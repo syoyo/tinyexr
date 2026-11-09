@@ -22,6 +22,9 @@ def hexVal (c : Char) : Nat :=
 def hexByte (s : String) : Nat :=
   s.foldl (fun acc c => acc * 16 + hexVal c) 0
 
+def decNat (s : String) : Nat :=
+  s.foldl (fun acc c => acc * 10 + (c.toNat - '0'.toNat)) 0
+
 def slice (s : String) (a b : Nat) : String :=
   String.ofList (((s.toList).drop a).take (b - a))
 
@@ -37,12 +40,14 @@ def main (args : List String) : IO Unit := do
     let sections := line.splitOn "|"
     let head := fields (sections.getD 0 "")
     let outp := fields (sections.getD 1 "")
+    let kind := head.getD 0 ""
+    let quick := !(kind == "enc1")   -- enc1 marks the non-quick (exhaustive) run
     let hexpx := head.getD 1 ""
     let px := (List.range 16).map (fun i =>
       let o := i * 8
       [hexByte (slice hexpx o (o + 2)), hexByte (slice hexpx (o + 2) (o + 4)),
        hexByte (slice hexpx (o + 4) (o + 6)), hexByte (slice hexpx (o + 6) (o + 8))])
-    let got := bc7EncodeBlockDefault px
+    let got := bc7EncodeBlockQuick quick px
     let want := (List.range 16).map (fun i => hexByte (outp.getD i ""))
     if got != want then
       bad := bad + 1

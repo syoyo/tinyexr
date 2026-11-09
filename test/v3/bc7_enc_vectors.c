@@ -23,6 +23,8 @@ int main(int argc, char **argv) {
         uint8_t blk[16];
         tc_bc7_options opt;
         tc_bc7_options_init(&opt);
+        /* Half the vectors use the exhaustive partition search (quick = 0). */
+        if (s & 1) opt.quick = 0;
         for (int i = 0; i < 16; i++) {
             int hi = (i & 1) ^ ((i >> 2) & 1);
             switch (s % 6) {
@@ -69,7 +71,7 @@ int main(int argc, char **argv) {
             fprintf(stderr, "compress failed\n");
             continue;
         }
-        fprintf(out, "enc ");
+        fprintf(out, "enc%d ", (s & 1) ? 1 : 0);
         for (int i = 0; i < 16; i++)
             fprintf(out, "%02x%02x%02x%02x", img[i][0], img[i][1], img[i][2], img[i][3]);
         fprintf(out, " |");

@@ -117,6 +117,11 @@ lean_exe bc7enccheck2 where
 lean_exe bc6hkerncheck where
   root := `Bc6hKernCheck
 
+/-- BC6H mode-0 encoder differential checker (C vectors vs Lean). -/
+@[default_target]
+lean_exe bc6hm0check where
+  root := `Bc6hMode0Check
+
 /-- Tocio op differential checker (C vectors vs Lean kernels). -/
 @[default_target]
 lean_exe tociocheck where
