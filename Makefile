@@ -354,8 +354,18 @@ tocio-diff: tocio-lib lean-tools
 texcomp-lean-diff: texcomp-test
 	@echo "texcomp-lean-diff: C tests passed"
 
+.PHONY: tocio-lut-diff
+tocio-lut-diff: tocio-lib lean-tools
+	mkdir -p build/lean-gen
+	$(CC) -std=c11 -Wall -Wextra -Isandbox/tocio/include -Isandbox/tocio/src -O1 -ffp-contract=off \
+	  test/v3/lutfile_vectors.c sandbox/tocio/src/*.c -lm -ldl \
+	  -o build/lutfile_gen
+	./build/lutfile_gen build/lean-gen/lutfile_vectors.txt
+	cd lean && $(LAKE) build ExrSpec lutcheck
+	./lean/.lake/build/bin/lutcheck build/lean-gen/lutfile_vectors.txt
+
 .PHONY: tocio-lean-diff
-tocio-lean-diff: tocio-test tocio-diff
+tocio-lean-diff: tocio-test tocio-diff tocio-lut-diff
 	@echo "tocio-lean-diff: C tests + Lean differential passed"
 
 PARSE_HARNESS = test/v3/parse_harness

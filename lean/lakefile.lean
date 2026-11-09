@@ -67,6 +67,11 @@ lean_exe astccheck where
 lean_exe tociocheck where
   root := `TocioCheck
 
+/-- LUT-file differential checker (C vectors vs Lean kernels). -/
+@[default_target]
+lean_exe lutcheck where
+  root := `LutCheck
+
 /-- ASTC debug dump (Lean side). -/
 @[default_target]
 lean_exe astcdebug where

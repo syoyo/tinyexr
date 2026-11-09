@@ -133,7 +133,9 @@ validation checks, not library proofs.
   relative level concentrated in RedMod breakpoint/quadratic cases, where
   the freestanding `atan2f` polynomial's behavior near B-spline segment
   seams deviates by amplified ulps from the C evaluation. YAML totality,
-  config lowering, and LUT loaders remain open (scaffolding only).
+  config lowering, and the .cube/.spi LUT loaders are total with a C
+  differential gate (192 seeded blocks bit-exact). CLF and CSP XML readers
+  remain open.
 - OpenEXR-compatible parser leniencies and C defects exposed by validation are
   documented in [README.md](README.md); keep those records synchronized when
   the executable model or C implementation changes.

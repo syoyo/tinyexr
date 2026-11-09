@@ -41,6 +41,7 @@ import Texcomp.AstcDecode
 import Tocio.Math
 import Tocio.Ops
 import Tocio.FixedFunc
+import Tocio.LutFile
 import Tocio.CdlInverse
 import Texcomp.Astc
 import Texcomp.AstcImage
