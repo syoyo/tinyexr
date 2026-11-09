@@ -56,3 +56,13 @@ lean_exe bc135check where
 @[default_target]
 lean_exe etc2check where
   root := `Etc2Check
+
+/-- ASTC differential checker (C vectors vs Lean decoder). -/
+@[default_target]
+lean_exe astccheck where
+  root := `AstcCheck
+
+/-- ASTC debug dump (Lean side). -/
+@[default_target]
+lean_exe astcdebug where
+  root := `AstcDebug

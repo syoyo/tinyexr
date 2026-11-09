@@ -37,6 +37,7 @@ import Texcomp.Bc6hFull
 import Texcomp.Bc7AllModes
 import Texcomp.Bc1Bc3Bc5
 import Texcomp.Etc2AllModes
+import Texcomp.AstcDecode
 import Texcomp.Astc
 import Texcomp.AstcImage
 import Texcomp.Bc7
