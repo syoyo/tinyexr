@@ -46,3 +46,8 @@ lean_exe bc6hcheck where
 @[default_target]
 lean_exe bc7check where
   root := `Bc7Check
+
+/-- BC1/BC3/BC5 differential checker (C vectors vs Lean decoder). -/
+@[default_target]
+lean_exe bc135check where
+  root := `Bc135Check
