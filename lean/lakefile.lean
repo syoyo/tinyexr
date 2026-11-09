@@ -97,6 +97,11 @@ lean_exe astcquantcheck where
 lean_exe bc7packcheck where
   root := `Bc7PackCheck
 
+/-- BC7 mode-6 encoder differential checker (C vectors vs Lean encoder). -/
+@[default_target]
+lean_exe bc7m6check where
+  root := `Bc7Mode6Check
+
 /-- Tocio op differential checker (C vectors vs Lean kernels). -/
 @[default_target]
 lean_exe tociocheck where

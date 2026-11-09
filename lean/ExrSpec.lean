@@ -15,6 +15,7 @@ import Texcomp.Bc1Encode
 import Texcomp.Bc4Encode
 import Texcomp.AstcColorQuant
 import Texcomp.Bc7Encode
+import Texcomp.Bc7Mode6
 import Tocio.Op
 import Tocio.Config
 import Texcomp.Bc1
