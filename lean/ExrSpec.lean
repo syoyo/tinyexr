@@ -39,6 +39,7 @@ import Texcomp.Bc1Bc3Bc5
 import Texcomp.Etc2AllModes
 import Texcomp.AstcDecode
 import Texcomp.AstcHdr
+import Texcomp.AstcHdrPack
 import Tocio.Math
 import Tocio.Ops
 import Tocio.FixedFunc

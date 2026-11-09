@@ -67,6 +67,11 @@ lean_exe astccheck where
 lean_exe astchdrcheck where
   root := `AstcHdrCheck
 
+/-- ASTC HDR endpoint pack differential checker (C vectors vs Lean). -/
+@[default_target]
+lean_exe astcpackcheck where
+  root := `AstcPackCheck
+
 /-- Tocio op differential checker (C vectors vs Lean kernels). -/
 @[default_target]
 lean_exe tociocheck where

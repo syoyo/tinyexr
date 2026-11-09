@@ -345,6 +345,16 @@ texcomp-astc-hdr-diff: texcomp lean-tools
 	cd lean && $(LAKE) build ExrSpec astchdrcheck
 	./lean/.lake/build/bin/astchdrcheck build/lean-gen/astc_hdr_vectors.txt
 
+.PHONY: texcomp-astc-pack-diff
+texcomp-astc-pack-diff: texcomp lean-tools
+	mkdir -p build/lean-gen
+	$(CC) -std=c11 -Wall -Wextra -Itools/texcomp/include -Iinclude -Isrc -Iexamples/common \
+	  test/v3/astc_pack_vectors.c build/libtexcomp.a build/libtinyexr3.a -lm -pthread \
+	  -o build/astc_pack_gen
+	./build/astc_pack_gen build/lean-gen/astc_pack_vectors.txt
+	cd lean && $(LAKE) build ExrSpec astcpackcheck
+	./lean/.lake/build/bin/astcpackcheck build/lean-gen/astc_pack_vectors.txt
+
 .PHONY: tocio-lean-check
 tocio-lean-check:
 	cd lean && $(LAKE) build Tocio.Op Tocio.Config Tocio.Transform Tocio.Lower Tocio.YamlTotal Tocio.Math Tocio.Ops Tocio.FixedFunc
