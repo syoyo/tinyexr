@@ -44,6 +44,7 @@ import Tocio.FixedFunc
 import Tocio.LutFile
 import Tocio.SpiFile
 import Tocio.ClfXml
+import Tocio.Clf
 import Tocio.CdlInverse
 import Texcomp.Astc
 import Texcomp.AstcImage

@@ -77,6 +77,11 @@ lean_exe lutcheck where
 lean_exe spicheck where
   root := `SpiCheck
 
+/-- CLF differential checker (C vectors vs Lean parser). -/
+@[default_target]
+lean_exe clfcheck where
+  root := `ClfCheck
+
 /-- ASTC debug dump (Lean side). -/
 @[default_target]
 lean_exe astcdebug where
