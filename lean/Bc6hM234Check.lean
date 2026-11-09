@@ -45,7 +45,8 @@ def main (args : List String) : IO Unit := do
         UInt32.ofNat (hexNat (toks.getD (1 + i * 3 + c) ""))))
     let res := if kind == "m2" then bc6hEncMode2Uf16 px
                else if kind == "m3" then bc6hEncMode3Uf16 px
-               else bc6hEncMode4Uf16 px
+               else if kind == "m4" then bc6hEncMode4Uf16 px
+               else bc6hEncMode5Uf16 px
     let status := outp.getD 0 ""
     match res with
     | none =>

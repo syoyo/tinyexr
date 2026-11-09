@@ -58,6 +58,38 @@ int main(int argc, char **argv) {
             }
         }
     }
+    /* Mode 5: 9-bit primary, 5-bit deltas (spread ~ 2x the 11-bit step). */
+    for (int s = 0; s < 260; s++) {
+        uint32_t px[16][3];
+        float fp[16][3];
+        uint8_t blk[16];
+        uint64_t err;
+        uint32_t e = 120u + (uint32_t)(rnd() % 18u);
+        uint32_t mbase = (uint32_t)(rnd() % 300u) * 0x2000u;
+        int spread = (s % 4 == 3) ? 60 + (int)(rnd() % 120u)
+                                  : (int)(rnd() % 10u);
+        for (int i = 0; i < 16; i++) {
+            for (int c = 0; c < 3; c++) {
+                int32_t d = (spread == 0) ? 0
+                    : (int32_t)(rnd() % (uint32_t)(2 * spread + 1)) - spread;
+                int64_t m = (int64_t)mbase + (int64_t)d * 0x2000;
+                if (m < 0) m = 0;
+                if (m > 0x7fffff) m = 0x7fffff;
+                px[i][c] = (e << 23) | (uint32_t)m;
+                fp[i][c] = F(px[i][c]);
+            }
+        }
+        err = tc_bc6h_mode5_uf16(fp, blk);
+        fprintf(out, "m5");
+        for (int i = 0; i < 16; i++)
+            for (int c = 0; c < 3; c++) fprintf(out, " %08x", px[i][c]);
+        if (err == (uint64_t)-1) fprintf(out, " | fail\n");
+        else {
+            fprintf(out, " | ok");
+            for (int i = 0; i < 16; i++) fprintf(out, " %02x", blk[i]);
+            fprintf(out, " %llu\n", (unsigned long long)err);
+        }
+    }
     fclose(out);
     return 0;
 }

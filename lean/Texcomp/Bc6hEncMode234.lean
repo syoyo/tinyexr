@@ -40,10 +40,10 @@ def bc6hEncAnchorFix (part anchor : Nat) (bep0 : List (List Nat)) (bsel0 : List 
 /-- Shared two-region search for the delta modes: 11-bit quantisation,
   per-channel delta limits from `dbits`, TOPK prefilter, refine, anchor
   fix-up. Returns `(partition, endpoints, selectors, error)`. -/
-def bc6hEncDeltaSearch (maxv : Nat) (dbits : List Nat) (pix : List (List UInt32)) :
+def bc6hEncDeltaSearch (qbits maxv : Nat) (dbits : List Nat) (pix : List (List UInt32)) :
     Option (Nat × List (List Nat) × List Nat × Nat) :=
   let q := (List.range 16).map (fun i =>
-    (List.range 3).map (fun c => bc6hQuantUf16N ((pix.getD i []).getD c 0) 11))
+    (List.range 3).map (fun c => bc6hQuantUf16N ((pix.getD i []).getD c 0) qbits))
   -- The selector target is the *10-bit* reconstruction of the input (C uses
   -- `unquant_uf16_to_mag(quant_uf16(f))` here, not the 11-bit `q`).
   let target := (List.range 16).map (fun i =>
@@ -147,7 +147,7 @@ def bc6hEncTail (acc : Nat × Nat) (bestP anchor : Nat) (bsel : List Nat) : Nat 
 
 /-- `tc_bc6h_mode234_uf16` for mode 2 (R5G4B4 deltas). -/
 def bc6hEncMode2Uf16 (pix : List (List UInt32)) : Option (List Nat × Nat) :=
-  match bc6hEncDeltaSearch 2047 [5, 4, 4] pix with
+  match bc6hEncDeltaSearch 11 2047 [5, 4, 4] pix with
   | none => none
   | some (bestP, bep, bsel, err) =>
     let epAt (r c : Nat) : Nat := (bep.getD r [0, 0, 0]).getD c 0
@@ -177,7 +177,7 @@ def bc6hEncMode2Uf16 (pix : List (List UInt32)) : Option (List Nat × Nat) :=
 
 /-- `tc_bc6h_mode234_uf16` for mode 3 (R4G5B4 deltas). -/
 def bc6hEncMode3Uf16 (pix : List (List UInt32)) : Option (List Nat × Nat) :=
-  match bc6hEncDeltaSearch 2047 [4, 5, 4] pix with
+  match bc6hEncDeltaSearch 11 2047 [4, 5, 4] pix with
   | none => none
   | some (bestP, bep, bsel, err) =>
     let epAt (r c : Nat) : Nat := (bep.getD r [0, 0, 0]).getD c 0
@@ -209,7 +209,7 @@ def bc6hEncMode3Uf16 (pix : List (List UInt32)) : Option (List Nat × Nat) :=
 
 /-- `tc_bc6h_mode234_uf16` for mode 4 (R4G4B5 deltas). -/
 def bc6hEncMode4Uf16 (pix : List (List UInt32)) : Option (List Nat × Nat) :=
-  match bc6hEncDeltaSearch 2047 [4, 4, 5] pix with
+  match bc6hEncDeltaSearch 11 2047 [4, 4, 5] pix with
   | none => none
   | some (bestP, bep, bsel, err) =>
     let epAt (r c : Nat) : Nat := (bep.getD r [0, 0, 0]).getD c 0
@@ -237,6 +237,37 @@ def bc6hEncMode4Uf16 (pix : List (List UInt32)) : Option (List Nat × Nat) :=
     let (a20, p20) := bc6hEncPut (a19, p19) ((epAt 3 2 >>> 4) &&& 1) 1
     let (a21, p21) := bc6hEncPut (a20, p20) ((epAt 3 2 >>> 3) &&& 1) 1
     let bits := bc6hEncTail (a21, p21) bestP anchor bsel
+    some ((List.range 16).map (fun i => (bits >>> (8 * i)) &&& 0xFF), err)
+
+/-- `tc_bc6h_mode5_uf16`: 9-bit primary, all 5-bit signed deltas. -/
+def bc6hEncMode5Uf16 (pix : List (List UInt32)) : Option (List Nat × Nat) :=
+  match bc6hEncDeltaSearch 9 511 [5, 5, 5] pix with
+  | none => none
+  | some (bestP, bep, bsel, err) =>
+    let epAt (r c : Nat) : Nat := (bep.getD r [0, 0, 0]).getD c 0
+    let d := fun (r c : Nat) => Int.ofNat (epAt r c) - Int.ofNat (epAt 0 c)
+    let anchor := bc6hEncPart2Anchor.getD bestP 15
+    let (a1, p1) := bc6hEncPut (0, 0) 0x0E 5
+    let (a2, p2) := bc6hEncPut (a1, p1) (epAt 0 0) 9
+    let (a3, p3) := bc6hEncPut (a2, p2) ((epAt 2 2 >>> 4) &&& 1) 1
+    let (a4, p4) := bc6hEncPut (a3, p3) (epAt 0 1) 9
+    let (a5, p5) := bc6hEncPut (a4, p4) ((epAt 2 1 >>> 4) &&& 1) 1
+    let (a6, p6) := bc6hEncPut (a5, p5) (epAt 0 2) 9
+    let (a7, p7) := bc6hEncPut (a6, p6) ((epAt 3 2 >>> 4) &&& 1) 1
+    let (a8, p8) := bc6hEncPut (a7, p7) (bc6hEncPackDelta5 (d 1 0)) 5
+    let (a9, p9) := bc6hEncPut (a8, p8) ((epAt 3 1 >>> 4) &&& 1) 1
+    let (a10, p10) := bc6hEncPut (a9, p9) (epAt 2 1 &&& 0xF) 4
+    let (a11, p11) := bc6hEncPut (a10, p10) (bc6hEncPackDelta5 (d 1 1)) 5
+    let (a12, p12) := bc6hEncPut (a11, p11) (epAt 3 2 &&& 1) 1
+    let (a13, p13) := bc6hEncPut (a12, p12) (epAt 3 1 &&& 0xF) 4
+    let (a14, p14) := bc6hEncPut (a13, p13) (bc6hEncPackDelta5 (d 1 2)) 5
+    let (a15, p15) := bc6hEncPut (a14, p14) ((epAt 3 2 >>> 1) &&& 1) 1
+    let (a16, p16) := bc6hEncPut (a15, p15) (epAt 2 2 &&& 0xF) 4
+    let (a17, p17) := bc6hEncPut (a16, p16) (bc6hEncPackDelta5 (d 2 0)) 5
+    let (a18, p18) := bc6hEncPut (a17, p17) ((epAt 3 2 >>> 2) &&& 1) 1
+    let (a19, p19) := bc6hEncPut (a18, p18) (bc6hEncPackDelta5 (d 3 0)) 5
+    let (a20, p20) := bc6hEncPut (a19, p19) ((epAt 3 2 >>> 3) &&& 1) 1
+    let bits := bc6hEncTail (a20, p20) bestP anchor bsel
     some ((List.range 16).map (fun i => (bits >>> (8 * i)) &&& 0xFF), err)
 
 end Texcomp
