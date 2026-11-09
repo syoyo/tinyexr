@@ -136,7 +136,10 @@ validation checks, not library proofs.
   config lowering, and the .cube/.spi LUT loaders are total with C
   differential gates (192 .cube seeded blocks bit-exact; 200 .spi1d/.spi3d
   vectors bit-exact including parse-failure parity and applied pixels).
-  CLF and CSP XML readers remain open.
+  The CLF loader (Matrix, Range, Exponent, Log, ASC_CDL, LUT1D, LUT3D,
+  bit-depth normalization, UNSUPPORTED-not-skip discipline) is total
+  with a C differential gate (396 seeded vectors bit-exact including
+  error-kind parity and applied pixels). CSP reader remains open.
 - OpenEXR-compatible parser leniencies and C defects exposed by validation are
   documented in [README.md](README.md); keep those records synchronized when
   the executable model or C implementation changes.
