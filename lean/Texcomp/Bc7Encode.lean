@@ -336,4 +336,16 @@ def bc7PackCandidate (c : Bc7Candidate) : List Nat :=
     else (acc6, pos6)
   (List.range 16).map (fun i => (acc7 >>> (8 * i)) &&& 0xFF)
 
+/-- `tc_luma_u8`: fixed-point luma. -/
+def bc7LumaU8 (r g b : Nat) : Nat := r * 38 + g * 76 + b * 14
+
+/-- `tc_err4` with the default {1,1,1,1} channel weights (shared with the
+  mode-6 encoder). -/
+def bc7Err4 (a : List Nat) (r g b al : Nat) (hasAlpha : Bool) : Nat :=
+  let dr := (Int.ofNat (a.getD 0 0)) - (Int.ofNat r)
+  let dg := (Int.ofNat (a.getD 1 0)) - (Int.ofNat g)
+  let db := (Int.ofNat (a.getD 2 0)) - (Int.ofNat b)
+  let da := if hasAlpha then (Int.ofNat (a.getD 3 0)) - (Int.ofNat al) else 0
+  (dr * dr + dg * dg + db * db + da * da).toNat
+
 end Texcomp
