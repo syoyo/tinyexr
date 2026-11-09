@@ -56,6 +56,14 @@ static void emit_ok(FILE *out, const toc_op_list *list, const char *src,
             print_f32bits(out, op->u.range.min, 4);
             print_f32bits(out, op->u.range.max, 4);
             fprintf(out, " %d %d", op->u.range.clamp_lo, op->u.range.clamp_hi);
+        } else if (op->kind == TOC_OP_LUT1D) {
+            fprintf(out, " lut1d %d", op->u.lut1d.length);
+            print_f32bits(out, op->u.lut1d.data, (size_t)op->u.lut1d.length * 3);
+        } else if (op->kind == TOC_OP_LUT3D) {
+            fprintf(out, " lut3d %d %d", op->u.lut3d.size, op->u.lut3d.interp);
+            print_f32bits(out, op->u.lut3d.data,
+                          (size_t)op->u.lut3d.size * (size_t)op->u.lut3d.size *
+                              (size_t)op->u.lut3d.size * 3);
         } else if (op->kind == TOC_OP_EXPONENT) {
             fprintf(out, " exponent");
             print_f32bits(out, op->u.exponent.e, 4);
@@ -331,6 +339,49 @@ static void gen_cdl(FILE *out, int mode) {
     free(buf);
 }
 
+
+static void gen_lut1d(FILE *out, int mode) {
+    char *buf = malloc(65536);
+    char body[32768];
+    char *p = body;
+    int length = 2 + (int)(splitmix64() % 13u);
+    int comps = (splitmix64() & 1) ? 1 : 3;
+    if (mode == 4) comps = 2;              /* parse fail */
+    if (mode == 5) length = 261;           /* > cap? no (1<<20) so still ok */
+    const char *bd[] = {"16f", "8i", "10i", "16i"};
+    p += sprintf(p, "<LUT1D outBitDepth=\"%s\">\n", bd[splitmix64() % 4u]);
+    if (mode == 6) p += sprintf(p, "<Array dim=\"4 2 3\">\n");
+    else p += sprintf(p, "<Array dim=\"%d %d\">\n", length, comps);
+    int emit = length * comps;
+    if (mode == 1) emit -= 1;               /* truncated -> PARSE */
+    for (int i = 0; i < emit; i++) p += sprintf(p, "%.6f ", randf());
+    p += sprintf(p, "\n</Array>\n</LUT1D>\n");
+    if (mode == 2) p += sprintf(p, "<Array dim=\"2 1\">\n0.1 0.2\n</Array>\n"); /* double Array -> PARSE */
+    size_t len;
+    wrap(buf, &len, body);
+    run_one(out, buf, len);
+    free(buf);
+}
+
+static void gen_lut3d(FILE *out, int mode) {
+    char *buf = malloc(6291456);
+    char body[6291456];
+    char *p = body;
+    int N = 2 + (int)(splitmix64() % 3u);
+    const char *interp = (splitmix64() & 1) ? "tetrahedral" : "trilinear";
+    p += sprintf(p, "<LUT3D interpolation=\"%s\">\n", interp);
+    if (mode == 5) p += sprintf(p, "<Array dim=\"%d %d %d\">\n", N, N, N);
+    else p += sprintf(p, "<Array dim=\"%d %d %d 3\">\n", N, N, N);
+    int total = N * N * N * 3;
+    int emit = mode == 1 ? total - 3 : total;
+    for (int i = 0; i < emit; i++) p += sprintf(p, "%.6f ", randf());
+    p += sprintf(p, "\n</Array>\n</LUT3D>\n");
+    size_t len;
+    wrap(buf, &len, body);
+    run_one(out, buf, len);
+    free(buf);
+}
+
 int main(int argc, char **argv) {
     FILE *out = stdout;
     if (argc > 1) {
@@ -350,6 +401,8 @@ int main(int argc, char **argv) {
     for (int s = 0; s < 48; s++) gen_exponent(out, (int)(splitmix64() % 10u));
     for (int s = 0; s < 48; s++) gen_log(out, (int)(splitmix64() % 10u));
     for (int s = 0; s < 40; s++) gen_cdl(out, (int)(splitmix64() % 5u));
+    for (int s = 0; s < 48; s++) gen_lut1d(out, (int)(splitmix64() % 7u));
+    for (int s = 0; s < 24; s++) gen_lut3d(out, (int)(splitmix64() % 6u));
     fclose(out);
     return 0;
 }

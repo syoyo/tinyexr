@@ -54,7 +54,16 @@ def applyOp (op : ClfOp) (px : Pixel) : Pixel :=
   | .logCam base inv ls lo ns no br ls2 lo2 =>
     applyLogCam base ls lo ns no br ls2 lo2 inv 4 px
   | .cdl sl of pw sat cl => applyCdl sl of pw sat [0.0, 0.0, 0.0] cl false px
-  | _ => px
+  | .lut1d ln d =>
+    let (o0, o1, o2) := applyLut1d ln 3 0.0 1.0 LutInterp.linear d (px.1, px.2.1, px.2.2.1)
+    (o0, o1, o2, px.2.2.2)
+  | .lut3d sz d tetra =>
+    let px3 := (px.1, px.2.1, px.2.2.1)
+    let (o0, o1, o2) := if tetra then
+      applyLut3dTet sz [0.0, 0.0, 0.0] [1.0, 1.0, 1.0] d px3
+    else
+      applyLut3dTrilinear sz [0.0, 0.0, 0.0] [1.0, 1.0, 1.0] d px3
+    (o0, o1, o2, px.2.2.2)
 
 def checkLine (line : String) (n : Nat) : IO Bool := do
   let sections := line.splitOn "|"
@@ -106,6 +115,17 @@ def checkLine (line : String) (n : Nat) : IO Bool := do
       let mir := decNum (hp.getD i1 "")
       wantOps := wantOps ++ [("exponent", e, [], [], [], [], [], [], [], mir, 0)]
       idx := i1 + 1
+    else if kind == "lut1d" then
+      let ln := decNum (hp.getD idx "")
+      let (data, i1) := readF32s hp (idx + 1) (ln * 3)
+      wantOps := wantOps ++ [("lut1d", data, [], [], [], [], [], [], [], ln, 0)]
+      idx := i1
+    else if kind == "lut3d" then
+      let sz := decNum (hp.getD idx "")
+      let tetra := decNum (hp.getD (idx + 1) "")
+      let (data, i2) := readF32s hp (idx + 2) (sz * sz * sz * 3)
+      wantOps := wantOps ++ [("lut3d", data, [], [], [], [], [], [], [], sz, tetra)]
+      idx := i2
     else if kind == "explin" then
       let (sc, i1) := readF32s hp idx 4
       let (off, i2) := readF32s hp i1 4
@@ -208,6 +228,31 @@ def checkLine (line : String) (n : Nat) : IO Bool := do
             if mir != (fl1 == 1) then
               IO.eprintln s!"line {n} op {i} exponent mirror"
               ok := false
+          | _ => pure ()
+        | "lut1d" =>
+          match op with
+          | .lut1d ln d =>
+            if ln != fl1 then
+              IO.eprintln s!"line {n} op {i} lut1d length got {ln}, want {fl1}"
+              ok := false
+            for (k, v) in List.zip (List.range a.length) a do
+              if Float32.toBits (d.getD k 0.0) != Float32.toBits v then
+                IO.eprintln s!"line {n} op {i} lut1d data[{k}]"
+                ok := false
+          | _ => pure ()
+        | "lut3d" =>
+          match op with
+          | .lut3d sz d tetra =>
+            if sz != fl1 then
+              IO.eprintln s!"line {n} op {i} lut3d size got {sz}, want {fl1}"
+              ok := false
+            if tetra != (fl2 == 2) then
+              IO.eprintln s!"line {n} op {i} lut3d tetra"
+              ok := false
+            for (k, v) in List.zip (List.range a.length) a do
+              if Float32.toBits (d.getD k 0.0) != Float32.toBits v then
+                IO.eprintln s!"line {n} op {i} lut3d data[{k}] got {d.getD k 0.0}, want {v}"
+                ok := false
           | _ => pure ()
         | "explin" =>
           match op with

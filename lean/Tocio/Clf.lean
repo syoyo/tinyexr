@@ -571,13 +571,89 @@ def clfCdl (cs0 : List Char) (style : String) :
     | Except.ok (sl, of, pw, sat, rest) =>
       Except.ok (pushCdl sl of pw sat clampVal inverse, rest)
 
-/-- `clf_lut1d` (slice 4). -/
-def clfLut1d (_cs : List Char) (_outS : Float32) :
-    Except ClfError (List ClfOp × List Char) := Except.error .unsupported
+/-- `clf_lut1d`: `<Array dim="length channels">` with 1- or
+  3-component entries (replicated to 3 channels), divided by the out
+  bit-depth scale. -/
+def clfLut1d (cs0 : List Char) (outS : Float32) :
+    Except ClfError (List ClfOp × List Char) :=
+  let rec loop (fuel : Nat) (cs : List Char)
+      (data : Option (Nat × Nat × List Float32)) :
+      Except ClfError (Nat × Nat × List Float32 × List Char) :=
+    if fuel = 0 then Except.error .parse
+    else
+      let (isOpen, tag, rest) := xtag cs
+      if !isOpen then
+        match xskipClose rest, data with
+        | (true, rest2), some (ln, ch, d) => Except.ok (ln, ch, d, rest2)
+        | (false, _), _ => Except.error .parse
+        | (_, _), none => Except.error .parse
+      else if tag == "Array" then
+        let (dims, rest) := arrayDims rest
+        if data.isSome then Except.error .parse
+        else if dims.length != 2 then Except.error .unsupported
+        else
+          let length := dims.getD 0 0
+          let channels := dims.getD 1 0
+          if (channels != 1 && channels != 3) || length < 2 || length > (1 <<< 20) then
+            Except.error .parse
+          else if !spiValuesFit (length * channels) rest.length then
+            Except.error .parse
+          else
+            let (tmp, rest) := xfloats rest (length * channels)
+            if tmp.length != length * channels then Except.error .parse
+            else
+              let data := (List.range (length * 3)).map (fun i =>
+                let row := i / 3
+                let c := i % 3
+                (if c < channels then tmp.getD (row * channels + c) 0.0
+                 else tmp.getD (row * channels + channels - 1) 0.0) / outS)
+              loop (fuel - 1) (skipCloseTag rest) (some (length, channels, data))
+      else loop (fuel - 1) (xskipElem rest tag) data
+  loop (cs0.length + 1) cs0 none |>.map (fun (ln, _, d, rest) => ([.lut1d ln d], rest))
 
-/-- `clf_lut3d` (slice 4). -/
-def clfLut3d (_cs : List Char) (_tetra : Bool) (_outS : Float32) :
-    Except ClfError (List ClfOp × List Char) := Except.error .unsupported
+/-- `clf_lut3d`: `<Array dim="N N N 3">` entries stored blue-fastest
+  in the file; transposed to the RED-fastest layout (as C does) and
+  divided by the out bit-depth scale. -/
+def clfLut3d (cs0 : List Char) (tetra : Bool) (outS : Float32) :
+    Except ClfError (List ClfOp × List Char) :=
+  let rec loop (fuel : Nat) (cs : List Char)
+      (data : Option (Nat × List Float32)) :
+      Except ClfError (Nat × List Float32 × List Char) :=
+    if fuel = 0 then Except.error .parse
+    else
+      let (isOpen, tag, rest) := xtag cs
+      if !isOpen then
+        match xskipClose rest, data with
+        | (true, rest2), some (sz, d) => Except.ok (sz, d, rest2)
+        | (false, _), _ => Except.error .parse
+        | (_, _), none => Except.error .parse
+      else if tag == "Array" then
+        let (dims, rest) := arrayDims rest
+        if data.isSome then Except.error .parse
+        else if dims.length != 4 || dims.getD 3 0 != 3 then Except.error .unsupported
+        else
+          let size := dims.getD 0 0
+          if dims.getD 1 0 != size || dims.getD 2 0 != size || size < 2 || size > 256 then
+            Except.error .parse
+          else if !spiValuesFit (size * size * size * 3) rest.length then
+            Except.error .parse
+          else
+            let need := size * size * size * 3
+            let (file, rest) := xfloats rest need
+            if file.length != need then Except.error .parse
+            else
+              let data := (List.range (size * size * size)).map (fun pos =>
+                let ir := pos % size
+                let ig := (pos / size) % size
+                let ib := pos / (size * size)
+                let src := ((ir * size + ig) * size + ib) * 3
+                [file.getD (src + 0) 0.0 / outS,
+                 file.getD (src + 1) 0.0 / outS,
+                 file.getD (src + 2) 0.0 / outS])
+                |>.flatten
+              loop (fuel - 1) (skipCloseTag rest) (some (size, data))
+      else loop (fuel - 1) (xskipElem rest tag) data
+  loop (cs0.length + 1) cs0 none |>.map (fun (sz, d, rest) => ([.lut3d sz d tetra], rest))
 
 /-! ## Dispatcher (`toc_load_clf`) -/
 
