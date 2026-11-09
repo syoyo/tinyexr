@@ -76,6 +76,7 @@ The final implementation validation on 2026-11-09 produced:
 | `make texcomp-bc135-diff` | 1536 BC1/BC3/BC5 blocks, C vs Lean byte-exact (BC5 snorm float step excluded, see Boundaries). |
 | `make texcomp-etc2-diff` | 1024 ETC2/EAC blocks (all 5 RGB modes + EAC alpha), C vs Lean byte-exact. |
 | `make texcomp-astc-diff` | 1024 ASTC LDR blocks (C-encoder output, all partition/CEM paths exercised), C vs Lean byte-exact. |
+| `make tocio-diff` | 4096 Tocio blocks: seven op kernels + FixedFunction styles, C vs Lean bit-exact except 12 documented RedMod seam residue blocks (relative deviation ≤ 3e-3). |
 | `make codec-diff` | 8192 comparisons across seven seeds and both libdeflate/in-tree backends; zero failures. Includes PIZ primitives, frequency tables, malformed/lenient packets and whole blocks. |
 | `make lean-validation-test` | 20 tests, two optional skips; all executed tests passed. Includes gate negative controls and axiom-audit rejection tests. |
 | `make lean-diff` | 126 structural files checked; zero disagreements. |
