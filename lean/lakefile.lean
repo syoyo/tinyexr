@@ -152,6 +152,11 @@ lean_exe bc6hm19check where
 lean_exe bc6hsf16check where
   root := `Bc6hSf16Check
 
+/-- BC6H per-block mode-selection differential checker (C vectors vs Lean). -/
+@[default_target]
+lean_exe bc6hblockcheck where
+  root := `Bc6hBlockCheck
+
 /-- Tocio op differential checker (C vectors vs Lean kernels). -/
 @[default_target]
 lean_exe tociocheck where

@@ -53,6 +53,7 @@ def main (args : List String) : IO Unit := do
       else if kind == "m6s" then bc6hEncMode6Sf16 px
       else if kind == "m7s" then bc6hEncMode7Sf16 px
       else if kind == "m8s" then bc6hEncMode8Sf16 px
+      else if kind == "m9s" then bc6hEncMode9Sf16 px
       else if kind == "m12s" then bc6hEncMode12Sf16 px
       else bc6hEncMode13Sf16 px
     let status := outp.getD 0 ""

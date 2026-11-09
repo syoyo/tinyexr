@@ -72,6 +72,7 @@ The final implementation validation on 2026-11-09 produced:
 | `make lean-tools lean-axiom-check` | Full build passed; 3479 first-party theorems (EXR + Texcomp + Tocio), 152 with bit-vector certificate dependencies, 98 with approved native checks; no unexpected axioms. |
 | `make texcomp-lean-check tocio-lean-check` | New-module builds passed. |
 | `make texcomp-bc6h-diff` | 1028 BC6H blocks (all 14 modes, signed + unsigned), C vs Lean byte-exact. |
+| `make texcomp-bc6h-*-diff` | BC6H encoder models byte-exact against C: shared kernels (4215 values), unsigned modes 0/1/2/3/4/5/6/7/8/9/10/12/13 (400 + 520 + 1040 + 780 + 900 blocks), signed modes 0–8/12/13 (1800 blocks), and the per-block mode-selection drivers `tc_encode_bc6h_block_uf16`/`_sf16` (480 blocks, both variants). |
 | `make texcomp-bc7-diff` | 530 BC7 blocks (all 8 modes), C vs Lean byte-exact. |
 | `make texcomp-bc135-diff` | 1536 BC1/BC3/BC5 blocks, C vs Lean byte-exact (BC5 snorm float step excluded, see Boundaries). |
 | `make texcomp-etc2-diff` | 1024 ETC2/EAC blocks (all 5 RGB modes + EAC alpha), C vs Lean byte-exact. |
@@ -149,9 +150,14 @@ validation checks, not library proofs.
   byte-exact for every C `_sf16` mode (0–8, 12, 13; `make
   texcomp-bc6h-sf16-diff`, 1650 blocks, 825 encoded, 825 no-fit), including
   the C's `(uint32_t)` two's-complement bit extraction and its hard-coded
-  ±511 clamp inside `tc_bc6h_refine_sf16`. Remaining Texcomp work: BC6H
-  mode selection across the per-mode encoders, BC7 encoders beyond the
-  pack/seed/mode-6 slices, DDS/KTX pixel payloads, and the sub-256
+  ±511 clamp inside `tc_bc6h_refine_sf16`. The per-block mode-selection
+  drivers `tc_encode_bc6h_block_uf16`/`_sf16` are modelled too
+  (`Texcomp/Bc6hEncodeBlock.lean`, `make texcomp-bc6h-block-diff`, 480
+  blocks covering both variants), including the `48 * 256 * 256`
+  early-stop threshold, the fixed candidate order, and the fact that the
+  signed driver's seed compares the luma key *signed* while modes 12/13
+  compare it as `uint32_t`. Remaining Texcomp work: BC7 encoders beyond
+  the pack/seed/mode-6 slices, DDS/KTX pixel payloads, and the sub-256
   colour-roundtrip LUT used by ASTC HDR 2-subset encoding.
 - Tocio: Float64-vs-f32 note aside, the seven op kernels (matrix, range,
   exponent, exp-linear, log, log-camera, CDL) are bit-exact `Float32` ports

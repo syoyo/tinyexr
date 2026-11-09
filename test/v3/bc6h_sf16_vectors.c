@@ -58,6 +58,7 @@ static uint64_t run_mode(int mode, const float fp[16][3], uint8_t blk[16]) {
     case 3: return tc_bc6h_mode234_sf16(fp, dbits234[1], 3, blk);
     case 4: return tc_bc6h_mode234_sf16(fp, dbits234[2], 4, blk);
     case 5: return tc_bc6h_mode5_sf16(fp, blk);
+    case 9: return tc_bc6h_mode9_sf16(fp, blk);
     case 6: return tc_bc6h_mode678_sf16(fp, dbits678[0], 6, blk);
     case 7: return tc_bc6h_mode678_sf16(fp, dbits678[1], 7, blk);
     case 8: return tc_bc6h_mode678_sf16(fp, dbits678[2], 8, blk);
@@ -70,8 +71,8 @@ static uint64_t run_mode(int mode, const float fp[16][3], uint8_t blk[16]) {
 int main(int argc, char **argv) {
     FILE *out = stdout;
     if (argc > 1) { out = fopen(argv[1], "w"); if (!out) return 1; }
-    static const int modes[11] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 13};
-    for (int mi = 0; mi < 11; mi++) {
+    static const int modes[12] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 12, 13};
+    for (int mi = 0; mi < 12; mi++) {
         for (int s = 0; s < 150; s++) {
             uint32_t px[16][3];
             float fp[16][3];

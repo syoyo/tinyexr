@@ -515,6 +515,16 @@ texcomp-bc6h-sf16-diff: texcomp lean-tools
 	cd lean && $(LAKE) build ExrSpec bc6hsf16check
 	./lean/.lake/build/bin/bc6hsf16check build/lean-gen/bc6h_sf16_vectors.txt
 
+.PHONY: texcomp-bc6h-block-diff
+texcomp-bc6h-block-diff: texcomp lean-tools
+	mkdir -p build/lean-gen
+	$(CC) -std=c11 -Wall -Wextra -Itools/texcomp/include -Iinclude -Isrc -Iexamples/common \
+	  test/v3/bc6h_block_vectors.c build/libtexcomp.a build/libtinyexr3.a -lm -pthread \
+	  -o build/bc6h_block_gen
+	./build/bc6h_block_gen build/lean-gen/bc6h_block_vectors.txt
+	cd lean && $(LAKE) build ExrSpec bc6hblockcheck
+	./lean/.lake/build/bin/bc6hblockcheck build/lean-gen/bc6h_block_vectors.txt
+
 .PHONY: tocio-lean-check
 tocio-lean-check:
 	cd lean && $(LAKE) build Tocio.Op Tocio.Config Tocio.Transform Tocio.Lower Tocio.YamlTotal Tocio.Math Tocio.Ops Tocio.FixedFunc
