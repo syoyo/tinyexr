@@ -120,6 +120,10 @@ validation checks, not library proofs.
   Float/YAML reasoning is incomplete, and no engine differential harness exists
   yet (`texcomp-lean-diff`/`tocio-lean-diff` currently run only the C tests).
   Plan for completion is in `~/.opencode/plan/lean-remaining-tasks.md` (outside repo).
+- Texcomp BC/RG/ETC2/EAC/ASTC block decoders are now faithful byte-exact ports
+  with C differential gates. Remaining Texcomp work: ASTC HDR path (float
+  endpoints), DDS/KTX pixel payloads, BC6H/BC7 encoder models (only decode is
+  proved).
 - OpenEXR-compatible parser leniencies and C defects exposed by validation are
   documented in [README.md](README.md); keep those records synchronized when
   the executable model or C implementation changes.
