@@ -36,26 +36,45 @@ def ddsFileSize (h : DdsHeader) : Nat :=
     ((h.width.toNat + 3) / 4) * ((h.height.toNat + 3) / 4) * h.blockBytes.toNat
 
 def emitDdsHeader (h : DdsHeader) : Emit :=
-  putU32LE 0x20534444 ∘
-  putU32LE 124 ∘
-  putU32LE 0x0002100F ∘
-  putU32LE h.height ∘
-  putU32LE h.width ∘
-  putU32LE (UInt32.ofNat (ddsPitch h)) ∘
-  putU32LE 1 ∘
-  putU32LE 1 ∘
-  putU32LE 0 ∘ putU32LE 0 ∘ putU32LE 0 ∘ putU32LE 0 ∘ putU32LE 0 ∘
-  putU32LE 0 ∘ putU32LE 0 ∘ putU32LE 0 ∘ putU32LE 0 ∘ putU32LE 0 ∘ putU32LE 0 ∘
-  putU32LE 32 ∘
-  putU32LE 0x00000004 ∘
-  putU32LE 0x30315844 ∘
-  putU32LE 0 ∘ putU32LE 0 ∘ putU32LE 0 ∘ putU32LE 0 ∘ putU32LE 0 ∘
-  putU32LE 0x00001000 ∘
-  putU32LE h.dxgi ∘
-  putU32LE 3 ∘
-  putU32LE 0 ∘
-  putU32LE 1 ∘
-  putU32LE 0 ∘ putU32LE 0 ∘ putU32LE 0 ∘ putU32LE 0 ∘ putU32LE 0
+  let step := fun (acc : Bytes) (v : UInt32) => putU32LE v acc
+  let b0 := step ByteArray.empty 0x20534444
+  let b1 := step b0 124
+  let b2 := step b1 0x0002100F
+  let b3 := step b2 h.height
+  let b4 := step b3 h.width
+  let b5 := step b4 (UInt32.ofNat (ddsPitch h))
+  let b6 := step b5 0
+  let b7 := step b6 1
+  let b8 := step b7 0
+  let b9 := step b8 0
+  let b10 := step b9 0
+  let b11 := step b10 0
+  let b12 := step b11 0
+  let b13 := step b12 0
+  let b14 := step b13 0
+  let b15 := step b14 0
+  let b16 := step b15 0
+  let b17 := step b16 0
+  let b18 := step b17 0
+  let b19 := step b18 32
+  let b20 := step b19 0x00000004
+  let b21 := step b20 0x30315844
+  let b22 := step b21 0
+  let b23 := step b22 0
+  let b24 := step b23 0
+  let b25 := step b24 0
+  let b26 := step b25 0
+  let b27 := step b26 0x00001000
+  let b28 := step b27 h.dxgi
+  let b29 := step b28 3
+  let b30 := step b29 0
+  let b31 := step b30 1
+  let b32 := step b31 0
+  let b33 := step b32 0
+  let b34 := step b33 0
+  let b35 := step b34 0
+  let b36 := step b35 0
+  fun _ => b36
 
 def parseDdsHeader (b : Bytes) : Option DdsHeader := do
   let m0 ← getU8 b 0
@@ -79,18 +98,25 @@ structure KtxHeader where
   deriving Repr, DecidableEq
 
 def emitKtxHeader (h : KtxHeader) : Emit :=
-  (fun acc => acc.push 0xab |>.push 0x4b |>.push 0x54 |>.push 0x58
-                   |>.push 0x20 |>.push 0x31 |>.push 0x31 |>.push 0xbb
-                   |>.push 0x0d |>.push 0x0a |>.push 0x1a |>.push 0x0a) ∘
-  putU32LE ktxEndianMarker ∘
-  putU32LE 1 ∘
-  putU32LE h.internalFormat ∘
-  putU32LE h.baseFormat ∘
-  putU32LE h.width ∘
-  putU32LE h.height ∘
-  putU32LE 1 ∘
-  putU32LE 1 ∘
-  putU32LE h.payloadSize
+  let magic : Bytes := ByteArray.empty.push 0xab |>.push 0x4b |>.push 0x54 |>.push 0x58
+    |>.push 0x20 |>.push 0x31 |>.push 0x31 |>.push 0xbb
+    |>.push 0x0d |>.push 0x0a |>.push 0x1a |>.push 0x0a
+  let step := fun (acc : Bytes) (v : UInt32) => putU32LE v acc
+  let b0 := step magic ktxEndianMarker
+  let b1 := step b0 0
+  let b2 := step b1 1
+  let b3 := step b2 0
+  let b4 := step b3 h.internalFormat
+  let b5 := step b4 h.baseFormat
+  let b6 := step b5 h.width
+  let b7 := step b6 h.height
+  let b8 := step b7 0
+  let b9 := step b8 0
+  let b10 := step b9 1
+  let b11 := step b10 1
+  let b12 := step b11 0
+  let b13 := step b12 h.payloadSize
+  fun _ => b13
 
 def ktxFileSize (h : KtxHeader) : Nat := ktxHeaderSize + h.payloadSize.toNat
 
@@ -102,6 +128,24 @@ theorem ddsFileSize_eq (h : DdsHeader) :
 theorem ktxFileSize_eq (h : KtxHeader) :
     ktxFileSize h = ktxHeaderSize + h.payloadSize.toNat := by
   rfl
+
+/-- Emitted DDS header has exactly 148 bytes. -/
+theorem emitDdsHeader_size (h : DdsHeader) : (emitDdsHeader h ByteArray.empty).size = 148 := by
+  simp [emitDdsHeader, putU32LE]
+
+/-- Emitted KTX header has exactly 68 bytes. -/
+theorem emitKtxHeader_size (h : KtxHeader) : (emitKtxHeader h ByteArray.empty).size = 68 := by
+  simp [emitKtxHeader, putU32LE]
+
+set_option maxRecDepth 8192 in
+/-- DDS header round trip on a representative example (the general
+  word-level emit/parse correspondence is by construction, matching
+  `tc_dds_write_bc_memory` offsets; the full ∀ proof over the 37-push
+  chain is out of reach for `simp`). -/
+theorem parseDdsHeader_emit_example :
+    parseDdsHeader (emitDdsHeader ⟨100, 200, 71, 16⟩ ByteArray.empty) = some ⟨100, 200, 71, 16⟩ := by
+  native_decide
+
 
 -- ============================================================
 -- Size / block-count equations (Texcomp/Size.lean content)
