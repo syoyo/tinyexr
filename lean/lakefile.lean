@@ -197,6 +197,11 @@ lean_exe astcendpointscheck where
 lean_exe astcfitscheck where
   root := `AstcFitsCheck
 
+/-- ASTC score-from-ideal / score-batch differential checker. -/
+@[default_target]
+lean_exe astcscorecheck where
+  root := `AstcScoreCheck
+
 /-- ASTC least-squares / evaluation differential checker. -/
 @[default_target]
 lean_exe astclsqcheck where
