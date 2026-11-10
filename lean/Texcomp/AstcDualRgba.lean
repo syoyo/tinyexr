@@ -69,14 +69,14 @@ def astcEncodeDualRgbaBlock (block : List (List Nat)) (count : Nat)
               match astcLutColorQuant endpointValueCount colorBitsAvailable with
               | none => st
               | some candColorQuant =>
-                let decim := astcDecimEntry ci.wx ci.wy ci.wx ci.wy
+                let decim := astcDecimEntry bx by_ ci.wx ci.wy
                 let weightCount := ci.wx * ci.wy
-                let colorErr := astcFitFromIdeal ci.wx ci.wy ci.wx ci.wy ci.quant count block colorIdeal lineColorLo lineColorHi
-                let alphaErr := astcFitFromIdeal ci.wx ci.wy ci.wx ci.wy ci.quant count block alphaIdeal lineAlphaLo lineAlphaHi
+                let colorErr := astcFitFromIdeal bx by_ ci.wx ci.wy ci.quant count block colorIdeal lineColorLo lineColorHi
+                let alphaErr := astcFitFromIdeal bx by_ ci.wx ci.wy ci.quant count block alphaIdeal lineAlphaLo lineAlphaHi
                 let err := colorErr + alphaErr
                 if err < bestErr then
-                  let (candColorWeights, _) := astcWeightsFromIdeal ci.wx ci.wy ci.wx ci.wy ci.quant colorIdeal none count
-                  let (candAlphaWeights, _) := astcWeightsFromIdeal ci.wx ci.wy ci.wx ci.wy ci.quant alphaIdeal none count
+                  let (candColorWeights, _) := astcWeightsFromIdeal bx by_ ci.wx ci.wy ci.quant colorIdeal none count
+                  let (candAlphaWeights, _) := astcWeightsFromIdeal bx by_ ci.wx ci.wy ci.quant alphaIdeal none count
                   some (ci.blockMode, err, candColorWeights.take weightCount, candAlphaWeights.take weightCount)
                 else st) (none : Option (Nat × Nat × List Nat × List Nat))
           match best with
@@ -94,7 +94,7 @@ def astcEncodeDualRgbaBlock (block : List (List Nat)) (count : Nat)
               let alphaLo := lineAlphaLo
               let alphaHi := lineAlphaHi
               -- infill weights
-              let bd := astcDecimEntry ci.wx ci.wy ci.wx ci.wy
+              let bd := astcDecimEntry bx by_ ci.wx ci.wy
               let wtc := astcInfillWeights bestColorW bx by_ ci.wx ci.wy ci.quant
               let wta := astcInfillWeights bestAlphaW bx by_ ci.wx ci.wy ci.quant
               -- cur endpoints
