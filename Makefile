@@ -545,6 +545,16 @@ texcomp-astc-decim-diff: texcomp lean-tools
 	cd lean && $(LAKE) build ExrSpec astcdecimcheck
 	./lean/.lake/build/bin/astcdecimcheck build/lean-gen/astc_decim_vectors.txt
 
+.PHONY: texcomp-astc-infill-diff
+texcomp-astc-infill-diff: texcomp lean-tools
+	mkdir -p build/lean-gen
+	$(CC) -std=c11 -Wall -Wextra -Itools/texcomp/include -Iinclude -Isrc -Iexamples/common \
+	  -Itools/texcomp/src test/v3/astc_infill_vectors.c build/libtexcomp.a build/libtinyexr3.a \
+	  -lm -pthread -o build/astc_infill_gen
+	./build/astc_infill_gen build/lean-gen/astc_infill_vectors.txt
+	cd lean && $(LAKE) build ExrSpec astcinfillcheck
+	./lean/.lake/build/bin/astcinfillcheck build/lean-gen/astc_infill_vectors.txt
+
 .PHONY: tocio-lean-check
 tocio-lean-check:
 	cd lean && $(LAKE) build Tocio.Op Tocio.Config Tocio.Transform Tocio.Lower Tocio.YamlTotal Tocio.Math Tocio.Ops Tocio.FixedFunc

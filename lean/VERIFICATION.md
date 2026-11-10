@@ -73,6 +73,7 @@ The final implementation validation on 2026-11-09 produced:
 | `make texcomp-lean-check tocio-lean-check` | New-module builds passed. |
 | `make texcomp-bc6h-diff` | 1028 BC6H blocks (all 14 modes, signed + unsigned), C vs Lean byte-exact. |
 | `make texcomp-bc6h-*-diff` | BC6H encoder models byte-exact against C: shared kernels (4215 values), unsigned modes 0/1/2/3/4/5/6/7/8/9/10/12/13 (400 + 520 + 1040 + 780 + 900 blocks), signed modes 0–8/12/13 (1800 blocks), and the per-block mode-selection drivers `tc_encode_bc6h_block_uf16`/`_sf16` (480 blocks, both variants). |
+| `make texcomp-astc-infill-diff` | 12 weight-quant LUTs (65 entries each: `wq_q`/`wq_wt`/`wq_err`), 84 grid infills and 1008 quantised infills over all 14 footprints, C vs Lean byte-exact. The model uses the encoder's own `tc_astc_weight_unquant` table, which differs from the decoder's symbol-ordered `weightUnquant`. |
 | `make texcomp-astc-decim-diff` | 10 164 per-texel weight taps + 112 decimation cache entries (all 14 ASTC footprints) byte-exact against C; the gate caught a `Nat`-truncation bug in the model's `16 - x_frac - y_frac + w3` term. |
 | `make texcomp-bc7-rdo-diff` | 768 blocks through the decoder-driven RDO pass (`tc_bc7_rdo_pass`, two rate-distortion budgets over a 384-block synthetic image), C vs Lean byte-exact incl. the 64-block decode ring. |
 | `make texcomp-bc7-diff` | 530 BC7 blocks (all 8 modes), C vs Lean byte-exact. |

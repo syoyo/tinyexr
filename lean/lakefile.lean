@@ -167,6 +167,11 @@ lean_exe bc7rdocheck where
 lean_exe astcdecimcheck where
   root := `AstcDecimCheck
 
+/-- ASTC weight LUT + infill differential checker (C vectors vs Lean). -/
+@[default_target]
+lean_exe astcinfillcheck where
+  root := `AstcInfillCheck
+
 /-- Tocio op differential checker (C vectors vs Lean kernels). -/
 @[default_target]
 lean_exe tociocheck where
