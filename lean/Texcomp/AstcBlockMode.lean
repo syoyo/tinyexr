@@ -26,6 +26,7 @@ structure AstcEncMode where
   quant : Nat
   weightBits : Nat
   dual : Nat
+  blockMode : Nat
   deriving Repr, DecidableEq
 
 /-- `tc_astc_decode_block_mode_2d`: `none` for modes the encoder may not use. -/
@@ -72,6 +73,6 @@ def astcEncBlockMode (mode : Nat) : Option AstcEncMode :=
         let real := count * (d' + 1)
         let bits := iseBitcount real quant
         if real > 64 || bits < 24 || bits > 96 then none
-        else some ⟨x, y, quant, bits, d'⟩
+        else some ⟨x, y, quant, bits, d', mode⟩
 
 end Texcomp
