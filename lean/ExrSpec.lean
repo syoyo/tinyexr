@@ -30,6 +30,7 @@ import Texcomp.Bc6hEncodeBlock
 import Texcomp.Bc7Rdo
 import Texcomp.AstcDecim
 import Texcomp.AstcWeightInfill
+import Texcomp.AstcBlockMode
 import Tocio.Op
 import Tocio.Config
 import Texcomp.Bc1

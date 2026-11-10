@@ -555,6 +555,16 @@ texcomp-astc-infill-diff: texcomp lean-tools
 	cd lean && $(LAKE) build ExrSpec astcinfillcheck
 	./lean/.lake/build/bin/astcinfillcheck build/lean-gen/astc_infill_vectors.txt
 
+.PHONY: texcomp-astc-blockmode-diff
+texcomp-astc-blockmode-diff: texcomp lean-tools
+	mkdir -p build/lean-gen
+	$(CC) -std=c11 -Wall -Wextra -Itools/texcomp/include -Iinclude -Isrc -Iexamples/common \
+	  -Itools/texcomp/src test/v3/astc_blockmode_vectors.c build/libtexcomp.a \
+	  build/libtinyexr3.a -lm -pthread -o build/astc_blockmode_gen
+	./build/astc_blockmode_gen build/lean-gen/astc_blockmode_vectors.txt
+	cd lean && $(LAKE) build ExrSpec astcblockmodecheck
+	./lean/.lake/build/bin/astcblockmodecheck build/lean-gen/astc_blockmode_vectors.txt
+
 .PHONY: tocio-lean-check
 tocio-lean-check:
 	cd lean && $(LAKE) build Tocio.Op Tocio.Config Tocio.Transform Tocio.Lower Tocio.YamlTotal Tocio.Math Tocio.Ops Tocio.FixedFunc

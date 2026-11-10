@@ -172,6 +172,11 @@ lean_exe astcdecimcheck where
 lean_exe astcinfillcheck where
   root := `AstcInfillCheck
 
+/-- ASTC encoder block-mode parse differential checker (C vectors vs Lean). -/
+@[default_target]
+lean_exe astcblockmodecheck where
+  root := `AstcBlockModeCheck
+
 /-- Tocio op differential checker (C vectors vs Lean kernels). -/
 @[default_target]
 lean_exe tociocheck where
