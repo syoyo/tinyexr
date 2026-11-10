@@ -72,6 +72,11 @@ lean_exe astchdrcheck where
 lean_exe astcpackcheck where
   root := `AstcPackCheck
 
+/-- ASTC partition RGB block encoder differential checker. -/
+@[default_target]
+lean_exe astcpartenccheck where
+  root := `AstcPartencCheck
+
 /-- DDS/KTX header byte-layout checker (C writers vs Lean model). -/
 @[default_target]
 lean_exe ddsktxcheck where

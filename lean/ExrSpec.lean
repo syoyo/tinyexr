@@ -38,6 +38,7 @@ import Texcomp.AstcFits
 import Texcomp.AstcScore
 import Texcomp.AstcEncode
 import Texcomp.AstcPack
+import Texcomp.AstcPartitionRgb
 import Texcomp.AstcEval
 import Texcomp.AstcPartitionSearch
 import Tocio.Op
