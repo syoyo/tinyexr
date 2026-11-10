@@ -31,6 +31,7 @@ import Texcomp.Bc7Rdo
 import Texcomp.AstcDecim
 import Texcomp.AstcWeightInfill
 import Texcomp.AstcBlockMode
+import Texcomp.AstcPartition
 import Tocio.Op
 import Tocio.Config
 import Texcomp.Bc1

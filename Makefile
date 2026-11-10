@@ -565,6 +565,16 @@ texcomp-astc-blockmode-diff: texcomp lean-tools
 	cd lean && $(LAKE) build ExrSpec astcblockmodecheck
 	./lean/.lake/build/bin/astcblockmodecheck build/lean-gen/astc_blockmode_vectors.txt
 
+.PHONY: texcomp-astc-partition-diff
+texcomp-astc-partition-diff: texcomp lean-tools
+	mkdir -p build/lean-gen
+	$(CC) -std=c11 -Wall -Wextra -Itools/texcomp/include -Iinclude -Isrc -Iexamples/common \
+	  -Itools/texcomp/src test/v3/astc_partition_vectors.c build/libtexcomp.a \
+	  build/libtinyexr3.a -lm -pthread -o build/astc_partition_gen
+	./build/astc_partition_gen build/lean-gen/astc_partition_vectors.txt
+	cd lean && $(LAKE) build ExrSpec astcpartitioncheck
+	./lean/.lake/build/bin/astcpartitioncheck build/lean-gen/astc_partition_vectors.txt
+
 .PHONY: tocio-lean-check
 tocio-lean-check:
 	cd lean && $(LAKE) build Tocio.Op Tocio.Config Tocio.Transform Tocio.Lower Tocio.YamlTotal Tocio.Math Tocio.Ops Tocio.FixedFunc
