@@ -62,6 +62,8 @@ def main (args : List String) : IO Unit := do
         | some (bytes, err) =>
           let wantBytes := ((t1.drop 1).take 16).map hexNat
           let wantErr := natAt t1 17
+          let _ := if bytes != wantBytes then IO.println s!"  bytes DIFFER" else pure ()
+          let _ := if err != wantErr then IO.println s!"  err {err} vs {wantErr}" else pure ()
           bytes == wantBytes && err == wantErr
         | none => false
       else

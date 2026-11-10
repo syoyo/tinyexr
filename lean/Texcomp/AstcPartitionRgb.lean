@@ -83,9 +83,9 @@ def astcEncodePartitionRgbBlock (block : List (List Nat)) (count partitionCount 
             | some _ =>
               let decim := astcDecimEntry ci.wx ci.wy ci.wx ci.wy
               let weightCount := ci.wx * ci.wy
-              let (candWeights, _) := astcWeightsFromIdeal ci.wx ci.wy ci.wx ci.wy
+              let (candWeights, _) := astcWeightsFromIdeal bx by_ ci.wx ci.wy
                 ci.quant fitIdeal (if fitAllActive then none else some fitActive) count
-              let err := astcFitFromIdealPt ci.wx ci.wy ci.wx ci.wy ci.quant count
+              let err := astcFitFromIdealPt bx by_ ci.wx ci.wy ci.quant count
                 block fitIdeal (if fitAllActive then List.replicate count 1 else fitActive)
                 (if quality > 1 then fitE0t else []) (if quality > 1 then fitE1t else [])
               if err < bestErr then
@@ -97,9 +97,8 @@ def astcEncodePartitionRgbBlock (block : List (List Nat)) (count partitionCount 
             let ci := candidates.find? (fun c => c.blockMode == bestBlockMode) |>.getD (candidates.getD 0 (AstcEncMode.mk 0 0 0 0 0 0))
             -- format selection
             let endpointFormat :=
-              if isOpaque && (partitionCount == 2 || partitionCount == 3) then
-                if astcBlockIsRgbScale block count then 10 else 12
-              else endpointFormat0
+              if isOpaque then endpointFormat0
+              else (if astcBlockIsRgbScale block count then 10 else 12)
             let scaleCount := if isOpaque && (partitionCount == 2 || partitionCount == 3) then
               (List.range partitionCount).foldl (fun acc p =>
                 acc + (if astcPartitionRgbScaleOk (partLo.getD p [0,0,0,0]) (partHi.getD p [0,0,0,0]) then 1 else 0)) 0
@@ -109,7 +108,9 @@ def astcEncodePartitionRgbBlock (block : List (List Nat)) (count partitionCount 
                 if scaleCount != 0 && scaleCount != partitionCount then 0 else 1
               else 1
             let endpointFormats := if endpointFormatsMatched == 0 then
-              (List.range partitionCount).map (fun _ => endpointFormat0)
+              (List.range partitionCount).map (fun p =>
+                if astcPartitionRgbScaleOk (partLo.getD p [0,0,0,0]) (partHi.getD p [0,0,0,0])
+                then 6 else 8)
               else (List.range partitionCount).map (fun _ => endpointFormat)
             let endpointHighpartSize := if endpointFormatsMatched == 0 then 3 * partitionCount - 4 else 0
             let epvp := fun (f : Nat) =>
@@ -144,12 +145,25 @@ def astcEncodePartitionRgbBlock (block : List (List Nat)) (count partitionCount 
               -- per-partition LSQ refinement
               let decim := astcDecimEntry ci.wx ci.wy ci.wx ci.wy
               let weightCount := ci.wx * ci.wy
-              let (weights, bestWt) := astcWeightsFromIdeal ci.wx ci.wy ci.wx ci.wy
+              let (weights, bestWt) := astcWeightsFromIdeal bx by_ ci.wx ci.wy
                 ci.quant fitIdeal (if fitAllActive then none else some fitActive) count
               let wt := bestWt
-              let err := astcEvalPartitionSse block count piMap partitionCount endpointFormats
-                partLo partHi colorQuantMethod wt
-              let (partLo, partHi, err) := (partLo, partHi, err.getD bestErr)
+              let initErr := (astcEvalPartitionSse block count piMap partitionCount endpointFormats
+                partLo partHi colorQuantMethod wt).getD bestErr
+              let (partLo, partHi, err) := (List.range partitionCount).foldl
+                (fun (st : List (List Nat) × List (List Nat) × Nat) p =>
+                  let (curLo, curHi, curErr) := st
+                  let lsq := astcLsqEndpointsPartition block count piMap p wt
+                  match lsq with
+                  | none => st
+                  | some (lsqLo, lsqHi) =>
+                    let newLo := curLo.set p lsqLo
+                    let newHi := curHi.set p lsqHi
+                    let errLsq := astcEvalPartitionSse block count piMap partitionCount endpointFormats
+                      newLo newHi colorQuantMethod wt
+                    if errLsq.isSome && errLsq.getD 0 < curErr then
+                      (newLo, newHi, errLsq.getD curErr)
+                    else st) (partLo, partHi, initErr)
               if err == 0xFFFFFFFFFFFFFFFF then none
               else
                 let colorValues := astcEmitPartitionEndpointValues colorQuantMethod partitionCount endpointFormats partLo partHi

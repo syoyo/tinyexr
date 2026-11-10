@@ -215,3 +215,32 @@ def astcPartitionRgbScaleOk (lo hi : List Nat) : Bool :=
       diff ≤ 24)
 
 end Texcomp
+
+/-- `tc_astc_axis_line`: build an endpoint line from two extreme texels.
+  Returns (lo, hi, recip, success). -/
+def astcAxisLine (block : List (List Nat)) (loI hiI : Nat) :
+    List Nat × List Nat × Nat × Bool :=
+  let lo := block.getD loI [0,0,0,0]
+  let hi := block.getD hiI [0,0,0,0]
+  let denom := (List.range 4).foldl (fun acc c =>
+    let d := if hi.getD c 0 > lo.getD c 0 then hi.getD c 0 - lo.getD c 0
+            else lo.getD c 0 - hi.getD c 0
+    acc + d * d) 0
+  if denom == 0 then (lo, hi, 0, false)
+  else
+    let recip := ((1 <<< 31) + denom / 2) / denom
+    (lo, hi, recip, true)
+
+/-- `tc_astc_project_ideal`: project texels onto the endpoint line. -/
+def astcProjectIdeal (block : List (List Nat)) (count : Nat)
+    (lo hi : List Nat) (recip : Nat) : List Nat :=
+  (List.range count).map (fun i =>
+    let p := block.getD i [0,0,0,0]
+    let dot := (List.range 4).foldl (fun acc c =>
+      let d1 : Int := Int.ofNat (p.getD c 0) - Int.ofNat (lo.getD c 0)
+      let d2 : Int := Int.ofNat (hi.getD c 0) - Int.ofNat (lo.getD c 0)
+      acc + d1 * d2) (0 : Int)
+    if dot <= 0 then 0
+    else
+      let w := ((dot.toNat * 64 * recip + (1 <<< 30)) >>> 31)
+      if w > 64 then 64 else w)

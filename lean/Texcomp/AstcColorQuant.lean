@@ -181,4 +181,11 @@ def hdrColorRoundtrip (level value : Nat) : Nat :=
   let v := if value > 255 then 255 else value
   if level ≥ 20 || level < 4 then v else colorRoundtrip level v
 
+
+/-- `tc_astc_quantize_color_values`. -/
+def astcQuantizeColorValues (quantMethod valueCount : Nat) (inValues : List Nat) : List Nat :=
+  (List.range valueCount).map (fun i => colorPquantLut quantMethod (inValues.getD i 0))
+
 end Texcomp
+
+
