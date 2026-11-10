@@ -575,6 +575,16 @@ texcomp-astc-partition-diff: texcomp lean-tools
 	cd lean && $(LAKE) build ExrSpec astcpartitioncheck
 	./lean/.lake/build/bin/astcpartitioncheck build/lean-gen/astc_partition_vectors.txt
 
+.PHONY: texcomp-astc-candidates-diff
+texcomp-astc-candidates-diff: texcomp lean-tools
+	mkdir -p build/lean-gen
+	$(CC) -std=c11 -Wall -Wextra -Itools/texcomp/include -Iinclude -Isrc -Iexamples/common \
+	  -Itools/texcomp/src test/v3/astc_candidates_vectors.c build/libtexcomp.a \
+	  build/libtinyexr3.a -lm -pthread -o build/astc_candidates_gen
+	./build/astc_candidates_gen build/lean-gen/astc_candidates_vectors.txt
+	cd lean && $(LAKE) build ExrSpec astccandidatescheck
+	./lean/.lake/build/bin/astccandidatescheck build/lean-gen/astc_candidates_vectors.txt
+
 .PHONY: tocio-lean-check
 tocio-lean-check:
 	cd lean && $(LAKE) build Tocio.Op Tocio.Config Tocio.Transform Tocio.Lower Tocio.YamlTotal Tocio.Math Tocio.Ops Tocio.FixedFunc

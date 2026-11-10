@@ -182,6 +182,11 @@ lean_exe astcblockmodecheck where
 lean_exe astcpartitioncheck where
   root := `AstcPartitionCheck
 
+/-- ASTC block-mode candidate list differential checker (C vectors vs Lean). -/
+@[default_target]
+lean_exe astccandidatescheck where
+  root := `AstcCandidatesCheck
+
 /-- Tocio op differential checker (C vectors vs Lean kernels). -/
 @[default_target]
 lean_exe tociocheck where
