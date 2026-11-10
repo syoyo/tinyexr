@@ -65,6 +65,7 @@ def astcEncodePartitionRgbBlock (block : List (List Nat)) (count partitionCount 
         -- partition_project
         let (fitIdeal, fitActive, fitAllActive, fitE0t, fitE1t) :=
           astcPartitionProject block count piMap partLo partHi partitionCount (quality > 1)
+        let endpointFormat0 := if partitionCount == 4 then 6 else 8
         -- candidates
         let candidates := astcBuildBlockModeCandidates bx by_ 29 quality
         if candidates.isEmpty then none
@@ -75,7 +76,7 @@ def astcEncodePartitionRgbBlock (block : List (List Nat)) (count partitionCount 
               | none => (0, 0xFFFFFFFFFFFFFFFF, [])
               | some (bi, be, bw) => (bi, be, bw)
             let colorBitsAvailable := 99 - ci.weightBits
-            let endpointValuesPerPartition := if ci.weightBits == 6 then 4 else 6
+            let endpointValuesPerPartition := if endpointFormat0 == 6 then 4 else 6
             let endpointValueCount := partitionCount * endpointValuesPerPartition
             match astcLutColorQuant endpointValueCount colorBitsAvailable with
             | none => st
@@ -95,7 +96,6 @@ def astcEncodePartitionRgbBlock (block : List (List Nat)) (count partitionCount 
           | some (bestBlockMode, bestErr, bestWeights) =>
             let ci := candidates.find? (fun c => c.blockMode == bestBlockMode) |>.getD (candidates.getD 0 (AstcEncMode.mk 0 0 0 0 0 0))
             -- format selection
-            let endpointFormat0 := if partitionCount == 4 then 6 else 8
             let endpointFormat :=
               if isOpaque && (partitionCount == 2 || partitionCount == 3) then
                 if astcBlockIsRgbScale block count then 10 else 12
