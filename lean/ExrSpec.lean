@@ -33,6 +33,7 @@ import Texcomp.AstcWeightInfill
 import Texcomp.AstcBlockMode
 import Texcomp.AstcPartition
 import Texcomp.AstcCandidates
+import Texcomp.AstcEndpoints
 import Tocio.Op
 import Tocio.Config
 import Texcomp.Bc1

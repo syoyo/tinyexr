@@ -187,6 +187,11 @@ lean_exe astcpartitioncheck where
 lean_exe astccandidatescheck where
   root := `AstcCandidatesCheck
 
+/-- ASTC endpoint plumbing differential checker (C vectors vs Lean). -/
+@[default_target]
+lean_exe astcendpointscheck where
+  root := `AstcEndpointsCheck
+
 /-- Tocio op differential checker (C vectors vs Lean kernels). -/
 @[default_target]
 lean_exe tociocheck where
