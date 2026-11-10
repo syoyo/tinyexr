@@ -72,6 +72,11 @@ lean_exe astchdrcheck where
 lean_exe astcpackcheck where
   root := `AstcPackCheck
 
+/-- ASTC dual RGBA block encoder differential checker. -/
+@[default_target]
+lean_exe astcdualcheck where
+  root := `AstcDualCheck
+
 /-- ASTC partition RGB block encoder differential checker. -/
 @[default_target]
 lean_exe astcpartenccheck where

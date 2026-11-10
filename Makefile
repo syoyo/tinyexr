@@ -655,6 +655,16 @@ texcomp-astc-partenc-diff: texcomp lean-tools
 	cd lean && $(LAKE) build ExrSpec astcpartenccheck
 	./lean/.lake/build/bin/astcpartenccheck build/lean-gen/astc_partenc_vectors.txt
 
+.PHONY: texcomp-astc-dual-diff
+texcomp-astc-dual-diff: texcomp lean-tools
+	mkdir -p build/lean-gen
+	$(CC) -std=c11 -Wall -Wextra -Itools/texcomp/include -Iinclude -Isrc -Iexamples/common \
+	  -Itools/texcomp/src test/v3/astc_dual_vectors.c build/libtexcomp.a \
+	  build/libtinyexr3.a -lm -pthread -o build/astc_dual_gen
+	./build/astc_dual_gen build/lean-gen/astc_dual_vectors.txt
+	cd lean && $(LAKE) build ExrSpec astcdualcheck
+	./lean/.lake/build/bin/astcdualcheck build/lean-gen/astc_dual_vectors.txt
+
 .PHONY: tocio-lean-check
 tocio-lean-check:
 	cd lean && $(LAKE) build Tocio.Op Tocio.Config Tocio.Transform Tocio.Lower Tocio.YamlTotal Tocio.Math Tocio.Ops Tocio.FixedFunc

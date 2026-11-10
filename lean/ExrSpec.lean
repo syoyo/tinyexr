@@ -39,6 +39,7 @@ import Texcomp.AstcScore
 import Texcomp.AstcEncode
 import Texcomp.AstcPack
 import Texcomp.AstcPartitionRgb
+import Texcomp.AstcDualRgba
 import Texcomp.AstcEval
 import Texcomp.AstcPartitionSearch
 import Tocio.Op
