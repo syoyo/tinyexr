@@ -192,6 +192,16 @@ lean_exe astccandidatescheck where
 lean_exe astcendpointscheck where
   root := `AstcEndpointsCheck
 
+/-- ASTC fit-path (projection / weights / fit / misc) differential checker. -/
+@[default_target]
+lean_exe astcfitscheck where
+  root := `AstcFitsCheck
+
+/-- ASTC least-squares / evaluation differential checker. -/
+@[default_target]
+lean_exe astclsqcheck where
+  root := `AstcLsqCheck
+
 /-- Tocio op differential checker (C vectors vs Lean kernels). -/
 @[default_target]
 lean_exe tociocheck where

@@ -595,6 +595,26 @@ texcomp-astc-endpoints-diff: texcomp lean-tools
 	cd lean && $(LAKE) build ExrSpec astcendpointscheck
 	./lean/.lake/build/bin/astcendpointscheck build/lean-gen/astc_endpoints_vectors.txt
 
+.PHONY: texcomp-astc-fits-diff
+texcomp-astc-fits-diff: texcomp lean-tools
+	mkdir -p build/lean-gen
+	$(CC) -std=c11 -Wall -Wextra -Itools/texcomp/include -Iinclude -Isrc -Iexamples/common \
+	  -Itools/texcomp/src test/v3/astc_fits_vectors.c build/libtexcomp.a \
+	  build/libtinyexr3.a -lm -pthread -o build/astc_fits_gen
+	./build/astc_fits_gen build/lean-gen/astc_fits_vectors.txt
+	cd lean && $(LAKE) build ExrSpec astcfitscheck
+	./lean/.lake/build/bin/astcfitscheck build/lean-gen/astc_fits_vectors.txt
+
+.PHONY: texcomp-astc-lsq-diff
+texcomp-astc-lsq-diff: texcomp lean-tools
+	mkdir -p build/lean-gen
+	$(CC) -std=c11 -Wall -Wextra -Itools/texcomp/include -Iinclude -Isrc -Iexamples/common \
+	  -Itools/texcomp/src test/v3/astc_lsq_vectors.c build/libtexcomp.a \
+	  build/libtinyexr3.a -lm -pthread -o build/astc_lsq_gen
+	./build/astc_lsq_gen build/lean-gen/astc_lsq_vectors.txt
+	cd lean && $(LAKE) build ExrSpec astclsqcheck
+	./lean/.lake/build/bin/astclsqcheck build/lean-gen/astc_lsq_vectors.txt
+
 .PHONY: tocio-lean-check
 tocio-lean-check:
 	cd lean && $(LAKE) build Tocio.Op Tocio.Config Tocio.Transform Tocio.Lower Tocio.YamlTotal Tocio.Math Tocio.Ops Tocio.FixedFunc
