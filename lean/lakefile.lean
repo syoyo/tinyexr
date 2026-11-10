@@ -177,6 +177,11 @@ lean_exe astcinfillcheck where
 lean_exe astcblockmodecheck where
   root := `AstcBlockModeCheck
 
+/-- ASTC partition RGB block encoder differential checker. -/
+@[default_target]
+lean_exe astcpartenccheck where
+  root := `AstcPartencCheck
+
 /-- ASTC partition-cache differential checker (C vectors vs Lean). -/
 @[default_target]
 lean_exe astcpartitioncheck where

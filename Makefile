@@ -349,7 +349,7 @@ texcomp-astc-hdr-diff: texcomp lean-tools
 texcomp-astc-pack-diff: texcomp lean-tools
 	mkdir -p build/lean-gen
 	$(CC) -std=c11 -Wall -Wextra -Itools/texcomp/include -Iinclude -Isrc -Iexamples/common \
-	  test/v3/astc_pack_vectors.c build/libtexcomp.a build/libtinyexr3.a -lm -pthread \
+	  -Itools/texcomp/src test/v3/astc_pack_vectors.c build/libtexcomp.a build/libtinyexr3.a -lm -pthread \
 	  -o build/astc_pack_gen
 	./build/astc_pack_gen build/lean-gen/astc_pack_vectors.txt
 	cd lean && $(LAKE) build ExrSpec astcpackcheck

@@ -3866,6 +3866,43 @@ static uint64_t tc_astc_fit_from_ideal_pt(const tc_astc_encode_context *ctx,
     return tc_astc_recon_sse_pt(block, count, e0t, e1t, wt);
 }
 
+/* Standalone bit-packing tail of tc_encode_astc_partition_rgb_block, exposed
+ * for differential testing. Inputs are the already-computed ingredients;
+ * `weightbuf` is the ISE-encoded (scrambled) weight buffer (16 bytes).
+ * Writes 16 bytes into `out`. */
+__attribute__((unused)) static void tc_astc_pack_partition_rgb(uint32_t block_mode, uint32_t partition_count,
+                                       uint32_t pi_seed, const uint8_t *endpoint_formats,
+                                       uint32_t endpoint_formats_matched,
+                                       uint32_t endpoint_highpart_size,
+                                       const uint8_t *color_values,
+                                       uint32_t color_quant_method,
+                                       uint32_t endpoint_value_count,
+                                       uint32_t weight_bits,
+                                       const uint8_t weightbuf[16], uint8_t out[16]) {
+    uint32_t i, bitpos;
+    memset(out, 0, 16u);
+    for (i = 0; i < 16u; ++i) out[i] = tc_bitrev8(weightbuf[15u - i]);
+    bitpos = 0;
+    tc_set_bits(out, &bitpos, block_mode, 11u);
+    tc_set_bits(out, &bitpos, partition_count - 1u, 2u);
+    tc_set_bits(out, &bitpos, pi_seed & 63u, 6u);
+    tc_set_bits(out, &bitpos, pi_seed >> 6, 4u);
+    bitpos = 23u;
+    if (endpoint_formats_matched) {
+        tc_set_bits(out, &bitpos, ((uint32_t)endpoint_formats[0]) << 2, 6u);
+    } else {
+        uint32_t endpoint_type =
+            tc_astc_partition_endpoint_type_code(partition_count, endpoint_formats);
+        uint32_t endpoint_highpart_pos =
+            128u - weight_bits - endpoint_highpart_size;
+        tc_set_bits(out, &bitpos, endpoint_type & 63u, 6u);
+        bitpos = endpoint_highpart_pos;
+        tc_set_bits(out, &bitpos, endpoint_type >> 6, endpoint_highpart_size);
+    }
+    (void)tc_astc_ise_encode_bits(color_quant_method, endpoint_value_count,
+                                  color_values, out, 16u, 29u);
+}
+
 static int tc_encode_astc_partition_rgb_block(const uint8_t block[144][4],
                                               uint32_t count,
                                               uint32_t partition_count,
