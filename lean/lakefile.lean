@@ -197,6 +197,11 @@ lean_exe astcendpointscheck where
 lean_exe astcfitscheck where
   root := `AstcFitsCheck
 
+/-- ASTC ISE encode bits differential checker. -/
+@[default_target]
+lean_exe astcisecheck where
+  root := `AstcIseCheck
+
 /-- ASTC score-from-ideal / score-batch differential checker. -/
 @[default_target]
 lean_exe astcscorecheck where

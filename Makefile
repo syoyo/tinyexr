@@ -635,6 +635,16 @@ texcomp-astc-score-diff: texcomp lean-tools
 	cd lean && $(LAKE) build ExrSpec astcscorecheck
 	./lean/.lake/build/bin/astcscorecheck build/lean-gen/astc_score_vectors.txt
 
+.PHONY: texcomp-astc-ise-diff
+texcomp-astc-ise-diff: texcomp lean-tools
+	mkdir -p build/lean-gen
+	$(CC) -std=c11 -Wall -Wextra -Itools/texcomp/include -Iinclude -Isrc -Iexamples/common \
+	  -Itools/texcomp/src test/v3/astc_ise_vectors.c build/libtexcomp.a \
+	  build/libtinyexr3.a -lm -pthread -o build/astc_ise_gen
+	./build/astc_ise_gen build/lean-gen/astc_ise_vectors.txt
+	cd lean && $(LAKE) build ExrSpec astcisecheck
+	./lean/.lake/build/bin/astcisecheck build/lean-gen/astc_ise_vectors.txt
+
 .PHONY: tocio-lean-check
 tocio-lean-check:
 	cd lean && $(LAKE) build Tocio.Op Tocio.Config Tocio.Transform Tocio.Lower Tocio.YamlTotal Tocio.Math Tocio.Ops Tocio.FixedFunc
