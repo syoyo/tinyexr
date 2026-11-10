@@ -202,6 +202,11 @@ lean_exe astcfitscheck where
 lean_exe astclsqcheck where
   root := `AstcLsqCheck
 
+/-- ASTC partition-search / classification differential checker. -/
+@[default_target]
+lean_exe astcpartselcheck where
+  root := `AstcPartselCheck
+
 /-- Tocio op differential checker (C vectors vs Lean kernels). -/
 @[default_target]
 lean_exe tociocheck where

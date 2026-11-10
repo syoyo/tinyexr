@@ -36,6 +36,7 @@ import Texcomp.AstcCandidates
 import Texcomp.AstcEndpoints
 import Texcomp.AstcFits
 import Texcomp.AstcEval
+import Texcomp.AstcPartitionSearch
 import Tocio.Op
 import Tocio.Config
 import Texcomp.Bc1
