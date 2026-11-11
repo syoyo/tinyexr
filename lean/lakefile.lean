@@ -102,6 +102,11 @@ lean_exe astchdrenccheck where
 lean_exe astchdrimgcheck where
   root := `AstcHdrImgCheck
 
+/-- ASTC LDR image-level compress driver checker (C writer vs Lean model). -/
+@[default_target]
+lean_exe astcldrimgcheck where
+  root := `AstcLdrImgCheck
+
 /-- DDS/KTX header byte-layout checker (C writers vs Lean model). -/
 @[default_target]
 lean_exe ddsktxcheck where

@@ -156,6 +156,13 @@ def astcEncodePartitionRgbBlock (block : List (List Nat)) (count partitionCount 
     else true
   if !clusterOk then none
   else if isLuminance then none
+  -- The C's encode context caches only 4 candidate lists by
+  -- endpoint_end_bit. At quality 0 the init pre-fills all four slots
+  -- (33/49/65/81), so the partition path's 29-bit request finds no slot and
+  -- gets 0 candidates — the partition encoder can never succeed at
+  -- quality 0 in any reachable C context (AstcLdr's `quality > 0` guard on
+  -- the fallback matches this).
+  else if quality == 0 then none
   else if !isOpaque && (partitionCount != 2 || count < 25) then none
   -- the C builds the 3/4-partition caches only when ctx->quality > 1;
   -- with an empty cache `find_best_partition` always fails
@@ -196,7 +203,13 @@ def astcEncodePartitionRgbBlock (block : List (List Nat)) (count partitionCount 
           -- batched (all-texel ideals only) with the C's positional
           -- `batch_start + bj` indexing, or per-candidate with the active
           -- mask otherwise.
-          let evcScan := partitionCount * (if endpointFormat0 == 6 then 4 else 6)
+          -- Scan-time color budget check uses the C's pre-loop
+          -- endpoint_value_count: the classified format (fmt0) when opaque,
+          -- but for non-opaque blocks the C re-classifies to CEM 10/12
+          -- (6/8 values per partition) BEFORE the scan loop.
+          let evcScan :=
+            if isOpaque then partitionCount * (if endpointFormat0 == 6 then 4 else 6)
+            else partitionCount * (if isRgbScale then 6 else 8)
           let scanCap := if quality > 1 then candidates.length else 16
           let best := astcPartScanLoop block count bx by_ evcScan quality scanCap
             candidates fitIdeal fitActive fitAllActive fitE0t fitE1t

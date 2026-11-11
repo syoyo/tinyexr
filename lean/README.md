@@ -540,6 +540,41 @@ which now covers all three tiers:
   partition empty adds `UINT64_MAX` and the sum wraps modulo 2^64.
   `astcFindBestPartition` now folds modulo 2^64 as well.
 
+Two further C behaviours surfaced once the vectors covered non-opaque
+blocks and image-level clamped gathers (both fixed in the model, gates
+re-greened):
+
+- The scan-time colour budget check uses the C's pre-loop
+  `endpoint_value_count`: for non-opaque blocks `tc_encode_astc_partition_rgb_block`
+  re-classifies the endpoint format to CEM 10/12 (6/8 values per
+  partition) *before* the candidate scan, while the opaque path keeps the
+  classified format (4/6 values). The model originally computed one
+  scan-time count from the pre-classification format for both, so
+  non-opaque 2-partition scans accepted a different candidate set.
+  `astcPartScanLoop`'s budget now matches the C's classification order.
+- The encode context caches only **4** candidate lists keyed by
+  `endpoint_end_bit`. At `quality == 0` the init pre-fills all four slots
+  with the 33/49/65/81 luminance-family lists, so the partition path's
+  29-bit request finds no slot and receives 0 candidates: the partition
+  encoder can never succeed at quality 0 in any reachable context.
+  `astcEncodePartitionRgbBlock` now returns `none` at quality 0 (matching
+  AstcLdr's existing `quality > 0` guard on the fallback call).
+
+### Texcomp: ASTC LDR image-level compress driver (`AstcLdrImg.lean`)
+
+`astcCompressRgba8` ports `tc_astc_compress_rgba8`'s band loop: edge-clamped
+block gather (`y >= height → height-1`, `x >= width → width-1`, yy-outer
+xx-inner order as in C), then per-block dispatch — UASTC LDR when
+`uastc != 0` (solid blocks handled inside the UASTC encoder), otherwise
+`tc_encode_astc_ldr_block` for non-solid blocks and the const/void-extent
+encoder for solid ones, with `quality`/`block_x`/`block_y` from the options.
+The threads field only splits block rows across workers; output is
+byte-identical for any thread count, so the model is the serial path.
+Clamped gathers produce duplicated texel rows/columns that pure block-level
+random vectors never hit — that is what exposed the two partition-encoder
+behaviours above. Gate: `make texcomp-astc-ldrimg-diff` (40 images, 5 content
+classes x 8 valid block footprints x quality 0-2, UASTC on 4x4 half of them).
+
 ### Tocio: documented boundaries
 
 * The total YAML parser's fuel charges one unit per parsed *line*, while
