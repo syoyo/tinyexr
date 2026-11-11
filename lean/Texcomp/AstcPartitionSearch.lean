@@ -206,11 +206,13 @@ def astcFindBestPartition (block : List (List Nat)) (blockX blockY
         (List.range batchN).foldl (fun (acc2 : Option (Nat × Nat)) s =>
           let idx := idxs.getD s 0
           let counts := ((cache.getD idx (0, [], [], [])).2.2.1)
-          let err := (List.range partitionCount).foldl (fun a p =>
+          -- The C accumulates in uint64: an empty partition contributes
+          -- UINT64_MAX and the sum wraps modulo 2^64.
+          let err := ((List.range partitionCount).foldl (fun a p =>
             a + (match astcRgbSseFromStats ((sums.getD s []).getD p [])
                     ((sumsqs.getD s []).getD p []) (counts.getD p 0) with
                   | some v => v
-                  | none => 0xFFFFFFFFFFFFFFFF)) 0
+                  | none => 0xFFFFFFFFFFFFFFFF)) 0) % 0x10000000000000000
           match acc2 with
           | none => some (idx, err)
           | some (_, e) => if err < e then some (idx, err) else acc2) acc) none

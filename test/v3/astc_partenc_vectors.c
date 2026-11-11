@@ -20,7 +20,10 @@ int main(int argc, char **argv) {
     for (int s = 0; s < 40; s++) {
         int f = rnd() % 8;
         uint32_t bx = footprints[f][0], by = footprints[f][1], count = bx * by;
-        int quality = 2;
+        /* Cover every tier: the quality<=1 scoring paths (batched
+         * score-from-ideal with positional indexing, and the active-mask
+         * per-candidate scan) previously went unverified. */
+        int quality = s % 3;
         uint32_t pc = 2 + (rnd() % 3);
         if (pc == 4 && !(bx == 4 || bx == 5 || bx == 6 || bx == 8)) pc = 2;
         uint8_t block[144][4];

@@ -82,6 +82,11 @@ lean_exe astcdualcheck where
 lean_exe astcpartenccheck where
   root := `AstcPartencCheck
 
+/-- ASTC LDR block encoder differential checker. -/
+@[default_target]
+lean_exe astcldrcheck where
+  root := `AstcLdrCheck
+
 /-- DDS/KTX header byte-layout checker (C writers vs Lean model). -/
 @[default_target]
 lean_exe ddsktxcheck where
@@ -257,3 +262,8 @@ lean_exe cspcheck where
 @[default_target]
 lean_exe astcdebug where
   root := `AstcDebug
+
+/-- ASTC LDR block encoder debug driver (decision trace). -/
+@[default_target]
+lean_exe astcldrdbgmain where
+  root := `AstcLdrDbgMain

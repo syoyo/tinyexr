@@ -80,7 +80,7 @@ make lean-validation-sanitize # sanitized codec vectors and malformed-vector reg
 | `Exr/Piz.lean` | Range bitmap/alphabet and rank inverse with 16-bit bounds; signed 14-bit and modular 16-bit wavelet pairs and 2×2 cells; inverse composition for arbitrary distinct-position lifting schedules; descending canonical Huffman assignment, length-table zero-run serialization and payload symbol/RLE bits; prefix-tree symbol-stream inversion under explicit path hypotheses. |
 | `Exr/Zip.lean` | ZIP predictor/interleave composition with inverse, validated reconstruction after external inflate, bad header/checksum rejection; container layer: ADLER32 checksum (pure fold, with the block-boundary deferred-mod equivalence), zlib header validation (CM/CINFO/FDICT/check digits), the big-endian trailer, block validation, 16-line ZIP geometry. |
 | `CodecGen.lean` | `codecgen <out.bin> <seed>`: PXR24 (uint/half/float, mixed sampled blocks), B44/B44A, RLE, ZIP, ADLER32 and PIZ kernel/Huffman vectors for `test/v3/codec_diff.c`. |
-| `Texcomp/*` | `Container` (DDS/KTX headers + payloads), BC1/BC3/BC4/BC5 decoders and BC1/BC4/BC5 encoders, BC6H block decoders and every BC6H block encoder (unsigned 0–13, signed 0–8/12/13), BC7 pack path/mode 6/seeds/full default-option encoder/decoder-driven RDO pass, ETC2 individual/T-mode/EAC, ASTC LDR + HDR endpoint packers, colour quantizer, weight decimation, weight infill, the encoder block-mode filter, the partition cache, the block-mode candidate ranking, the endpoint/colour-quant plumbing and the projection/least-squares/SSE fit kernels, the partition search and the ISE bit packer. Every model has a C-vs-Lean differential gate (`make texcomp-*-diff`). |
+| `Texcomp/*` | `Container` (DDS/KTX headers + payloads), BC1/BC3/BC4/BC5 decoders and BC1/BC4/BC5 encoders, BC6H block decoders and every BC6H block encoder (unsigned 0–13, signed 0–8/12/13), BC7 pack path/mode 6/seeds/full default-option encoder/decoder-driven RDO pass, ETC2 individual/T-mode/EAC, the ASTC LDR top-level block encoder (`AstcLdr`), ASTC LDR + HDR endpoint packers, colour quantizer, weight decimation, weight infill, the encoder block-mode filter, the partition cache, the block-mode candidate ranking, the endpoint/colour-quant plumbing and the projection/least-squares/SSE fit kernels, the partition search, the partition-RGB and dual-RGBA encoders, and the ISE bit packer. Every model has a C-vs-Lean differential gate (`make texcomp-*-diff`). |
 | `Tocio/*` | OCIO scaffolding: `Op` (op kinds + FixedFunction styles), Matrix/Range/Exponent/Log/CDL/LUT/YAML/Config/Resolve/Lower/Processor. Float semantics + YAML totality pending. |
 
 ## Conformance matrix
@@ -510,3 +510,32 @@ unquantized value for `level < 4`, matching the "no table means no
 quantization" reading used by the Lean model
 (`Texcomp.hdrColorRoundtrip`). The gate `make texcomp-astc-quant-diff`
 checks all 21 levels x 256 values plus the clamp edges (5394 values).
+
+### Texcomp: ASTC LDR top-level block encoder (`AstcLdr.lean`)
+
+`astcEncodeLdrBlock` ports `tc_encode_astc_ldr_block` end to end: the
+per-tier scan caps / shortlist limits, the batch-scored luma-axis scan
+(into a bounded error-sorted shortlist), the full-axis sweep with
+least-squares endpoint upgrades, the iterative reproject/refit refinement
+(before the partition fallback decision, as in C), the partition/dual/const
+arbitration, and the final CEM value assembly, CEM 8/12 ascending-sum swap
+and ISE bit-packing. Gate: `make texcomp-astc-ldr-diff` (bit-exact on every
+tier and CEM).
+
+Porting it pinned down three reference behaviours of the shared
+partition-RGB encoder (`AstcPartitionRgb.lean`) that only fire at
+`quality <= 1` — invisible to the original quality-2-only partenc gate,
+which now covers all three tiers:
+
+- The medium/fast candidate scan inserts `batch_start + bj`, the member's
+  positional index, into the best/shortlist slots. Candidates skipped by
+  the colour-quant budget check inside a batch shift that index off the
+  true candidate, so the C can attribute a scored error to the wrong
+  candidate (and even carry a `99u - weight_bits` unsigned underflow into
+  the recorded quantizer). The model reproduces this exactly.
+- The 3/4-partition caches are built only when `ctx->quality > 1`; with an
+  empty cache `tc_astc_find_best_partition` always fails, so
+  `partition_count` 3/4 cannot encode at reduced effort tiers.
+- The per-seed variance sum accumulates in `uint64`: a seed that leaves a
+  partition empty adds `UINT64_MAX` and the sum wraps modulo 2^64.
+  `astcFindBestPartition` now folds modulo 2^64 as well.
