@@ -81,7 +81,7 @@ make lean-validation-sanitize # sanitized codec vectors and malformed-vector reg
 | `Exr/Zip.lean` | ZIP predictor/interleave composition with inverse, validated reconstruction after external inflate, bad header/checksum rejection; container layer: ADLER32 checksum (pure fold, with the block-boundary deferred-mod equivalence), zlib header validation (CM/CINFO/FDICT/check digits), the big-endian trailer, block validation, 16-line ZIP geometry. |
 | `CodecGen.lean` | `codecgen <out.bin> <seed>`: PXR24 (uint/half/float, mixed sampled blocks), B44/B44A, RLE, ZIP, ADLER32 and PIZ kernel/Huffman vectors for `test/v3/codec_diff.c`. |
 | `Texcomp/*` | `Container` (DDS/KTX headers + payloads), BC1/BC3/BC4/BC5 decoders and BC1/BC4/BC5 encoders, BC6H block decoders and every BC6H block encoder (unsigned 0–13, signed 0–8/12/13), BC7 pack path/mode 6/seeds/full default-option encoder/decoder-driven RDO pass, ETC2 individual/T-mode/EAC, the ASTC LDR top-level block encoder (`AstcLdr`), ASTC LDR + HDR endpoint packers, colour quantizer, weight decimation, weight infill, the encoder block-mode filter, the partition cache, the block-mode candidate ranking, the endpoint/colour-quant plumbing and the projection/least-squares/SSE fit kernels, the partition search, the partition-RGB and dual-RGBA encoders, and the ISE bit packer. Every model has a C-vs-Lean differential gate (`make texcomp-*-diff`). |
-| `Tocio/*` | OCIO scaffolding: `Op` (op kinds + FixedFunction styles), Matrix/Range/Exponent/Log/CDL/LUT/YAML/Config/Resolve/Lower/Processor. Float semantics + YAML totality pending. |
+| `Tocio/*` | OCIO scaffolding: `Op` (op kinds + FixedFunction styles), Matrix/Range/Exponent/Log/CDL/LUT/YAML/Config/Resolve/Lower/Processor. `YamlTotal.lean`: fuel-bounded total YAML parser with concrete depth-cap theorems (100/127 parse, 129 fails; boundary documented, see below). `FloatSemantics.lean`: identity/sign/round-trip laws for the exponent kernels, CDL round-trip within the C's 2e-3 tolerance on the non-negative grid, and Range clamp boundary semantics. |
 
 ## Conformance matrix
 
@@ -539,3 +539,16 @@ which now covers all three tiers:
 - The per-seed variance sum accumulates in `uint64`: a seed that leaves a
   partition empty adds `UINT64_MAX` and the sum wraps modulo 2^64.
   `astcFindBestPartition` now folds modulo 2^64 as well.
+
+### Tocio: documented boundaries
+
+* The total YAML parser's fuel charges one unit per parsed *line*, while
+  the C (`TOC_YAML_MAX_DEPTH`) charges one per block. `yamlEntryFuel =
+  2 * yamlMaxDepth` covers every document the C accepts within its cap
+  with at most one item per level; deeper/wider synthetic documents fail
+  earlier (pinned by `parseYamlTotalV_deep129`). Real configuration
+  shapes are far inside both budgets.
+* `FloatSemantics.lean` proves the kernel laws on a sampled grid via
+  `native_decide`; the full C-float correspondence remains gated by
+  `make tocio-diff` (4096 blocks, 0 mismatches).
+

@@ -62,6 +62,14 @@ theorem dropWhile_length_le {α : Type} (p : α → Bool) (l : List α) :
 /-- YAML nesting depth cap from the C side. -/
 def yamlMaxDepth : Nat := 128
 
+/-- The dispatcher's entry fuel. The model charges one fuel unit per
+  *parsed line* (both nesting and plain items), while the C charges one
+  per block (`TOC_YAML_MAX_DEPTH`). Two units per level cover any
+  document the C accepts within its cap with at most one item per
+  level; docs beyond that budget fail here but are outside real
+  configuration shapes. -/
+def yamlEntryFuel : Nat := 2 * yamlMaxDepth
+
 /-- A line with indentation and raw text. -/
 structure YL2 where
   indent : Nat
@@ -147,8 +155,35 @@ def parseSeqTotal (fuel : Nat) (base : Nat) (ls : List YL2)
 termination_by fuel
 end
 
-/-- Full document parse (depth-bounded to the C cap). -/
+/-- Full document parse (fuel-bounded; see `yamlEntryFuel`). -/
 def parseYamlTotalV (lines : List YL2) : Option YamlValue :=
-  match parseValueTotal yamlMaxDepth 0 lines with
+  match parseValueTotal yamlEntryFuel 0 lines with
   | some (v, _, _) => some v
   | none => none
+
+/-- A right-nested mapping document of depth `n` (one `k{i}:` line per
+  level, a scalar leaf at the bottom). -/
+def deepMapDoc : Nat → List YL2
+  | 0 => [{ indent := 0, text := "leaf: 1" }]
+  | n + 1 =>
+    ({ indent := 0, text := s!"k{n}:" }) :: (deepMapDoc n).map
+      (fun x => { x with indent := x.indent + 2 })
+
+/-- A 100-level document parses. -/
+theorem parseYamlTotalV_deep100 :
+    (parseYamlTotalV (deepMapDoc 100)).isSome := by native_decide
+
+/-- A 127-level document parses (the model's fuel covers the C's cap). -/
+theorem parseYamlTotalV_deep127 :
+    (parseYamlTotalV (deepMapDoc 127)).isSome := by native_decide
+
+/-- A 129-level document fails: the model boundary sits at the C's
+  `TOC_YAML_MAX_DEPTH` (one fuel unit per level, two charged). -/
+theorem parseYamlTotalV_deep129 :
+    (parseYamlTotalV (deepMapDoc 129)).isNone := by native_decide
+
+
+/-- The parsed 100-level document's height is 102 (one level per `k{i}:`
+  line plus the leaf and the dispatcher's outer mapping node). -/
+theorem parseYamlTotalV_deep100_height :
+    (parseYamlTotalV (deepMapDoc 100)).get!.height = 102 := by native_decide
