@@ -107,6 +107,11 @@ lean_exe astchdrimgcheck where
 lean_exe astcldrimgcheck where
   root := `AstcLdrImgCheck
 
+/-- ASTC LDR image-level decoder checker (C writer vs Lean model). -/
+@[default_target]
+lean_exe astcldrdeccheck where
+  root := `AstcLdrDecCheck
+
 /-- DDS/KTX header byte-layout checker (C writers vs Lean model). -/
 @[default_target]
 lean_exe ddsktxcheck where
