@@ -87,6 +87,21 @@ lean_exe astcpartenccheck where
 lean_exe astcldrcheck where
   root := `AstcLdrCheck
 
+/-- ASTC UASTC LDR block encoder differential checker. -/
+@[default_target]
+lean_exe astcuastccheck where
+  root := `AstcUastcCheck
+
+/-- ASTC HDR block encoder differential checker. -/
+@[default_target]
+lean_exe astchdrenccheck where
+  root := `AstcHdrEncCheck
+
+/-- ASTC HDR image-level encoder differential checker. -/
+@[default_target]
+lean_exe astchdrimgcheck where
+  root := `AstcHdrImgCheck
+
 /-- DDS/KTX header byte-layout checker (C writers vs Lean model). -/
 @[default_target]
 lean_exe ddsktxcheck where

@@ -23,7 +23,7 @@ MINIZ_SRC = ./deps/miniz/miniz.c
 # ---- legacy v1 single-header test (unchanged) -----------------------------
 TARGET = test_tinyexr
 
-.PHONY: all test clean help lib test-c test-c-threads test-c-tsan c11-gate lean-check lean-diff lean-gen lean-gen-update lean-gen-check codec-diff texcomp-web texcomp-bc6h-diff texcomp-bc7-diff texcomp-bc135-diff texcomp-etc2-diff texcomp-astc-diff texcomp-astc-ldr-diff tocio-diff fuzz fuzz-threads tocio-fuzz fuzz-jph fuzz-libdeflate fuzz-corpus fuzz-corpus-asan parse-test wasm freestanding-gate freestanding-zstd-gate examples-c bench bench-compare bench-htj2k arm-smoke host-smoke gpu-test vk-test jph-gpu-test bench-gpu-jph texcomp texcomp-arm texcomp-c11-gate texcomp-test texcomp-bench texcomp-astc-psnr texcomp-astc-arm-smoke texcomp-astc-arm-gate texcomp-astc-hdr-gate texcomp-uni-gate texcomp-bc6h-gate texcomp-wasm texcomp-wasm-simd wasm-texcomp wasm-texcomp-simd ptexatlas-c11-gate
+.PHONY: all test clean help lib test-c test-c-threads test-c-tsan c11-gate lean-check lean-diff lean-gen lean-gen-update lean-gen-check codec-diff texcomp-web texcomp-bc6h-diff texcomp-bc7-diff texcomp-bc135-diff texcomp-etc2-diff texcomp-astc-diff texcomp-astc-ldr-diff texcomp-astc-uastc-diff texcomp-astc-hdrenc-diff texcomp-astc-hdrimg-diff tocio-diff fuzz fuzz-threads tocio-fuzz fuzz-jph fuzz-libdeflate fuzz-corpus fuzz-corpus-asan parse-test wasm freestanding-gate freestanding-zstd-gate examples-c bench bench-compare bench-htj2k arm-smoke host-smoke gpu-test vk-test jph-gpu-test bench-gpu-jph texcomp texcomp-arm texcomp-c11-gate texcomp-test texcomp-bench texcomp-astc-psnr texcomp-astc-arm-smoke texcomp-astc-arm-gate texcomp-astc-hdr-gate texcomp-uni-gate texcomp-bc6h-gate texcomp-wasm texcomp-wasm-simd wasm-texcomp wasm-texcomp-simd ptexatlas-c11-gate
 
 all: $(TARGET)
 
@@ -674,6 +674,36 @@ texcomp-astc-ldr-diff: texcomp lean-tools
 	./build/astc_ldr_gen build/lean-gen/astc_ldr_vectors.txt
 	cd lean && $(LAKE) build ExrSpec astcldrcheck
 	./lean/.lake/build/bin/astcldrcheck build/lean-gen/astc_ldr_vectors.txt
+
+.PHONY: texcomp-astc-uastc-diff
+texcomp-astc-uastc-diff: texcomp lean-tools
+	mkdir -p build/lean-gen
+	$(CC) -std=c11 -Wall -Wextra -Itools/texcomp/include -Iinclude -Isrc -Iexamples/common \
+	  -Itools/texcomp/src test/v3/astc_uastc_vectors.c build/libtexcomp.a \
+	  build/libtinyexr3.a -lm -pthread -o build/astc_uastc_gen
+	./build/astc_uastc_gen build/lean-gen/astc_uastc_vectors.txt
+	cd lean && $(LAKE) build ExrSpec astcuastccheck
+	./lean/.lake/build/bin/astcuastccheck build/lean-gen/astc_uastc_vectors.txt
+
+.PHONY: texcomp-astc-hdrimg-diff
+texcomp-astc-hdrimg-diff: texcomp lean-tools
+	mkdir -p build/lean-gen
+	$(CC) -std=c11 -Wall -Wextra -Itools/texcomp/include -Iinclude -Isrc -Iexamples/common \
+	  -Itools/texcomp/src test/v3/astc_hdrimg_vectors.c build/libtexcomp.a \
+	  build/libtinyexr3.a -lm -pthread -o build/astc_hdrimg_gen
+	./build/astc_hdrimg_gen build/lean-gen/astc_hdrimg_vectors.txt
+	cd lean && $(LAKE) build ExrSpec astchdrimgcheck
+	./lean/.lake/build/bin/astchdrimgcheck build/lean-gen/astc_hdrimg_vectors.txt
+
+.PHONY: texcomp-astc-hdrenc-diff
+texcomp-astc-hdrenc-diff: texcomp lean-tools
+	mkdir -p build/lean-gen
+	$(CC) -std=c11 -Wall -Wextra -Itools/texcomp/include -Iinclude -Isrc -Iexamples/common \
+	  -Itools/texcomp/src test/v3/astc_hdrenc_vectors.c build/libtexcomp.a \
+	  build/libtinyexr3.a -lm -pthread -o build/astc_hdrenc_gen
+	./build/astc_hdrenc_gen build/lean-gen/astc_hdrenc_vectors.txt
+	cd lean && $(LAKE) build ExrSpec astchdrenccheck
+	./lean/.lake/build/bin/astchdrenccheck build/lean-gen/astc_hdrenc_vectors.txt
 
 .PHONY: tocio-lean-check
 tocio-lean-check:
