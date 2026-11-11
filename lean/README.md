@@ -575,6 +575,24 @@ random vectors never hit — that is what exposed the two partition-encoder
 behaviours above. Gate: `make texcomp-astc-ldrimg-diff` (40 images, 5 content
 classes x 8 valid block footprints x quality 0-2, UASTC on 4x4 half of them).
 
+### Texcomp: ASTC LDR image decoder and "uni" container (`AstcLdrImgDec.lean`, `Uni.lean`)
+
+`astcDecodeImageRgba8` ports `tc_astc_decode_block_rgba8` /
+`tc_astc_decompress_rgba8` (void-extent, block-mode, ISE, partitions, CEM
+0-15 LDR, dual-plane; failures are `Option.none` = `TC_ERROR_CORRUPT` /
+`UNSUPPORTED`). Gate: `make texcomp-astc-ldrdec-diff` (40 images: 20 encoder
+round trips over 8 footprints + 20 random-block/random-footprint images that
+exercise the failure paths).
+
+`Uni.lean` models `texcomp_uni.c`: size, compress (= UASTC 4x4 image
+encode), decompress (= 4x4 ASTC image decode) and the ASTC transcode (byte
+copy; `uniTranscodeAstc_length`). Gate: `make texcomp-uni-diff` (40 images,
+24 compressed + 16 random-stream images, 16 of which are rejected by the C
+decoder and by the model alike). **Boundary:** `tc_uni_transcode_{bc7,bc1,etc2}`
+are "decode then run the target's whole-image encoder"; Lean has the decode
+half but only block-level BC7/BC1/ETC2 encoders (no image drivers), so those
+three transcodes are not modelled yet.
+
 ### Tocio: documented boundaries
 
 * The total YAML parser's fuel charges one unit per parsed *line*, while

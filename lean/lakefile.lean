@@ -112,6 +112,11 @@ lean_exe astcldrimgcheck where
 lean_exe astcldrdeccheck where
   root := `AstcLdrDecCheck
 
+/-- texcomp "uni" container checker (C writer vs Lean model). -/
+@[default_target]
+lean_exe unicheck where
+  root := `UniCheck
+
 /-- DDS/KTX header byte-layout checker (C writers vs Lean model). -/
 @[default_target]
 lean_exe ddsktxcheck where
