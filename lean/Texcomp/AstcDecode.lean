@@ -286,15 +286,15 @@ def infillWeight (grid : List Nat) (gw gh bw bh x y' : Nat) : Nat :=
   let jt := gt / 16
   let ft := gt % 16
   let w11 := (fs * ft + 8) / 16
-  let w10 := ft - w11
-  let w01 := fs - w11
-  let w00 := 16 - fs - ft + w11
+  let w10 := (ft : Int) - (w11 : Int)
+  let w01 := (fs : Int) - (w11 : Int)
+  let w00 := (16 : Int) - (fs : Int) - (ft : Int) + (w11 : Int)
   let v0 := js + jt * gw
   let p00 := grid.getD v0 0
   let p01 := if js + 1 < gw then grid.getD (v0 + 1) 0 else 0
   let p10 := if jt + 1 < gh then grid.getD (v0 + gw) 0 else 0
   let p11 := if js + 1 < gw && jt + 1 < gh then grid.getD (v0 + gw + 1) 0 else 0
-  (p00 * w00 + p01 * w01 + p10 * w10 + p11 * w11 + 8) / 16
+  (Int.toNat (p00 * w00 + p01 * w01 + p10 * w10 + p11 * w11 + 8)) / 16
 
 /-- Clamp to 0..255 (Nat input/output). -/
 def clampNat (v : Int) : Nat :=
