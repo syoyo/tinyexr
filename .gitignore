@@ -57,3 +57,6 @@ resume.md
 
 # Lean-generated differential corpus
 /build/lean-gen/
+
+# Optional local-only BinomialLLC checkout for `make basis-validate` (not a submodule)
+/deps/basis_universal/
