@@ -659,8 +659,12 @@ superseded by `Bc7Mode0Full` / `Etc2TModeDecode` and redefine the same names.
   comparison results, and `rangeK_identity_exact`,
   `rangeK_roundtrip_exact`, `rangeK_saturate_exact` and `clampK_exact`
   are `decide`-checked facts in exact binary32 semantics (kernel-checked,
-  no `native_decide`). The remaining open piece is universal numerical
-  analysis of `exp2f ∘ log2f`, still bounded by the sampled grid.
+  no `native_decide`). The exponential kernels are modelled too
+  (`mLog2f`/`mExp2f`/`mPowf`/`mMirrorPow` over `Float32.Model`) with exact
+  laws at the powers of two and a proved one-ulp counterexample at
+  `powf 3 1`, which is why the executable laws are corpus/tolerance
+  statements. The remaining open piece is the universal numerical
+  analysis of `exp2f ∘ log2f`.
 * `ConfigQuery.lean` models the `toc_config.c` query surface over the
   parsed tree and is pinned by `make tocio-config-diff` (16 configs; the
   transcript covers lookups, roles, displays/views/looks, view

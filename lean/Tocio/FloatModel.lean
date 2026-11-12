@@ -197,4 +197,150 @@ theorem clampK_exact :
       clampK modelOps (Float32.Model.ofBits 0x40400000) bZero bTwo = bTwo := by
   refine ⟨?_, ?_, ?_⟩ <;> decide
 
+
+/-! ## Exact-model exponential kernels (`toc_log2f` / `toc_exp2f` / `toc_powf`) -/
+
+/-- Model-level bit construction (canonicalizing NaN). -/
+def mBits (u : UInt32) : Float32.Model := Float32.Model.ofBits u
+
+def mC0 : Float32.Model := mBits 0
+def mC1 : Float32.Model := mBits 0x3F800000
+def mC2 : Float32.Model := mBits 0x40000000
+def mC3 : Float32.Model := mBits 0x40400000
+def mC5 : Float32.Model := mBits 0x40A00000
+def mC6 : Float32.Model := mBits 0x40C00000
+def mC7 : Float32.Model := mBits 0x40E00000
+def mC9 : Float32.Model := mBits 0x41100000
+def mC24 : Float32.Model := mBits 0x41C00000
+def mC120 : Float32.Model := mBits 0x42F00000
+def mC720 : Float32.Model := mBits 0x44340000
+def mCHalf : Float32.Model := mBits 0x3F000000
+def mCLog2e : Float32.Model := mBits 0x3FB8AA3B
+def mLn2 : Float32.Model := mBits 0x3F317218
+def mCNaN : Float32.Model := mBits 0x7FC00000
+def mCInfPos : Float32.Model := mBits 0x7F800000
+def mCInfNeg : Float32.Model := mBits 0xFF800000
+def mC127 : Float32.Model := mBits 0x42FE0000
+def mCNeg126 : Float32.Model := mBits 0xC2FC0000
+
+/-- `truncToIntF` over the model. -/
+def mTruncToIntF (x : Float32.Model) : Int :=
+  let u := x.toBits
+  let sign := (u >>> 31) == 1
+  let e := (u >>> 23) &&& 0xff
+  let m := u &&& 0x7fffff
+  let mag : Int :=
+    if e < 127 then 0
+    else
+      let m' := (UInt32.ofNat 8388608 + m).toNat
+      let se := (e - 127).toNat
+      if se < 23 then Int.ofNat (m' >>> (23 - se))
+      else Int.ofNat (m' <<< (se - 23))
+  if sign then -mag else mag
+
+/-- `smallIntToF32` over the model. -/
+def mSmallIntToF32 (i : Int) : Float32.Model :=
+  if i == 0 then mC0
+  else
+    let sign : UInt32 := if i < 0 then 0x80000000 else 0
+    let a : Nat := if i < 0 then (-i).toNat else i.toNat
+    let e : Nat := match (List.range 8).find? (fun k => a < 2 ^ (k + 1)) with
+      | some k => k
+      | none => 0
+    let mant : UInt32 := UInt32.ofNat (a <<< (23 - e))
+    let bits : UInt32 := sign ||| (UInt32.ofNat ((e + 127) <<< 23)) ||| (mant &&& 0x7fffff)
+    mBits bits
+
+/-- `toc_log2f` in exact binary32 semantics. -/
+def mLog2f (x : Float32.Model) : Float32.Model :=
+  if x.isNaN then x
+  else if !(mC0.lt x) then (if x.lt mC0 then mCNaN else mCInfNeg)
+  else
+    let u := x.toBits
+    let e : Int := Int.ofNat (((u >>> 23) &&& 0xff).toNat) - 127
+    let m := mBits ((u &&& 0x007fffff) ||| 0x3f800000)
+    let t : Float32.Model := (m - mC1) / (m + mC1)
+    let t2 : Float32.Model := t * t
+    let ln : Float32.Model := mC2 * t *
+      (mC1 + t2 * (mC1 / mC3 + t2 * (mC1 / mC5 + t2 * (mC1 / mC7 + t2 * (mC1 / mC9)))))
+    mSmallIntToF32 e + ln * mCLog2e
+
+/-- `toc_exp2f` in exact binary32 semantics. -/
+def mExp2f (x : Float32.Model) : Float32.Model :=
+  if x.isNaN then x
+  else if mC127.lt x then mCInfPos
+  else if x.lt mCNeg126 then mC0
+  else
+    let ki : Int := mTruncToIntF (if Float32.Model.le mC0 x then x + mCHalf else x - mCHalf)
+    let k := mSmallIntToF32 ki
+    let f := x - k
+    let g : Float32.Model := f * mLn2
+    let p : Float32.Model := mC1 + g * (mC1 + g * (mCHalf +
+      g * (mC1 / mC6 + g * (mC1 / mC24 + g * (mC1 / mC120 + g * (mC1 / mC720))))))
+    let bits : UInt32 := UInt32.ofNat ((ki + 127).toNat <<< 23)
+    p * mBits bits
+
+/-- `toc_powf` in exact binary32 semantics. -/
+def mPowf (x y : Float32.Model) : Float32.Model :=
+  if !(mC0.lt x) then
+    (if x = mC0 then (if mC0.lt y then mC0 else if y = mC0 then mC1 else mCInfPos)
+     else mCNaN)
+  else mExp2f (y * mLog2f x)
+
+/-- Mirror exponent over the model: `sign(x) * |x|^e`. -/
+def mMirrorPow (x e : Float32.Model) : Float32.Model :=
+  if x.lt mC0 then (-mC1) * mExp2f (e * mLog2f (-x))
+  else mExp2f (e * mLog2f x)
+
+/-! ### Kernel-checked exact-semantics laws for the exponential kernels -/
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 4000000 in
+/-- `log2f` exact at the powers of two used by the vectors. -/
+theorem mLog2f_exact : mLog2f mC1 = mC0 ∧ mLog2f mC2 = mC1 := by
+  decide
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 4000000 in
+/-- `powf` with exponent zero and with base one. -/
+theorem mPowf_trivial : mPowf mC3 mC0 = mC1 ∧ mPowf mC1 mC3 = mC1 := by
+  decide
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 4000000 in
+/-- Exact identity at exponent 1 on the grid values where binary32
+rounding preserves it (0.5, 2, 0.25 — see the counterexample below). -/
+theorem mPowf_one_exact :
+    mPowf (mBits 0x3F000000) mC1 = mBits 0x3F000000 ∧
+    mPowf (mBits 0x40000000) mC1 = mBits 0x40000000 ∧
+    mPowf (mBits 0x3E800000) mC1 = mBits 0x3E800000 := by
+  decide
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 4000000 in
+/-- Mirror exponent at exponent 1, including negative inputs. -/
+theorem mMirrorPow_one_exact :
+    mMirrorPow (mBits 0x3F000000) mC1 = mBits 0x3F000000 ∧
+    mMirrorPow (mBits 0xBF000000) mC1 = mBits 0xBF000000 ∧
+    mMirrorPow (mBits 0xC0000000) mC1 = mBits 0xC0000000 := by
+  decide
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 4000000 in
+/-- `log2f ∘ exp2f` is exact on the small integer exponents. -/
+theorem mLogExp_exact :
+    mLog2f (mExp2f mC0) = mC0 ∧ mLog2f (mExp2f mC1) = mC1 ∧
+    mLog2f (mExp2f mC2) = mC2 := by
+  decide
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 4000000 in
+/-- The exact identity `powf x 1 = x` is **false** in binary32 for
+`x = 3`: the polynomial `exp2f ∘ log2f` rounds one ulp away. This is
+why the executable laws in `Tocio/FloatSemantics.lean` are
+tolerance/corpus statements rather than universal equalities. -/
+theorem mPowf_one_counterexample :
+    mPowf (mBits 0x40400000) mC1 ≠ mBits 0x40400000 := by
+  decide
+
 end Tocio
