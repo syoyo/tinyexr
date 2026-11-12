@@ -165,9 +165,18 @@ validation checks, not library proofs.
   clamp contract (`clampK_lo/hi/id/idem`), and kernel-checked exactness
   theorems (`rangeK_identity_exact`, `rangeK_roundtrip_exact`,
   `rangeK_saturate_exact`, `clampK_exact`) evaluated with `decide` in the
-  exact binary32 semantics — no `native_decide`. What remains open is the
-  universal numerical analysis (proving `exp2f ∘ log2f` exact for all
-  inputs), which the sampled-grid fixtures still bound. Texcomp is
+  exact binary32 semantics — no `native_decide`. The exponential kernels
+  are modelled too (`mLog2f`/`mExp2f`/`mPowf`/`mMirrorPow` over
+  `Float32.Model`) with `decide`-checked exact laws (`mLog2f_exact`,
+  `mPowf_trivial`, `mPowf_one_exact`, `mMirrorPow_one_exact`,
+  `mLogExp_exact`), a proved counterexample
+  (`mPowf_one_counterexample`: `powf 3 1 ≠ 3` by one ulp) and
+  `mPow2_exact`: **all 254 normal powers of two** satisfy
+  `mLog2f (2^n) = n` and `mPowf (2^n) 1 = 2^n` exactly — exactness on the
+  format's entire dyadic skeleton. Exactness is false off that skeleton,
+  so what remains open is a proved *error bound* for non-dyadic
+  mantissas (today covered by the differential corpus and the tolerance
+  fixtures). Texcomp is
   covered by implementation-level differential gates rather than an
   engine-level one. Plan for completion is in
   `~/.opencode/plan/lean-remaining-tasks.md` (outside repo).

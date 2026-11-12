@@ -343,4 +343,24 @@ theorem mPowf_one_counterexample :
     mPowf (mBits 0x40400000) mC1 ≠ mBits 0x40400000 := by
   decide
 
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- **Full-exponent-range exactness.** For every normal binary32 power of
+two (`2^n`, all 254 exponents `n ∈ [-126, 127]`):
+
+* `mLog2f (2^n) = n` exactly, and
+* `mPowf (2^n) 1 = 2^n` exactly.
+
+This is the universal companion of the grid laws: the `exp2f ∘ log2f`
+composition is exact on the whole dyadic skeleton of the format, so the
+only inputs where the identity can drift are non-dyadic mantissas (the
+`3` counterexample below is one). -/
+theorem mPow2_exact :
+    (List.range 254).all (fun k =>
+      let bits := UInt32.ofNat ((k + 1) <<< 23)
+      let e := mSmallIntToF32 ((Int.ofNat (k + 1)) - 127)
+      mLog2f (mBits bits) = e ∧ mPowf (mBits bits) mC1 = mBits bits) = true := by
+  decide
+
 end Tocio

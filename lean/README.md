@@ -661,10 +661,12 @@ superseded by `Bc7Mode0Full` / `Etc2TModeDecode` and redefine the same names.
   are `decide`-checked facts in exact binary32 semantics (kernel-checked,
   no `native_decide`). The exponential kernels are modelled too
   (`mLog2f`/`mExp2f`/`mPowf`/`mMirrorPow` over `Float32.Model`) with exact
-  laws at the powers of two and a proved one-ulp counterexample at
-  `powf 3 1`, which is why the executable laws are corpus/tolerance
-  statements. The remaining open piece is the universal numerical
-  analysis of `exp2f ∘ log2f`.
+  laws at the powers of two, `mPow2_exact` (every one of the 254 normal
+  powers of two satisfies `log2f (2^n) = n` and `powf (2^n) 1 = 2^n`,
+  i.e. exactness on the whole dyadic skeleton) and a proved one-ulp
+  counterexample at `powf 3 1`. Exactness is false off the skeleton, so
+  the remaining open piece is a proved error bound for non-dyadic
+  mantissas.
 * `ConfigQuery.lean` models the `toc_config.c` query surface over the
   parsed tree and is pinned by `make tocio-config-diff` (16 configs; the
   transcript covers lookups, roles, displays/views/looks, view
