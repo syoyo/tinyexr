@@ -122,6 +122,11 @@ lean_exe unicheck where
 lean_exe unitranscodecheck where
   root := `UniTranscodeCheck
 
+/-- ETC2 RGB / EAC alpha block-encoder checker (C vs Lean model). -/
+@[default_target]
+lean_exe etc2enccheck where
+  root := `Etc2EncCheck
+
 /-- DDS/KTX header byte-layout checker (C writers vs Lean model). -/
 @[default_target]
 lean_exe ddsktxcheck where

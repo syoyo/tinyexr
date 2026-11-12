@@ -596,17 +596,30 @@ UNI decode, then the target's whole-image encoder (edge-clamped row-major
 quick = 2, no PCA, all modes, rdo = 0). Gate: `make texcomp-uni-transcode-diff`
 (36 streams: 20 accepted — flat, alpha-mixed and random content, BC7 modes
 1/3/4/5/6/7 all exercised — and 16 corrupt streams that fail identically).
-**Boundary:** `tc_uni_transcode_etc2` is not modelled: Lean has ETC2/EAC
-decoders only, so the ETC2 RGB encoder (flat/individual/differential/planar)
-and the EAC alpha encoder would have to be ported first. BC7 with `rdo > 0`
-(`tc_bc7_rdo_pass`) is likewise outside the model; uni transcoding never
-enables it.
+`Etc2Encode.lean` ports the ETC2 RGB encoder and the EAC alpha encoder
+(`texcomp_etc2.c` / `texcomp_eac.c`): flat, individual, differential and planar
+candidates with the C's strict-`<` selection order, the differential encoder's
+"one out-of-range split abandons the whole call" behaviour, and EAC's
+constant-block shortcut (returns just the value). The planar candidate does its
+arithmetic in `Float32` (IEEE single, truncating `toInt32`), matching the C's
+`float` code on x86-64 without FMA contraction. The image driver gathers
+**column-major** (index = x*4 + y, as the C does) and emits the EAC block before
+the RGB block for RGBA. Gate: `make texcomp-etc2-enc-diff` (400 blocks over ten
+content classes; bits **and** errors of every candidate, the selected block, and
+the EAC block compared; all four RGB modes win blocks — individual 185, planar 148,
+differential 66, flat 1 — and EAC constant/full paths are both hit), plus
+`uniTranscodeEtc2` in `make texcomp-uni-transcode-diff` (RGB and RGBA, 36 streams).
+**Boundary:** BC7 with `rdo > 0` (`tc_bc7_rdo_pass`) is outside the model; uni
+transcoding never enables it. The ETC2 model assumes the C is built without
+FMA contraction of the planar float expressions (true for the x86-64 baseline
+and for clang's default on macOS; GCC on AArch64 would need `-ffp-contract=off`
+for bit-identity).
 
 **Audit scope note.** `ExrSpec.lean` is the module root `lean-axiom-check`
 enumerates; the ASTC LDR/UASTC/uni modules were not reachable from it, so their
 theorems were silently outside the axiom census. `AstcLdrImgDec`, `Uni` and
 `UniTranscode` (and the encoder chain they import) are now imported there
-(census 3863 -> 3881, still no unexpected axioms). Modules that are only
+(census 3863 -> 3885, still no unexpected axioms). Modules that are only
 imported by their own `*Check` executable are still unaudited.
 
 ### Tocio: documented boundaries

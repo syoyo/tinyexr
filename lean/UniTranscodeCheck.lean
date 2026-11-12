@@ -1,8 +1,8 @@
 /-
-  TinyEXR - uni BC1/BC7 transcode differential checker (C vs Lean model).
+  TinyEXR - uni BC1/BC7/ETC2 transcode differential checker (C vs Lean model).
 
   Line (test/v3/astc_uni_transcode_vectors.c):
-    T <w> <h> <ok> | <uni blocks> | <bc1 bytes> | <bc7 bytes>
+    T <w> <h> <ok> | <uni blocks> | <bc1 bytes> | <bc7 bytes> | <etc2 rgb> | <etc2 rgba>
   ok = 0 (corrupt uni): the model must also fail and the C produced no output.
 
   Copyright (c) 2026 Syoyo Fujita and TinyEXR authors
@@ -31,11 +31,14 @@ def main (args : List String) : IO Unit := do
     let uni := (fields (sec.getD 1 "")).map hexNat
     let bc1 := (fields (sec.getD 2 "")).map hexNat
     let bc7 := (fields (sec.getD 3 "")).map hexNat
+    let e2 := (fields (sec.getD 4 "")).map hexNat
+    let e2a := (fields (sec.getD 5 "")).map hexNat
     let ok :=
-      match uniTranscodeBc1 uni w h, uniTranscodeBc7 uni w h with
-      | some a, some b => wantOk && a == bc1 && b == bc7
-      | none, none => !wantOk
-      | _, _ => false
+      match uniTranscodeBc1 uni w h, uniTranscodeBc7 uni w h,
+            uniTranscodeEtc2 uni w h false, uniTranscodeEtc2 uni w h true with
+      | some a, some b, some c, some d => wantOk && a == bc1 && b == bc7 && c == e2 && d == e2a
+      | none, none, none, none => !wantOk
+      | _, _, _, _ => false
     if !ok then
       bad := bad + 1
       if bad <= 4 then IO.eprintln s!"line {idx + 1} {w}x{h} wantOk={wantOk}: mismatch"

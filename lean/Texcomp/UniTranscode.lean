@@ -12,7 +12,8 @@
                               options: quick = 2, pca_endpoints = 0,
                               mode_mask = 0xff, rdo = 0)
 
-  The ETC2 transcode is not modelled: Lean has ETC2/EAC decoders only.
+    tc_etc2_compress_rgba8 -> `etc2CompressRgba8` (Etc2Encode.lean; column-major
+                              gather, optional EAC alpha block before each RGB block)
 
   Copyright (c) 2026 Syoyo Fujita and TinyEXR authors
   SPDX-License-Identifier: BSD-3-Clause
@@ -21,6 +22,7 @@
 import Texcomp.Uni
 import Texcomp.Bc1Encode
 import Texcomp.Bc7EncodeAll
+import Texcomp.Etc2Encode
 
 namespace Texcomp
 
@@ -51,6 +53,14 @@ def uniTranscodeBc1 (bytes : List Nat) (w h : Nat) : Option (List Nat) :=
 /-- `tc_uni_transcode_bc7`; `none` = decode failure (`TC_ERROR_CORRUPT`). -/
 def uniTranscodeBc7 (bytes : List Nat) (w h : Nat) : Option (List Nat) :=
   (uniDecompressRgba8 bytes w h).map (fun img => bc7CompressRgba8 img w h)
+
+/-- `tc_uni_transcode_etc2`; `alpha` selects ETC2 RGBA (EAC alpha + RGB). -/
+def uniTranscodeEtc2 (bytes : List Nat) (w h : Nat) (alpha : Bool) : Option (List Nat) :=
+  (uniDecompressRgba8 bytes w h).map (fun img => etc2CompressRgba8 img w h alpha)
+
+theorem uniTranscodeEtc2_none (bytes : List Nat) (w h : Nat) (alpha : Bool)
+    (h0 : uniDecompressRgba8 bytes w h = none) : uniTranscodeEtc2 bytes w h alpha = none := by
+  simp [uniTranscodeEtc2, h0]
 
 /-- A failed decode propagates: no transcode output is produced. -/
 theorem uniTranscodeBc1_none (bytes : List Nat) (w h : Nat)

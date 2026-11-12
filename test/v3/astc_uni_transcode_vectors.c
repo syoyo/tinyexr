@@ -1,5 +1,5 @@
 /* texcomp "uni" -> BC1 / BC7 transcode vectors (C side), public API only.
- *   T <w> <h> <ok> | <uni blocks> | <bc1> | <bc7>
+ *   T <w> <h> <ok> | <uni blocks> | <bc1> | <bc7> | <etc2 rgb> | <etc2 rgba>
  * s < 20: random RGBA8 -> tc_uni_compress_rgba8 -> transcode (ok = 1).
  * s >= 20: random uni bytes; ok = 1 only if the C accepts them.
  */
@@ -18,7 +18,9 @@ int main(int argc, char **argv) {
         uint32_t w = 1 + rn() % 10, h = 1 + rn() % 10;
         size_t usz = tc_uni_compressed_size(w, h), n = (size_t)w * h * 4;
         size_t b1 = tc_bc1_compressed_size(w, h), b7 = tc_bc7_compressed_size(w, h);
+        size_t e2n = tc_etc2_rgb_compressed_size(w, h), e4n = tc_etc2_rgba_compressed_size(w, h);
         uint8_t *pix = malloc(n), *uni = malloc(usz), *o1 = calloc(b1, 1), *o7 = calloc(b7, 1);
+        uint8_t *o2 = calloc(e2n, 1), *o4 = calloc(e4n, 1);
         int comp = s < 20, ok;
         for (size_t i = 0; i < n; i++) pix[i] = (uint8_t)rn();
         if (comp && s % 3 == 0) for (size_t i = 0; i < n; i++) pix[i] = pix[i & 3]; /* flat */
@@ -30,14 +32,20 @@ int main(int argc, char **argv) {
         }
         ok = tc_uni_transcode_bc1(uni, w, h, o1, b1) == TC_SUCCESS;
         if (ok != (tc_uni_transcode_bc7(uni, w, h, o7, b7) == TC_SUCCESS)) return 3;
+        if (ok != (tc_uni_transcode_etc2(uni, w, h, 0, o2, e2n) == TC_SUCCESS)) return 4;
+        if (ok != (tc_uni_transcode_etc2(uni, w, h, 1, o4, e4n) == TC_SUCCESS)) return 5;
         fprintf(out, "T %u %u %d |", w, h, ok);
         for (size_t i = 0; i < usz; i++) fprintf(out, " %02x", uni[i]);
         fprintf(out, " |");
         if (ok) for (size_t i = 0; i < b1; i++) fprintf(out, " %02x", o1[i]);
         fprintf(out, " |");
         if (ok) for (size_t i = 0; i < b7; i++) fprintf(out, " %02x", o7[i]);
+        fprintf(out, " |");
+        if (ok) for (size_t i = 0; i < e2n; i++) fprintf(out, " %02x", o2[i]);
+        fprintf(out, " |");
+        if (ok) for (size_t i = 0; i < e4n; i++) fprintf(out, " %02x", o4[i]);
         fprintf(out, "\n");
-        free(pix); free(uni); free(o1); free(o7);
+        free(pix); free(uni); free(o1); free(o7); free(o2); free(o4);
     }
     fclose(out);
     return 0;
