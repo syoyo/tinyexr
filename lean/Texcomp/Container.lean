@@ -541,4 +541,450 @@ theorem parseKtxFile_emit (f : KtxFile)
     rw [← hs, ByteArray.extract_zero_size]
   simp [parseKtxFile, hHdr, hext, hlen]
 
+/-! ### ASTC file container (`tc_astc_write_file_memory`)
+
+The `.astc` container is a 16-byte header (little-endian magic `0x13ABA15C`,
+block footprint, z-dim 1, then 24-bit little-endian width/height/depth)
+followed by the compressed block payload. -/
+
+def astcHeaderSize : Nat := 16
+
+/-- The 14 valid ASTC block footprints (`tc_astc_valid_block`). -/
+def astcFileValidBlock (bx by_ : Nat) : Bool :=
+  (bx == 4 && by_ == 4) || (bx == 5 && by_ == 4) || (bx == 5 && by_ == 5) ||
+  (bx == 6 && by_ == 5) || (bx == 6 && by_ == 6) || (bx == 8 && by_ == 5) ||
+  (bx == 8 && by_ == 6) || (bx == 8 && by_ == 8) || (bx == 10 && by_ == 5) ||
+  (bx == 10 && by_ == 6) || (bx == 10 && by_ == 8) || (bx == 10 && by_ == 10) ||
+  (bx == 12 && by_ == 10) || (bx == 12 && by_ == 12)
+
+structure AstcFileHeader where
+  blockX : Nat
+  blockY : Nat
+  width : Nat
+  height : Nat
+  deriving Repr, DecidableEq
+
+/-- ASTC file payload bytes: `tc_astc_compressed_size` under the writer's
+  guard chain (0 for an invalid block footprint or an empty image). -/
+def astcFilePayloadSize (h : AstcFileHeader) : Nat :=
+  if astcFileValidBlock h.blockX h.blockY && h.width > 0 && h.height > 0 then
+    astcPayloadSize h.blockX h.blockY h.width h.height
+  else 0
+
+def astcFileSize (h : AstcFileHeader) : Nat :=
+  astcHeaderSize + astcFilePayloadSize h
+
+/-- Little-endian 24-bit triple (`tc_wr_u24`): byte 0 is the low byte. -/
+def u24Bytes (v : Nat) : Bytes :=
+  putU8 (UInt8.ofNat ((v / 65536) % 256))
+    (putU8 (UInt8.ofNat ((v / 256) % 256))
+      (putU8 (UInt8.ofNat (v % 256)) ByteArray.empty))
+
+theorem u24Bytes_size (v : Nat) : (u24Bytes v).size = 3 := by
+  simp only [u24Bytes, putU8, ByteArray.size_push, ByteArray.size_empty,
+    Nat.zero_add]
+
+/-- The `i`-th byte of `u24Bytes v`: 0, 1 and 2 read the three stored bytes;
+  anything else is out of bounds. -/
+theorem getU8?_u24Bytes (v : Nat) (i : Nat) :
+    getU8? (u24Bytes v) i =
+      (if i = 0 then some (UInt8.ofNat (v % 256))
+       else if i = 1 then some (UInt8.ofNat ((v / 256) % 256))
+       else if i = 2 then some (UInt8.ofNat ((v / 65536) % 256))
+       else none) := by
+  simp only [u24Bytes, putU8, getU8?_push, ByteArray.size_push,
+    ByteArray.size_empty, Nat.zero_add]
+  by_cases h0 : i = 0
+  · subst h0; simp
+  · by_cases h1 : i = 1
+    · subst h1; simp
+    · by_cases h2 : i = 2
+      · subst h2; simp
+      · rw [ite_eq_right h0, ite_eq_right h1, ite_eq_right h2,
+          getU8?_of_ge (b := ByteArray.empty) (i := i) (by
+            rw [ByteArray.size_empty]; omega),
+          ite_eq_right h0, ite_eq_right h1, ite_eq_right h2]
+
+theorem putU8_empty_size (v : UInt8) : (putU8 v ByteArray.empty).size = 1 := by
+  simp only [putU8, ByteArray.size_push, ByteArray.size_empty, Nat.zero_add]
+
+/-- First 7 header bytes: magic, block footprint, z-dim. -/
+def astcHead4 (h : AstcFileHeader) : Bytes :=
+  putU32LE 0x5CA1AB13 ByteArray.empty
+    ++ putU8 (UInt8.ofNat h.blockX) ByteArray.empty
+    ++ putU8 (UInt8.ofNat h.blockY) ByteArray.empty
+    ++ putU8 1 ByteArray.empty
+
+/-- Last 9 header bytes: the three 24-bit extents. -/
+def astcTail3 (h : AstcFileHeader) : Bytes :=
+  u24Bytes h.width ++ u24Bytes h.height ++ u24Bytes 1
+
+/-- The 16-byte ASTC file header emitted by `tc_astc_write_file_memory`. -/
+def emitAstcFileHeader (h : AstcFileHeader) : Bytes := astcHead4 h ++ astcTail3 h
+
+theorem astcHead2_size (h : AstcFileHeader) :
+    ByteArray.size (putU32LE 0x5CA1AB13 ByteArray.empty
+      ++ putU8 (UInt8.ofNat h.blockX) ByteArray.empty) = 5 := by
+  rw [ByteArray.size_append, putU32LE_empty_size, putU8_empty_size]
+
+theorem astcHead3_size (h : AstcFileHeader) :
+    ByteArray.size (putU32LE 0x5CA1AB13 ByteArray.empty
+      ++ putU8 (UInt8.ofNat h.blockX) ByteArray.empty
+      ++ putU8 (UInt8.ofNat h.blockY) ByteArray.empty) = 6 := by
+  rw [ByteArray.size_append, ByteArray.size_append, putU32LE_empty_size,
+    putU8_empty_size, putU8_empty_size]
+
+theorem astcHead4_size (h : AstcFileHeader) : (astcHead4 h).size = 7 := by
+  simp only [astcHead4, ByteArray.size_append, ByteArray.size_append,
+    ByteArray.size_append, putU32LE_empty_size, putU8_empty_size,
+    putU8_empty_size, putU8_empty_size]
+
+theorem astcTail3_size (h : AstcFileHeader) : (astcTail3 h).size = 9 := by
+  simp only [astcTail3, ByteArray.size_append, ByteArray.size_append,
+    u24Bytes_size]
+
+theorem emitAstcFileHeader_size (h : AstcFileHeader) :
+    (emitAstcFileHeader h).size = astcHeaderSize := by
+  rw [emitAstcFileHeader, ByteArray.size_append, astcHead4_size, astcTail3_size]
+  rfl
+
+/-- Peel the 7-byte head: a byte read at `i ≥ 7` in the emitted header
+  lands in the tail at `i - 7`. -/
+theorem astc_peel7 (h : AstcFileHeader) (i : Nat) (hi : 7 ≤ i) :
+    getU8? (emitAstcFileHeader h) i = getU8? (astcTail3 h) (i - 7) := by
+  rw [emitAstcFileHeader,
+    getU8?_append_right (a := astcHead4 h) (b := astcTail3 h) (i := i)
+      (by rw [astcHead4_size]; omega)]
+  rw [show i - ByteArray.size (astcHead4 h) = i - 7 from by
+    rw [astcHead4_size]]
+
+theorem astc_read_magic (h : AstcFileHeader) :
+    getU32LE (emitAstcFileHeader h) 0 = some 0x5CA1AB13 := by
+  rw [emitAstcFileHeader,
+    getU32LE_append_left (a := astcHead4 h) (b := astcTail3 h) (i := 0)
+      (by rw [astcHead4_size]; omega),
+    astcHead4,
+    getU32LE_append_left
+      (a := putU32LE 0x5CA1AB13 ByteArray.empty
+        ++ putU8 (UInt8.ofNat h.blockX) ByteArray.empty
+        ++ putU8 (UInt8.ofNat h.blockY) ByteArray.empty)
+      (b := putU8 1 ByteArray.empty) (i := 0)
+      (by rw [astcHead3_size]; omega),
+    getU32LE_append_left
+      (a := putU32LE 0x5CA1AB13 ByteArray.empty
+        ++ putU8 (UInt8.ofNat h.blockX) ByteArray.empty)
+      (b := putU8 (UInt8.ofNat h.blockY) ByteArray.empty) (i := 0)
+      (by rw [astcHead2_size]; omega),
+    getU32LE_append_left (a := putU32LE 0x5CA1AB13 ByteArray.empty)
+      (b := putU8 (UInt8.ofNat h.blockX) ByteArray.empty) (i := 0)
+      (by rw [putU32LE_empty_size]; omega)]
+  exact getU32LE_putU32LE ByteArray.empty 0x5CA1AB13
+
+theorem astc_read_blockX (h : AstcFileHeader) :
+    getU8? (emitAstcFileHeader h) 4 = some (UInt8.ofNat h.blockX) := by
+  rw [emitAstcFileHeader,
+    getU8?_append_left (a := astcHead4 h) (b := astcTail3 h) (i := 4)
+      (by rw [astcHead4_size]; omega),
+    astcHead4,
+    getU8?_append_left
+      (a := putU32LE 0x5CA1AB13 ByteArray.empty
+        ++ putU8 (UInt8.ofNat h.blockX) ByteArray.empty
+        ++ putU8 (UInt8.ofNat h.blockY) ByteArray.empty)
+      (b := putU8 1 ByteArray.empty) (i := 4)
+      (by rw [astcHead3_size]; omega),
+    getU8?_append_left
+      (a := putU32LE 0x5CA1AB13 ByteArray.empty
+        ++ putU8 (UInt8.ofNat h.blockX) ByteArray.empty)
+      (b := putU8 (UInt8.ofNat h.blockY) ByteArray.empty) (i := 4)
+      (by rw [astcHead2_size]; omega),
+    getU8?_append_right (a := putU32LE 0x5CA1AB13 ByteArray.empty)
+      (b := putU8 (UInt8.ofNat h.blockX) ByteArray.empty) (i := 4)
+      (by rw [putU32LE_empty_size]; omega)]
+  rw [show 4 - ByteArray.size (putU32LE 0x5CA1AB13 ByteArray.empty) = 0 from by
+    rw [putU32LE_empty_size]]
+  exact getU8_putU8 ByteArray.empty (UInt8.ofNat h.blockX)
+
+theorem astc_read_blockY (h : AstcFileHeader) :
+    getU8? (emitAstcFileHeader h) 5 = some (UInt8.ofNat h.blockY) := by
+  rw [emitAstcFileHeader,
+    getU8?_append_left (a := astcHead4 h) (b := astcTail3 h) (i := 5)
+      (by rw [astcHead4_size]; omega),
+    astcHead4,
+    getU8?_append_left
+      (a := putU32LE 0x5CA1AB13 ByteArray.empty
+        ++ putU8 (UInt8.ofNat h.blockX) ByteArray.empty
+        ++ putU8 (UInt8.ofNat h.blockY) ByteArray.empty)
+      (b := putU8 1 ByteArray.empty) (i := 5)
+      (by rw [astcHead3_size]; omega),
+    getU8?_append_right
+      (a := putU32LE 0x5CA1AB13 ByteArray.empty
+        ++ putU8 (UInt8.ofNat h.blockX) ByteArray.empty)
+      (b := putU8 (UInt8.ofNat h.blockY) ByteArray.empty) (i := 5)
+      (by rw [astcHead2_size]; omega)]
+  rw [show 5 - ByteArray.size (putU32LE 0x5CA1AB13 ByteArray.empty
+        ++ putU8 (UInt8.ofNat h.blockX) ByteArray.empty) = 0 from by
+    rw [astcHead2_size]]
+  exact getU8_putU8 ByteArray.empty (UInt8.ofNat h.blockY)
+
+theorem astc_read_zdim (h : AstcFileHeader) :
+    getU8? (emitAstcFileHeader h) 6 = some 1 := by
+  rw [emitAstcFileHeader,
+    getU8?_append_left (a := astcHead4 h) (b := astcTail3 h) (i := 6)
+      (by rw [astcHead4_size]; omega),
+    astcHead4,
+    getU8?_append_right
+      (a := putU32LE 0x5CA1AB13 ByteArray.empty
+        ++ putU8 (UInt8.ofNat h.blockX) ByteArray.empty
+        ++ putU8 (UInt8.ofNat h.blockY) ByteArray.empty)
+      (b := putU8 1 ByteArray.empty) (i := 6)
+      (by rw [astcHead3_size]; omega)]
+  rw [show 6 - ByteArray.size (putU32LE 0x5CA1AB13 ByteArray.empty
+        ++ putU8 (UInt8.ofNat h.blockX) ByteArray.empty
+        ++ putU8 (UInt8.ofNat h.blockY) ByteArray.empty) = 0 from by
+    rw [astcHead3_size]]
+  exact getU8_putU8 ByteArray.empty 1
+
+theorem astc_read_width_byte (h : AstcFileHeader) (i : Nat) (hi : 7 ≤ i)
+    (hi2 : i < 10) :
+    getU8? (emitAstcFileHeader h) i = getU8? (u24Bytes h.width) (i - 7) := by
+  rw [astc_peel7 h i (by omega), astcTail3,
+    getU8?_append_left (a := u24Bytes h.width ++ u24Bytes h.height)
+      (b := u24Bytes 1) (i := i - 7)
+      (by rw [ByteArray.size_append, u24Bytes_size, u24Bytes_size]; omega),
+    getU8?_append_left (a := u24Bytes h.width) (b := u24Bytes h.height)
+      (i := i - 7) (by rw [u24Bytes_size]; omega)]
+
+theorem astc_read_height_byte (h : AstcFileHeader) (i : Nat) (hi : 10 ≤ i)
+    (hi2 : i < 13) :
+    getU8? (emitAstcFileHeader h) i = getU8? (u24Bytes h.height) (i - 10) := by
+  rw [astc_peel7 h i (by omega), astcTail3,
+    getU8?_append_left (a := u24Bytes h.width ++ u24Bytes h.height)
+      (b := u24Bytes 1) (i := i - 7)
+      (by rw [ByteArray.size_append, u24Bytes_size, u24Bytes_size]; omega),
+    getU8?_append_right (a := u24Bytes h.width) (b := u24Bytes h.height)
+      (i := i - 7) (by rw [u24Bytes_size]; omega)]
+  rw [show i - 7 - ByteArray.size (u24Bytes h.width) = i - 10 from by
+    rw [u24Bytes_size]; omega]
+
+theorem astc_read_depth_byte (h : AstcFileHeader) (i : Nat) (hi : 13 ≤ i)
+    (hi2 : i < 16) :
+    getU8? (emitAstcFileHeader h) i = getU8? (u24Bytes 1) (i - 13) := by
+  rw [astc_peel7 h i (by omega), astcTail3,
+    getU8?_append_right (a := u24Bytes h.width ++ u24Bytes h.height)
+      (b := u24Bytes 1) (i := i - 7)
+      (by rw [ByteArray.size_append, u24Bytes_size, u24Bytes_size]; omega)]
+  rw [show i - 7 - ByteArray.size (u24Bytes h.width ++ u24Bytes h.height)
+      = i - 13 from by
+    rw [ByteArray.size_append, u24Bytes_size, u24Bytes_size]; omega]
+
+theorem astc_read_width (h : AstcFileHeader) :
+    getU8? (emitAstcFileHeader h) 7 = some (UInt8.ofNat (h.width % 256))
+      ∧ getU8? (emitAstcFileHeader h) 8 = some (UInt8.ofNat ((h.width / 256) % 256))
+      ∧ getU8? (emitAstcFileHeader h) 9 = some (UInt8.ofNat ((h.width / 65536) % 256)) := by
+  simp [astc_read_width_byte h 7 (by omega) (by omega),
+    astc_read_width_byte h 8 (by omega) (by omega),
+    astc_read_width_byte h 9 (by omega) (by omega),
+    getU8?_u24Bytes]
+
+theorem astc_read_height (h : AstcFileHeader) :
+    getU8? (emitAstcFileHeader h) 10 = some (UInt8.ofNat (h.height % 256))
+      ∧ getU8? (emitAstcFileHeader h) 11 = some (UInt8.ofNat ((h.height / 256) % 256))
+      ∧ getU8? (emitAstcFileHeader h) 12 = some (UInt8.ofNat ((h.height / 65536) % 256)) := by
+  simp [astc_read_height_byte h 10 (by omega) (by omega),
+    astc_read_height_byte h 11 (by omega) (by omega),
+    astc_read_height_byte h 12 (by omega) (by omega),
+    getU8?_u24Bytes]
+
+theorem astc_read_depth (h : AstcFileHeader) :
+    getU8? (emitAstcFileHeader h) 13 = some (UInt8.ofNat 1)
+      ∧ getU8? (emitAstcFileHeader h) 14 = some (UInt8.ofNat 0)
+      ∧ getU8? (emitAstcFileHeader h) 15 = some (UInt8.ofNat 0) := by
+  simp [astc_read_depth_byte h 13 (by omega) (by omega),
+    astc_read_depth_byte h 14 (by omega) (by omega),
+    astc_read_depth_byte h 15 (by omega) (by omega),
+    getU8?_u24Bytes]
+
+theorem u8_toNat256 (n : Nat) : (UInt8.ofNat n).toNat = n % 256 := by
+  simp [UInt8.toNat_ofNat', Nat.reducePow]
+
+/-- Little-endian 24-bit read (`tc_rd_u24`). -/
+def getU24LE (b : Bytes) (i : Nat) : Option Nat :=
+  match getU8? b i with
+  | none => none
+  | some b0 =>
+    match getU8? b (i + 1) with
+    | none => none
+    | some b1 =>
+      match getU8? b (i + 2) with
+      | none => none
+      | some b2 => some (b0.toNat + b1.toNat * 256 + b2.toNat * 65536)
+
+/-- Header reads survive a trailing payload. -/
+theorem astc_ext (h : AstcFileHeader) (p : Bytes) (i : Nat) (hi : i < 16)
+    (v : UInt8) (hv : getU8? (emitAstcFileHeader h) i = some v) :
+    getU8? (emitAstcFileHeader h ++ p) i = some v := by
+  rw [getU8?_append_left (a := emitAstcFileHeader h) (b := p) (i := i)
+    (by rw [emitAstcFileHeader_size]; have : astcHeaderSize = 16 := rfl; omega)]
+  exact hv
+
+theorem astc_ext32 (h : AstcFileHeader) (p : Bytes) (i : Nat) (hi : i + 4 ≤ 16)
+    (v : UInt32) (hv : getU32LE (emitAstcFileHeader h) i = some v) :
+    getU32LE (emitAstcFileHeader h ++ p) i = some v := by
+  rw [getU32LE_append_left (a := emitAstcFileHeader h) (b := p) (i := i)
+    (by rw [emitAstcFileHeader_size]; have : astcHeaderSize = 16 := rfl; omega)]
+  exact hv
+
+/-- `getU24LE` at offset 7 over an emitted header (possibly with a trailing
+  payload) returns the stored width. -/
+theorem getU24LE_ext_width (h : AstcFileHeader) (p : Bytes)
+    (hw : h.width < 2 ^ 24) :
+    getU24LE (emitAstcFileHeader h ++ p) 7 = some h.width := by
+  have rw' := astc_read_width h
+  have w0 := astc_ext h p 7 (by omega) _ rw'.1
+  have w1 := astc_ext h p 8 (by omega) _ rw'.2.1
+  have w2 := astc_ext h p 9 (by omega) _ rw'.2.2
+  simp only [getU24LE, w0, w1, w2, u8_toNat256, Option.some.injEq]
+  omega
+
+/-- `getU24LE` at offset 10 over an emitted header (possibly with a trailing
+  payload) returns the stored height. -/
+theorem getU24LE_ext_height (h : AstcFileHeader) (p : Bytes)
+    (hh : h.height < 2 ^ 24) :
+    getU24LE (emitAstcFileHeader h ++ p) 10 = some h.height := by
+  have rh := astc_read_height h
+  have h0 := astc_ext h p 10 (by omega) _ rh.1
+  have h1 := astc_ext h p 11 (by omega) _ rh.2.1
+  have h2 := astc_ext h p 12 (by omega) _ rh.2.2
+  simp only [getU24LE, h0, h1, h2, u8_toNat256, Option.some.injEq]
+  omega
+
+/-- `getU24LE` at offset 13 over an emitted header (possibly with a trailing
+  payload) returns the stored depth (1). -/
+theorem getU24LE_ext_depth (h : AstcFileHeader) (p : Bytes) :
+    getU24LE (emitAstcFileHeader h ++ p) 13 = some 1 := by
+  have rd := astc_read_depth h
+  have d0 := astc_ext h p 13 (by omega) _ rd.1
+  have d1 := astc_ext h p 14 (by omega) _ rd.2.1
+  have d2 := astc_ext h p 15 (by omega) _ rd.2.2
+  simp only [getU24LE, d0, d1, d2, u8_toNat256]
+
+/-- `parseAstcFileHeader` reads the magic, block footprint, z-dim guard and
+the three 24-bit extents. -/
+def parseAstcFileHeader (b : Bytes) : Option AstcFileHeader := do
+  let magic ← getU32LE b 0
+  if magic ≠ 0x5CA1AB13 then none else pure ()
+  let bx ← getU8? b 4
+  let bby ← getU8? b 5
+  let zd ← getU8? b 6
+  if zd ≠ 1 then none else pure ()
+  let w ← getU24LE b 7
+  let hgt ← getU24LE b 10
+  let dep ← getU24LE b 13
+  if dep ≠ 1 then none else pure ()
+  pure { blockX := bx.toNat, blockY := bby.toNat, width := w, height := hgt }
+
+/-- Parsing an emitted ASTC file header recovers every field, even when the
+image payload follows it. Block dimensions must fit a byte and the extents
+must fit 24 bits. -/
+theorem parseAstcFileHeader_append (h : AstcFileHeader) (p : Bytes)
+    (hb : h.blockX < 256) (hb2 : h.blockY < 256)
+    (hw : h.width < 2 ^ 24) (hh : h.height < 2 ^ 24) :
+    parseAstcFileHeader (emitAstcFileHeader h ++ p) = some h := by
+  have m := astc_ext32 h p 0 (by omega) _ (astc_read_magic h)
+  have b0 := astc_ext h p 4 (by omega) _ (astc_read_blockX h)
+  have b1 := astc_ext h p 5 (by omega) _ (astc_read_blockY h)
+  have z := astc_ext h p 6 (by omega) _ (astc_read_zdim h)
+  have wv := getU24LE_ext_width h p hw
+  have hv := getU24LE_ext_height h p hh
+  have dv := getU24LE_ext_depth h p
+  simp [parseAstcFileHeader, m, b0, b1, z, wv, hv, dv,
+    Nat.mod_eq_of_lt hb, Nat.mod_eq_of_lt hb2]
+
+/-- A complete ASTC file: the 16-byte header plus the compressed blocks. -/
+structure AstcFile where
+  header : AstcFileHeader
+  payload : Bytes
+  deriving Repr
+
+def emitAstcFile (f : AstcFile) : Bytes := emitAstcFileHeader f.header ++ f.payload
+
+theorem emitAstcFile_size (f : AstcFile) :
+    (emitAstcFile f).size = astcHeaderSize + f.payload.size := by
+  rw [emitAstcFile, ByteArray.size_append, emitAstcFileHeader_size]
+
+/-- Parse a complete ASTC file; the payload length is derived from the
+header (block footprint and extents), so a truncated file is rejected. -/
+def parseAstcFile (b : Bytes) : Option AstcFile := do
+  let h ← parseAstcFileHeader b
+  if b.size < astcFileSize h then none else pure ()
+  pure ⟨h, b.extract astcHeaderSize (astcFileSize h)⟩
+
+/-- Complete ASTC file round trip. -/
+theorem parseAstcFile_emit (f : AstcFile)
+    (hs : f.payload.size = astcFilePayloadSize f.header)
+    (hb : f.header.blockX < 256) (hb2 : f.header.blockY < 256)
+    (hw : f.header.width < 2 ^ 24) (hh : f.header.height < 2 ^ 24) :
+    parseAstcFile (emitAstcFile f) = some f := by
+  have hHdr : parseAstcFileHeader (emitAstcFileHeader f.header ++ f.payload)
+      = some f.header :=
+    parseAstcFileHeader_append f.header f.payload hb hb2 hw hh
+  have hszH : (emitAstcFileHeader f.header).size = astcHeaderSize :=
+    emitAstcFileHeader_size f.header
+  have hlen : (emitAstcFileHeader f.header ++ f.payload).size
+      = astcHeaderSize + astcFilePayloadSize f.header := by
+    rw [ByteArray.size_append, hszH, hs]
+  have hnot : ¬ (emitAstcFileHeader f.header ++ f.payload).size
+      < astcFileSize f.header := by
+    show ¬ (emitAstcFileHeader f.header ++ f.payload).size
+      < astcHeaderSize + astcFilePayloadSize f.header
+    rw [hlen]; omega
+  show parseAstcFile (emitAstcFileHeader f.header ++ f.payload) = some f
+  have hsz : astcFileSize f.header
+      = astcHeaderSize + astcFilePayloadSize f.header := rfl
+  have hempty : (emitAstcFileHeader f.header).extract astcHeaderSize
+      (astcHeaderSize + astcFilePayloadSize f.header) = ByteArray.empty := by
+    rw [ByteArray.extract_eq_empty_iff, hszH]
+    omega
+  have hext : (emitAstcFileHeader f.header ++ f.payload).extract astcHeaderSize
+      (astcHeaderSize + astcFilePayloadSize f.header) = f.payload := by
+    rw [ByteArray.extract_append, hszH, hempty, ByteArray.empty_append]
+    rw [show astcHeaderSize - astcHeaderSize = 0 from by simp [astcHeaderSize]]
+    rw [show astcHeaderSize + astcFilePayloadSize f.header - astcHeaderSize
+        = astcFilePayloadSize f.header from by simp only [astcHeaderSize]; omega]
+    rw [← hs, ByteArray.extract_zero_size]
+  simp [parseAstcFile, hHdr, hext, hlen, hsz]
+
+/-! ### Container writer verdicts
+
+The writers share a guard chain; these functions reproduce the verdicts
+(`true` = `TC_SUCCESS`) for the inputs the differential gate feeds them.
+-/
+
+/-- Verdict of `tc_dds_write_bc_memory`: zero dimensions, a row pitch above
+`UINT32_MAX`, or a short output buffer fail. The remaining C guards
+(block-count/payload `size_t` overflows) are unreachable for u32
+dimensions with the 8/16-byte block sizes the writers use; in the
+`size_t`-wrap regime (both block counts `= 2^30`, i.e. `width`/`height`
+`≥ 2^32 − 3`) the C wraps the payload size to 0 but its pitch guard then
+fails the call, so the verdicts still agree for any output buffer below
+`2^64` bytes. -/
+def ddsWriteVerdict (h : DdsHeader) (outSize : Nat) : Bool :=
+  h.width.toNat > 0 && h.height.toNat > 0 &&
+  ddsPitch h ≤ 4294967295 && outSize ≥ ddsFileSize h
+
+/-- Verdict of `tc_ktx_write_compressed_memory`: zero dimensions, a
+zero-length payload, or a short output buffer fail. The `size_t`-wrap
+regime (both block counts `= 2^30`) is outside the differential's reach:
+the C would then emit a header declaring a zero-length payload for a
+2^60-block image; the model does not reproduce that nonsensical success. -/
+def ktxWriteVerdict (h : KtxHeader) (outSize : Nat) : Bool :=
+  h.width.toNat > 0 && h.height.toNat > 0 && h.payloadSize.toNat > 0 &&
+  outSize ≥ ktxFileSize h
+
+/-- Verdict of `tc_astc_write_file_memory`: an empty image, an invalid
+block footprint, or a short output buffer fail. -/
+def astcWriteFileVerdict (h : AstcFileHeader) (outSize : Nat) : Bool :=
+  h.width > 0 && h.height > 0 && astcFileValidBlock h.blockX h.blockY &&
+  outSize ≥ astcFileSize h
+
 end Texcomp

@@ -141,12 +141,25 @@ validation checks, not library proofs.
   with C differential gates. The ASTC HDR *endpoint packers* (`cem11Pack`,
   `cem7Pack`, `hdrAlphaPack` — encoder side) are also byte-exact against the
   C packers at the block encoders' colour-quant level (1800 vectors).
-  DDS/KTX header models now have general `parse (emit h) = h` round trips
-  (no example-only checks), payload-carrying `DdsFile`/`KtxFile`
+  DDS/KTX/ASTC header models now have general `parse (emit h) = h` round trips
+  (no example-only checks), payload-carrying `DdsFile`/`KtxFile`/`AstcFile`
   round trips (`parse (emit (h, payload)) = (h, payload)`), and a
   byte-layout gate against the C writers (`make texcomp-container-diff`,
-  14 complete files — header *and* payload — with the payload pattern
-  recomputed independently on both sides). Encoder models: the BC1
+  56 records — header *and* payload, with the payload pattern
+  recomputed independently on both sides — plus verdict-only `E` records
+  whose guard-chain verdicts (`ddsWriteVerdict` / `ktxWriteVerdict` /
+  `astcWriteFileVerdict`) must match the C writers on both success and
+  `INVALID_ARGUMENT` inputs). The gate covers the 10 DDS writer cases
+  (BC7/BC1/BC3/BC5/BC6H), the 8 KTX writer cases (ETC2 RGB/sRGB, EAC R11/RG11,
+  and the RGBA-alpha `0x9278`/`0x9279` internal formats), the full `.astc`
+  file container (`tc_astc_write_file_memory`
+  LE-magic header with 24-bit extents) across all 14 valid block footprints
+  with partial-block extents, the 10 invalid footprints, and zero-dim /
+  short-buffer verdict cases. Documented out of reach: the `size_t`-wrap
+  regime (DDS verdicts still agree below `2^64` — the C's wrap is caught by
+  its `UINT32_MAX` pitch guard; the KTX wrap regime would emit a header
+  declaring a zero-length payload for a 2^60-block image — the model does
+  not reproduce that success). Encoder models: the BC1
   colour-block encoder (`tc_encode_bc1_color_block`, 1200 blocks) and the
   BC4/BC5 alpha-block encoders UNORM+SNORM (`tc_encode_bc4_block*`,
   800 blocks) are byte-exact with the C encoders.
@@ -181,8 +194,9 @@ validation checks, not library proofs.
   levels × 256 values plus the clamp edges) and exercised end to end
   through the 2-subset CEM 11 encoder in `make texcomp-astc-hdrenc-diff`
   (240 blocks, four HDR CEM kinds).
-  Remaining Texcomp work: DDS/KTX pixel-payload parity beyond the
-  14-file container gate.
+  Remaining Texcomp work: none tracked — the payload-parity extension of the
+  container gate (ASTC `.astc` file container, KTX ETC2 RGBA cases, and
+  writer error-verdict parity) is complete.
 - Tocio: Float64-vs-f32 note aside, the seven op kernels (matrix, range,
   exponent, exp-linear, log, log-camera, CDL) are bit-exact `Float32` ports
   with a C differential gate (3072 seeded groups). FixedFunction helpers
