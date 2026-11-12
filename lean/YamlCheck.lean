@@ -10,7 +10,8 @@
   canonical node tree) and `v = 1` means `TOC_ERROR_PARSE` (empty
   dump). The checker decodes the hex, parses the document with the
   Lean model parser (`Tocio.YamlEngine`), pretty-prints its tree with
-  the same discipline (`dumpYaml`), and requires a byte-for-byte match
+  the same discipline (`dumpTree`, including `<tag>` prefixes), and requires a
+  byte-for-byte match
   with the C dump (an empty dump on both sides for rejects).
 
   Copyright (c) 2026 Syoyo Fujita and TinyEXR authors
@@ -78,7 +79,7 @@ def main (args : List String) : IO Unit := do
     let got :=
       match yamlParse (String.ofList (hexToChars hex)) with
       | none => ""
-      | some tree => dumpYaml tree
+      | some tree => dumpTree tree
     let want' := want
     if got != want' then
       IO.eprintln s!"doc {id} (v={v}):\n  C   : {want'}\n  Lean: {got}"

@@ -51,6 +51,11 @@ static void dump_node(toc_sb *sb, const toc_node *n) {
         toc_sb_puts(sb, "?");
         return;
     }
+    if (n->tag) {
+        toc_sb_putc(sb, '<');
+        dump_text(sb, n->tag);
+        toc_sb_putc(sb, '>');
+    }
     switch (n->kind) {
     case TOC_NODE_SCALAR:
         toc_sb_puts(sb, "s(");
@@ -132,6 +137,54 @@ int main(int argc, char **argv) {
         "\"k ey\": 'a\\'b'\n'x': plain\n",
         /* 21: block scalar '>' folded-style marker (concatenated too) */
         "fold: >\n  f1\n  f2\nnext: 2\n",
+        /* 22: block tag on the document root (tag-only line) */
+        "!<Outer>\na: 1\n",
+        /* 23: value tag + deeper bare-scalar block */
+        "k: !<MatrixTransform>\n  1 0 0\n",
+        /* 24: block tag + inline flow on the same line */
+        "!<A> {x: 1}\n",
+        /* 25: block tag + inline flow + trailing line -> parse error */
+        "!<A> {x: 1}\nb: 2\n",
+        /* 26: value tag with a sibling line (empty tagged scalar) */
+        "k: !<B>\nx: 1\n",
+        /* 27: nested tagged block under an untagged key -> tag cleared */
+        "k:\n  !<B> x: 1\n",
+        /* 28: value tag wins over the nested block's own tag */
+        "k: !<A>\n  !<B> x: 1\n",
+        /* 29: tag on a sequence item */
+        "- !<B> x: 1\n- y\n",
+        /* 30: tag-only line then a deeper block */
+        "!<Outer>\n  a: 1\n",
+        /* 31: tag-only line at EOF */
+        "!<Lonely>\n",
+        /* 32: unterminated tag (no '>') */
+        "!<Unclosed\nx: 1\n",
+        /* 33: value tag on a flow sequence */
+        "k: !<T> [1, 2]\n",
+        /* 34: value tag on a block scalar */
+        "k: !<T> |\n  a\n",
+        /* 35: value tag on a plain scalar */
+        "k: !<T> v\n",
+        /* 36: tag rewrite to a bare scalar at the root */
+        "!<T> hello\n",
+        /* 37: tag-only line then a sequence */
+        "!<T>\n- a\n- b\n",
+        /* 38: tag rewrite to a dash line */
+        "!<T> - a\n",
+        /* 39: tags inside flow text are plain key text, not tags */
+        "k: {!<X> a: 1}\n",
+        /* 40: only spaces are skipped after a value tag (a tab stays) */
+        "k: !<T>\tv\n",
+        /* 41: value tag over a dash-sequence child block */
+        "k: !<A>\n  - x\n",
+        /* 42: tag text passes through the dump escaping */
+        "k: !<a(b,c=d> v\n",
+        /* 43: a second tag on the rewritten line is plain key text */
+        "!<A> !<B> x: 1\n",
+        /* 44: tag-only line whose sibling block is tagged, then cleared */
+        "a:\n  !<T>\n  b: 1\n",
+        /* 45: tag-only line with a shallower following line */
+        "a:\n  !<T>\nx: 1\n",
     };
 
     size_t ndocs = sizeof(docs) / sizeof(docs[0]);

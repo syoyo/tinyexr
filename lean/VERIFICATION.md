@@ -95,7 +95,7 @@ The final implementation validation on 2026-11-09 produced:
 | `make tocio-lut-diff` | 192 LUT-file lines (`.cube` 1D/3D, `.spi1d`/`.spi3d`, `.clf`, `.csp`) re-parsed by the Lean readers, 0 mismatches. |
 | `make tocio-spi-diff` | 200 SPI-file lines, C vs Lean parser + kernels bit-exact. |
 | `make tocio-clf-diff` | 396 CLF lines, C vs Lean parse, op contents and kernels exact. || `make tocio-csp-diff` | 74 CSP LUT lines, C vs Lean exact. |
-| `make tocio-yaml-diff` | 24 YAML documents (quote-aware comments, quoted/escaped scalars, flow seqs/maps, block scalars `\|`/`>`, `---`/`...`, tab-indent/anchor/alias/trailing-content errors, 30-level nesting, 200-level depth-cap failure) re-parsed by `Tocio/YamlEngine`; canonical tree dumps byte-identical to the C. |
+| `make tocio-yaml-diff` | 48 YAML documents (quote-aware comments, quoted/escaped scalars, flow seqs/maps, block scalars `\|`/`>`, `---`/`...`, tab-indent/anchor/alias/trailing-content errors, 30-level nesting, 200-level depth-cap failure, and `!<Tag>` handling: block/value tags, tag-only lines, tag+inline-flow line consumption, unterminated tags, nested-tag overwrite, tag-text dump escaping, double tags, tabs after a tag, tags inside flow text) re-parsed by `Tocio/YamlEngine`; canonical tree dumps (including `<tag>` prefixes) byte-identical to the C. |
 | `make codec-diff` | 8192 comparisons across seven seeds and both libdeflate/in-tree backends; zero failures. Includes PIZ primitives, frequency tables, malformed/lenient packets and whole blocks. |
 | `make lean-validation-test` | 20 tests, two optional skips; all executed tests passed. Includes gate negative controls and axiom-audit rejection tests. |
 | `make lean-diff` | 126 structural files checked; zero disagreements. |
@@ -148,16 +148,18 @@ validation checks, not library proofs.
   engine-level one. Plan for completion is in
   `~/.opencode/plan/lean-remaining-tasks.md` (outside repo).
 - The YAML model (`Tocio/YamlEngine.lean`) is a C-faithful port of the
-  tag-free `toc_yaml_parse` surface: line preprocessing (tab-indent
-  rejection, quote-aware comment strip, blank/`---`/`...`), block maps and
-  dash sequences with inline/flow/block-scalar values, the flow parser
+  `toc_yaml_parse` surface: line preprocessing (tab-indent rejection,
+  quote-aware comment strip, blank/`---`/`...`), block maps and dash
+  sequences with inline/flow/block-scalar values, the flow parser
   (quote/escape-aware `{k: v}` / `[a, b]` scans), anchor/alias rejection,
-  trailing-content rejection and the exact 128-entry depth cap (the `cap`
-  counter is decremented only where the C does `depth++`). `!<Tag>`
-  properties are the remaining slice — no vector in the gate exercises
-  them. Termination uses a work fuel (`8 * length + 1024`) decremented on
-  every recursive call; it is a validated over-approximation, not a proved
-  bound.
+  trailing-content rejection, the exact 128-entry depth cap (the `cap`
+  counter is decremented only where the C does `depth++`), and `!<Tag>`
+  property attachment — block tag lines (tag-only, inline-flow, and
+  rewrite forms), per-value tags, unterminated tags, and the C's
+  unconditional tag overwrite of nested values (a nested block's own tag
+  is cleared by an untagged parent). Termination uses a work fuel
+  (`8 * length + 1024`) decremented on every recursive call; it is a
+  validated over-approximation, not a proved bound.
 - Texcomp BC/RG/ETC2/EAC/ASTC block decoders are now faithful byte-exact ports
   with C differential gates. The ASTC HDR *endpoint packers* (`cem11Pack`,
   `cem7Pack`, `hdrAlphaPack` — encoder side) are also byte-exact against the
