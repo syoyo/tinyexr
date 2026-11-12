@@ -12,8 +12,10 @@
 
   Numeric parameters are covered bit-for-bit by
   `make tocio-proc-params-diff`; the kernel gates cover op semantics.
-  FileTransform and BuiltinTransform payloads are outside the model
-  (UNSUPPORTED, never vectorized).
+  FileTransform is modelled through a file-reader map (extension
+  dispatch and content sniffing to the SPI/CLF loaders, converted into
+  LUT ops). `.cube`/CSP payloads, the C cube fallback and
+  BuiltinTransform are outside the model (UNSUPPORTED, never vectorized).
 
   Copyright (c) 2026 Syoyo Fujita and TinyEXR authors
   SPDX-License-Identifier: BSD-3-Clause
