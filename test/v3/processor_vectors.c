@@ -77,6 +77,108 @@ static void print_result(FILE *out, toc_result rc, const toc_op_list *list) {
     }
 }
 
+
+static uint32_t fbits(float f) {
+    uint32_t u;
+    memcpy(&u, &f, 4);
+    return u;
+}
+
+static void emit_bits(FILE *out, const float *f, int n) {
+    for (int i = 0; i < n; i++) fprintf(out, " %08x", fbits(f[i]));
+}
+
+/* One `pop` record per result op: `pop <id> | <qi> <k> <kind> <bits...>`.
+ * The layout matches the AOT-C codegen recipes. */
+static void emit_op_recipe(FILE *out, size_t id, size_t qi, size_t k,
+                           const toc_op *op) {
+    fprintf(out, "pop %zu | %zu %zu ", id, qi, k);
+    switch (op->kind) {
+    case TOC_OP_MATRIX:
+        fprintf(out, "matrix");
+        emit_bits(out, op->u.matrix.m, 16);
+        emit_bits(out, op->u.matrix.off, 4);
+        break;
+    case TOC_OP_RANGE:
+        fprintf(out, "range");
+        emit_bits(out, op->u.range.scale, 4);
+        emit_bits(out, op->u.range.offset, 4);
+        emit_bits(out, op->u.range.min, 4);
+        emit_bits(out, op->u.range.max, 4);
+        fprintf(out, " %d %d", op->u.range.clamp_lo, op->u.range.clamp_hi);
+        break;
+    case TOC_OP_EXPONENT:
+        fprintf(out, "exponent");
+        emit_bits(out, op->u.exponent.e, 4);
+        fprintf(out, " %d", op->u.exponent.mirror);
+        break;
+    case TOC_OP_EXP_LINEAR:
+        fprintf(out, "explinear");
+        emit_bits(out, op->u.exp_linear.scale, 4);
+        emit_bits(out, op->u.exp_linear.offset, 4);
+        emit_bits(out, op->u.exp_linear.gamma, 4);
+        emit_bits(out, op->u.exp_linear.breakpoint, 4);
+        emit_bits(out, op->u.exp_linear.slope, 4);
+        fprintf(out, " %d %d", op->u.exp_linear.inverse, op->u.exp_linear.mirror);
+        break;
+    case TOC_OP_LOG:
+        fprintf(out, "log");
+        emit_bits(out, op->u.log.log_slope, 3);
+        emit_bits(out, op->u.log.log_offset, 3);
+        emit_bits(out, op->u.log.lin_slope, 3);
+        emit_bits(out, op->u.log.lin_offset, 3);
+        emit_bits(out, &op->u.log.base, 1);
+        fprintf(out, " %d", op->u.log.inverse);
+        break;
+    case TOC_OP_LOG_CAMERA:
+        fprintf(out, "logcam");
+        emit_bits(out, op->u.logcam.log_slope, 3);
+        emit_bits(out, op->u.logcam.log_offset, 3);
+        emit_bits(out, op->u.logcam.lin_slope, 3);
+        emit_bits(out, op->u.logcam.lin_offset, 3);
+        emit_bits(out, op->u.logcam.lin_break, 3);
+        emit_bits(out, op->u.logcam.linear_slope, 3);
+        emit_bits(out, op->u.logcam.linear_offset, 3);
+        emit_bits(out, &op->u.logcam.base, 1);
+        fprintf(out, " %d", op->u.logcam.inverse);
+        break;
+    case TOC_OP_CDL:
+        fprintf(out, "cdl");
+        emit_bits(out, op->u.cdl.slope, 3);
+        emit_bits(out, op->u.cdl.offset, 3);
+        emit_bits(out, op->u.cdl.power, 3);
+        emit_bits(out, &op->u.cdl.saturation, 1);
+        emit_bits(out, op->u.cdl.luma, 3);
+        fprintf(out, " %d %d", op->u.cdl.clamp, op->u.cdl.inverse);
+        break;
+    case TOC_OP_LUT1D:
+        fprintf(out, "lut1d %d %d", op->u.lut1d.length, op->u.lut1d.channels);
+        emit_bits(out, &op->u.lut1d.domain_min, 1);
+        emit_bits(out, &op->u.lut1d.domain_max, 1);
+        emit_bits(out, op->u.lut1d.data,
+                  op->u.lut1d.length * (op->u.lut1d.channels == 1 ? 1 : 3));
+        break;
+    case TOC_OP_LUT3D:
+        fprintf(out, "lut3d %d %d", op->u.lut3d.size,
+                op->u.lut3d.interp == TOC_INTERP_TETRAHEDRAL ? 1 : 0);
+        emit_bits(out, op->u.lut3d.domain_min, 3);
+        emit_bits(out, op->u.lut3d.domain_max, 3);
+        emit_bits(out, op->u.lut3d.data,
+                  (size_t)op->u.lut3d.size * op->u.lut3d.size *
+                      op->u.lut3d.size * 3);
+        break;
+    case TOC_OP_FIXEDFUNC:
+        fprintf(out, "fixed %d %d", op->u.fixedfunc.style,
+                op->u.fixedfunc.nparams);
+        emit_bits(out, op->u.fixedfunc.params, 8);
+        break;
+    default:
+        fprintf(out, "noop");
+        break;
+    }
+    fputc('\n', out);
+}
+
 typedef struct {
     int is_display_view; /* 0: cs query, 1: display/view query */
     const char *a, *b, *c;
@@ -103,6 +205,9 @@ static void run_queries(FILE *out, size_t id, const toc_config *cfg,
         fprintf(out, " | ");
         print_result(out, rc, list);
         fputc('\n', out);
+        if (TOC_OK(rc) && list)
+            for (size_t k = 0; k < list->count; k++)
+                emit_op_recipe(out, id, i, k, &list->ops[k]);
         if (list) toc_op_list_free(list);
     }
 }
@@ -321,6 +426,34 @@ int main(int argc, char **argv) {
         "  - !<ColorSpace>\n"
         "    name: cb\n"
         "    to_scene_reference: !<ColorSpaceTransform> {src: cb, dst: ca}\n",
+        /* 11: numeric lowering paths: MonCurve, explicit LinearSlope log
+         *    camera, noclamp CDL, matrix offsets, fixed-function params,
+         *    singular matrix inversion */
+        "colorspaces:\n"
+        "  - !<ColorSpace>\n"
+        "    name: ewl\n"
+        "    to_scene_reference: !<ExponentWithLinearTransform> {gamma: [2.4, 2.2, 2.0, 1.0], offset: [0.055, 0.05, 0.04, 0]}\n"
+        "  - !<ColorSpace>\n"
+        "    name: ewl2\n"
+        "    from_scene_reference: !<ExponentWithLinearTransform> {gamma: 2.2, offset: 0.05}\n"
+        "  - !<ColorSpace>\n"
+        "    name: logcam2\n"
+        "    to_scene_reference: !<LogCameraTransform> {base: 10, lin_side_break: [0.18, 0.18, 0.18], linear_slope: [5.0, 5.0, 5.0], log_side_slope: [0.9, 0.9, 0.9], lin_side_offset: [0.01, 0.01, 0.01]}\n"
+        "  - !<ColorSpace>\n"
+        "    name: cdl2\n"
+        "    to_scene_reference: !<CDLTransform> {slope: [1.2, 0.8, 1.1], offset: [0.1, 0.2, 0.3], power: [0.9, 1.1, 1.0], sat: 1.5, style: noclamp}\n"
+        "  - !<ColorSpace>\n"
+        "    name: mx2\n"
+        "    to_scene_reference: !<MatrixTransform> {matrix: [1, 0.2, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0.01, 0.02, 0.03, 1], offset: [0.1, 0.2, 0.3, 0.4]}\n"
+        "  - !<ColorSpace>\n"
+        "    name: ffp\n"
+        "    to_scene_reference: !<FixedFunctionTransform> {style: ACES_Gamut_Comp_13, params: [1.05, 1.1, 1.2, 0.8, 0.7, 0.9, 1.2]}\n"
+        "  - !<ColorSpace>\n"
+        "    name: ffr\n"
+        "    from_scene_reference: !<FixedFunctionTransform> {style: REC2100_SURROUND, params: [0.78]}\n"
+        "  - !<ColorSpace>\n"
+        "    name: sing\n"
+        "    to_scene_reference: !<MatrixTransform> {matrix: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]}\n",
     };
 
     static const pquery q0[] = {
@@ -396,9 +529,20 @@ int main(int argc, char **argv) {
         {0, "lcamel", "lcamel", NULL},
         {0, "rgmax", "rgmax", NULL},
     };
+    static const pquery q11[] = {
+        {0, "ewl", "ewl", NULL},
+        {0, "ewl2", "ewl2", NULL},
+        {0, "logcam2", "logcam2", NULL},
+        {0, "cdl2", "cdl2", NULL},
+        {0, "mx2", "mx2", NULL},
+        {0, "ffp", "ffp", NULL},
+        {0, "ffr", "ffr", NULL},
+        {0, "sing", "sing", NULL},
+        {0, "ewl", "cdl2", NULL},
+    };
     static const pquery q9[] = {{0, "selfref", "other", NULL}};
     static const pquery q10[] = {{0, "ca", "cb", NULL}};
-    static const pquery *qsets[] = {q0, q1, q2, q3, q4, q5, q6, q7, q8, q9, q10};
+    static const pquery *qsets[] = {q0, q1, q2, q3, q4, q5, q6, q7, q8, q9, q10, q11};
     static const size_t qcounts[] = {sizeof(q0) / sizeof(q0[0]),
                                      sizeof(q1) / sizeof(q1[0]),
                                      sizeof(q2) / sizeof(q2[0]),
@@ -409,7 +553,8 @@ int main(int argc, char **argv) {
                                      sizeof(q7) / sizeof(q7[0]),
                                      sizeof(q8) / sizeof(q8[0]),
                                      sizeof(q9) / sizeof(q9[0]),
-                                     sizeof(q10) / sizeof(q10[0])};
+                                     sizeof(q10) / sizeof(q10[0]),
+                                     sizeof(q11) / sizeof(q11[0])};
 
     /* Under-cap probe: a 30-level nested GroupTransform chain stays inside
      * both the YAML depth cap (128) and the walk cap (64). Deep chains cannot

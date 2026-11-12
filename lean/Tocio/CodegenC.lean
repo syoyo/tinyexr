@@ -77,7 +77,8 @@ inductive COp where
   | fixed (style : Nat) (nparams : Nat) (params : List FB)
   | log (logSlope logOffset linSlope linOffset : List FB) (base : FB)
         (inverse : Bool)
-  | logCamera
+  | logCamera (ls lo ns no brk lslope loff : List FB) (base : FB)
+        (inverse : Bool)
 
 def chanName : Nat → String
   | 0 => "r"
@@ -364,7 +365,7 @@ def emitOp (k : Nat) (op : COp) : Except String String :=
   | .expLinear scale offset gamma brk slope inv mirror =>
     .ok (emitExpLinear scale offset gamma brk slope inv mirror)
   | .log ls lo ns no base inv => .ok (emitLog ls lo ns no base inv)
-  | .logCamera => .ok ""
+  | .logCamera .. => .ok ""
   | .cdl slope off power sat luma clamp inv =>
     .ok (emitCdl slope off power sat luma clamp inv)
   | .lut1d len ch dmin dmax _ =>

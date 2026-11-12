@@ -98,7 +98,7 @@ The final implementation validation on 2026-11-09 produced:
 | `make tocio-config-diff` | 16 OCIO configs re-parsed by `Tocio.ConfigQuery`: colorspace enumeration, name/alias lookup order (scene then display section), family/encoding/isdata, display-section membership through role resolution, transform-attribute priority + invert flags (`to/from_reference`, `to/from_scene_reference`, `to/from_display_reference`), display/view/look/view-transform enumeration, `toc_cfg_view_looks` comma/space tokenization (trailing spaces preserved), default-view-transform fallback, and active displays/views; 0 mismatches. |
 | `make tocio-glsl-diff` | 8 GLSL shaders across ES3.0/330/Vulkan450 (version headers, Vulkan sampler bindings, matrix/range/exponent/log/exp-linear/CDL, 1D/3D LUT texture sampling, HSV/XYZ/PQ/HLG/REC2100/RedMod/GamutComp13 helpers) plus 8 MSL sources: generated text and LUT texture descriptors identical to the C. |
 | `make tocio-codegen-diff` | 12 op lists through the AOT-C emitter (matrix/ranges/exponents/exp-linear/log/CDL forward+inverse, 1D and 3D LUTs with embedded arrays, fixed-function styles including the ACES/HSV/XYZ/PQ/HLG helpers incl. GamutComp13's codegen-time pow scale, REC2100, log-camera, empty lists, hex-float edges -0.0/subnormal/inf/nan, custom and invalid function names); generated sources byte-identical to the C. |
-| `make tocio-proc-diff` | 57 processor-build pipeline queries over 12 configs (scene and display colorspace pairs, aliases/roles, simple/VT/look/shared views, `<USE_DISPLAY_NAME>`, forward and inverted groups and CDL, fixed-function styles forward/inverted, transform-parameter errors, cyclic colorspace references hitting the 64-level walk cap, and a 30-level nested group chain); op-kind sequences and error codes identical to the C. |
+| `make tocio-proc-diff` | 66 processor-build pipeline queries over 13 configs (scene and display colorspace pairs, aliases/roles, simple/VT/look/shared views, `<USE_DISPLAY_NAME>`, forward and inverted groups and CDL, fixed-function styles forward/inverted, transform-parameter errors, cyclic colorspace references hitting the 64-level walk cap, a 30-level nested group chain, and the numeric lowering paths); op-kind sequences, error codes and 115 op parameter recipes (matrix inversion, Range scale/offset plus its inverse, MonCurve parameters, Log/LogCamera fields, the CDL inverse decomposition and fixed-function params) identical to the C, bit-for-bit. |
 | `make tocio-yaml-diff` | 48 YAML documents (quote-aware comments, quoted/escaped scalars, flow seqs/maps, block scalars `\|`/`>`, `---`/`...`, tab-indent/anchor/alias/trailing-content errors, 30-level nesting, 200-level depth-cap failure, and `!<Tag>` handling: block/value tags, tag-only lines, tag+inline-flow line consumption, unterminated tags, nested-tag overwrite, tag-text dump escaping, double tags, tabs after a tag, tags inside flow text) re-parsed by `Tocio/YamlEngine`; canonical tree dumps (including `<tag>` prefixes) byte-identical to the C. |
 | `make codec-diff` | 8192 comparisons across seven seeds and both libdeflate/in-tree backends; zero failures. Includes PIZ primitives, frequency tables, malformed/lenient packets and whole blocks. |
 | `make lean-validation-test` | 20 tests, two optional skips; all executed tests passed. Includes gate negative controls and axiom-audit rejection tests. |
@@ -156,16 +156,21 @@ validation checks, not library proofs.
   engine-level one. Plan for completion is in
   `~/.opencode/plan/lean-remaining-tasks.md` (outside repo).
 - The processor model (`Tocio/ProcessorModel.lean`) pins pipeline
-  *construction* — op kinds and order — not numeric parameters (those are
-  covered by the kernel/LUT gates). It covers the transform walk (groups
+  *construction* (op kinds and order) and the *numeric parameters* each lowering
+  produces (matrix inversion, Range scale/offset and its inverse, MonCurve
+  parameters, Log/LogCamera fields, the CDL inverse decomposition and the
+  fixed-function parameter table), compared bit-for-bit via the recipe
+  records. It covers the transform walk (groups
   with forward/reverse child order, `direction: inverse`, colorspace
   references, fixed-function styles), the 64-level walk cap (exercised by
   colorspace-reference cycles), reference-space bridging through the
   default view transform, view looks with/without a process space, shared
   views, reverse and display-referred view transforms, and
-  `<USE_DISPLAY_NAME>`. FileTransform and BuiltinTransform payloads are
-  outside the model (UNSUPPORTED, never vectorized); singular-matrix
-  inversion failures are likewise not vectorized.
+  `<USE_DISPLAY_NAME>`. FileTransform and BuiltinTransform payloads remain
+  outside the model (UNSUPPORTED, never vectorized) — integrating the LUT
+  loaders would require converting their op shapes into the processor's op
+  list and a file-reader abstraction. Singular-matrix inversion is
+  vectorized (NONINVERTIBLE).
 - The AOT-C codegen model (`Tocio/CodegenC.lean`) ports the scalar
   `toc_emit_c` path: op bodies, the helper-source pre-scan, embedded LUT
   arrays and the bit-exact hex-float literal writer, pinned by `make

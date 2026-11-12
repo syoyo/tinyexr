@@ -27,6 +27,21 @@ def decNum (s : String) : Nat :=
 def fields (s : String) : List String :=
   (s.splitOn " ").filter (fun f => f != "")
 
+/-- Trim spaces/tabs on both ends. -/
+def trimWS (s : String) : String :=
+  let a := s.toList.dropWhile (fun c => c == ' ' || c == '\t')
+  let b := a.reverse.dropWhile (fun c => c == ' ' || c == '\t')
+  String.ofList b.reverse
+
+/-- Decode an ASCII hex payload back to a string. -/
+def hexToChars (s : String) : List Char :=
+  go s.toList
+where
+  go : List Char → List Char
+    | a :: b :: rest => Char.ofNat (hexVal a * 16 + hexVal b) :: go rest
+    | [a] => [Char.ofNat (hexVal a)]
+    | [] => []
+
 /-- Hex-encode a string (ASCII bytes). -/
 def toHex (s : String) : String :=
   String.join (s.toList.map (fun c =>
@@ -55,7 +70,10 @@ def parseOp (ts : List String) : Option COp :=
   | "log", _ =>
     some (.log (bitsAt ts 1 3) (bitsAt ts 4 3) (bitsAt ts 7 3) (bitsAt ts 10 3)
       (parseBits (ts.getD 13 "0")) (natAt ts 14 != 0))
-  | "logcam", _ => some .logCamera
+  | "logcam", _ =>
+    some (.logCamera (bitsAt ts 1 3) (bitsAt ts 4 3) (bitsAt ts 7 3)
+      (bitsAt ts 10 3) (bitsAt ts 13 3) (bitsAt ts 16 3) (bitsAt ts 19 3)
+      (parseBits (ts.getD 22 "0")) (natAt ts 23 != 0))
   | "cdl", _ =>
     some (.cdl (bitsAt ts 1 3) (bitsAt ts 4 3) (bitsAt ts 7 3)
       (parseBits (ts.getD 10 "0")) (bitsAt ts 11 3)

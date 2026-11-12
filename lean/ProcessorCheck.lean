@@ -7,96 +7,106 @@
       pcfg <id> | <0|1>                     (1 = config parse error)
       pq <id> cs <hex src> <hex dst> | <result>
       pq <id> dv <hex src> <hex display> <hex view> | <result>
+      pop <id> | <qi> <k> <kind> <parameter bits...>
 
   re-parses the config with the Lean YAML model, rebuilds each pipeline
   with `Tocio.ProcessorModel`, and compares the rendered result
-  (`ok:K1,K2,...` / `err:CODE`) byte-for-byte.
+  (`ok:K1,K2,...` / `err:CODE`) and every op's numeric parameter recipe
+  byte-for-byte.
 
   Copyright (c) 2026 Syoyo Fujita and TinyEXR authors
   SPDX-License-Identifier: BSD-3-Clause
 -/
 import Tocio.ProcessorModel
+import Tocio.CodegenRecipe
 
 open Tocio
 
-def hexVal (c : Char) : Nat :=
-  if c >= '0' && c <= '9' then c.toNat - '0'.toNat
-  else if c >= 'a' && c <= 'f' then c.toNat - 'a'.toNat + 10
-  else if c >= 'A' && c <= 'F' then c.toNat - 'A'.toNat + 10
-  else 0
-
-/-- Decode the hex payload (ASCII): byte pairs to chars. -/
-def hexToChars (s : String) : List Char :=
-  go s.toList
-where
-  go : List Char → List Char
-    | a :: b :: rest => Char.ofNat (hexVal a * 16 + hexVal b) :: go rest
-    | [a] => [Char.ofNat (hexVal a)]
-    | [] => []
-
-def decNum (s : String) : Nat :=
-  s.foldl (fun acc c => acc * 10 + (c.toNat - '0'.toNat)) 0
-
-def fields (s : String) : List String :=
-  (s.splitOn " ").filter (fun f => f != "")
-
-/-- Trim spaces/tabs on both ends (no `String.trim` in this toolchain). -/
-def trimWS (s : String) : String :=
-  let a := s.toList.dropWhile (fun c => c == ' ' || c == '\t')
-  let b := a.reverse.dropWhile (fun c => c == ' ' || c == '\t')
-  String.ofList b.reverse
+structure Q where
+  doc : Nat
+  kind : String
+  a : String
+  b : String
+  c : String
+  want : String
 
 def main (args : List String) : IO Unit := do
   let path := args.getD 0 "build/lean-gen/processor_vectors.txt"
   let content ← IO.FS.readFile path
   let lines := (content.splitOn "\n").filter (fun l => l != "")
 
-  -- Pass 1: collect config documents.
+  -- Pass 1: collect config documents, queries and parameter recipes.
   let mut docs : List (Nat × String) := []
+  let mut qs : List Q := []
+  let mut pops : List (Nat × String) := []
+  let mut cfgs : List (Nat × Nat) := []
   for line in lines do
     let sections := line.splitOn "|"
     let hp := fields (sections.getD 0 "")
-    if hp.getD 0 "" == "cdoc" then
-      let id := decNum (hp.getD 1 "")
-      let hex := trimWS (sections.getD 1 "")
-      docs := docs ++ [(id, hex)]
-
-  let mut bad := 0
-  let mut npq := 0
-  let mut npcfg := 0
-  for line in lines do
-    let sections := line.splitOn "|"
-    let hp := fields (sections.getD 0 "")
-    let resRaw := sections.getD 1 ""
-    let res := if resRaw.startsWith " " then String.ofList (resRaw.toList.drop 1) else resRaw
+    let head := hp.getD 0 ""
+    let raw := sections.getD 1 ""
+    let sec := if raw.startsWith " " then String.ofList (raw.toList.drop 1) else raw
     let id := decNum (hp.getD 1 "")
-    let tree : Option YTree :=
-      match docs.find? (fun p => p.1 == id) with
-      | some (_, h) => yamlParse (String.ofList (hexToChars h))
-      | none => none
-    if hp.getD 0 "" == "pcfg" then
-      npcfg := npcfg + 1
-      let wantErr := decNum (hp.getD 2 "")
-      let got := match tree with | none => "1" | some _ => "0"
-      if got != (if wantErr == 1 then "1" else "0") then
-        IO.eprintln s!"pcfg {id}: C {wantErr}, Lean {got}"
-        bad := bad + 1
-    else if hp.getD 0 "" == "pq" then
-      npq := npq + 1
+    if head == "cdoc" then
+      docs := docs ++ [(id, String.ofList (hexToChars (trimWS sec)))]
+    else if head == "pcfg" then
+      cfgs := cfgs ++ [(id, decNum (hp.getD 2 ""))]
+    else if head == "pq" then
       let kind := hp.getD 2 ""
       let a := String.ofList (hexToChars (hp.getD 3 ""))
       let b := String.ofList (hexToChars (hp.getD 4 ""))
       let c := String.ofList (hexToChars (hp.getD 5 ""))
-      let got :=
-        match tree with
-        | none => "err:PARSE"
-        | some root =>
-          if kind == "dv" then renderProcResult (pFromDisplayView root a b c)
-          else renderProcResult (pFromColorspaces root a b)
-      if got != res then
-        IO.eprintln s!"pq {id} {kind} [{a}] [{b}] [{c}]:\n  C   : {res}\n  Lean: {got}"
-        bad := bad + 1
+      qs := qs ++ [{ doc := id, kind := kind, a := a, b := b, c := c, want := sec }]
+    else if head == "pop" then
+      pops := pops ++ [(id, sec)]
 
-  IO.println s!"{npq} processor queries + {npcfg} config verdicts checked, {bad} mismatches"
+  let mut bad := 0
+  -- config verdicts
+  for (id, wantErr) in cfgs do
+    let tree : Option YTree :=
+      match docs.find? (fun p => p.1 == id) with
+      | some (_, h) => yamlParse h
+      | none => none
+    let got := match tree with | none => 1 | some _ => 0
+    if got != wantErr then
+      IO.eprintln s!"pcfg {id}: C {wantErr}, Lean {got}"
+      bad := bad + 1
+
+  -- queries and recipes, per doc in file order
+  for (id, _) in docs do
+    let docQs := qs.filter (fun q => q.doc == id)
+    if docQs.isEmpty then continue
+    let tree : Option YTree :=
+      match docs.find? (fun p => p.1 == id) with
+      | some (_, h) => yamlParse h
+      | none => none
+    let mut expectedPops : List String := []
+    for (q, qi) in docQs.zipIdx do
+      let res : Except String (List COp) :=
+        match tree with
+        | none => .error "PARSE"
+        | some root =>
+          if q.kind == "dv" then pFromDisplayView root q.a q.b q.c
+          else pFromColorspaces root q.a q.b
+      let got := renderProcResult res
+      if got != q.want then
+        IO.eprintln s!"pq {id} {q.kind} [{q.a}] [{q.b}] [{q.c}]:\n  C   : {q.want}\n  Lean: {got}"
+        bad := bad + 1
+      match res with
+      | .ok ops =>
+        for (op, k) in ops.zipIdx do
+          expectedPops := expectedPops ++ [s!"{qi} {k} {copRecipe op}"]
+      | .error _ => pure ()
+    let gotPops := (pops.filter (fun p => p.1 == id)).map (·.2)
+    if gotPops != expectedPops then
+      IO.eprintln s!"pop {id}: {gotPops.length} C recipes vs {expectedPops.length} Lean"
+      for ((g, e), i) in (List.zip gotPops expectedPops).zipIdx do
+        if g != e then
+          IO.eprintln s!"  recipe {i}:\n    C   : {g}\n    Lean: {e}"
+      if gotPops.length != expectedPops.length then
+        IO.eprintln s!"  C   : {gotPops}\n  Lean: {expectedPops}"
+      bad := bad + 1
+
+  IO.println s!"{qs.length} processor queries ({pops.length} op recipes) + {cfgs.length} config verdicts checked, {bad} mismatches"
   if bad != 0 then
     throw (IO.userError "processor differential mismatch")

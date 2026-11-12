@@ -2,140 +2,28 @@
   TinyEXR - Lean 4 formalization of the tocio processor build
   (`toc_processor.c`): config + endpoints -> flat op list.
 
-  The model pins the *pipeline construction*: which ops appear and in
+  The model pins the pipeline *construction*: which ops appear and in
   which order for a colorspace->colorspace conversion and for a
-  display/view view build. It covers the transform walk (groups,
-  directions, colorspace references, fixed-function styles), the
-  reference-space bridging through the default view transform, view
-  looks with their process space, shared views, and `<USE_DISPLAY_NAME>`.
-  Numeric op parameters are covered by the kernel gates
-  (`tocio-diff`, `tocio-lut-diff`, `tocio-clf-diff`, ...); this model
-  tracks op kinds and the fixed-function style ids.
+  display/view view build (transform walk with groups/directions,
+  colorspace references, fixed-function styles, reference-space bridging
+  through the default view transform, view looks with their process
+  space, shared views, `<USE_DISPLAY_NAME>`), together with the numeric
+  parameters each lowering produces (see `Tocio/ProcessorParams.lean`).
 
+  Numeric parameters are covered bit-for-bit by
+  `make tocio-proc-params-diff`; the kernel gates cover op semantics.
   FileTransform and BuiltinTransform payloads are outside the model
-  (they need the file reader / the builtin table): the model reports
-  UNSUPPORTED for them, and the differential vectors do not use them.
-
-  Termination: every recursive call consumes one unit of a work fuel
-  (the vectors are tiny; the depth counter `TOC_MAX_WALK_DEPTH` = 64 is
-  threaded separately and is exact).
+  (UNSUPPORTED, never vectorized).
 
   Copyright (c) 2026 Syoyo Fujita and TinyEXR authors
   SPDX-License-Identifier: BSD-3-Clause
 -/
 
-import Tocio.ConfigQuery
+import Tocio.ProcessorParams
 
 namespace Tocio
 
 set_option linter.unusedVariables false
-
-/-- Lowered op kinds (kind-level model). `fixed` carries the
-fixed-function style id, whose inverse is the even/odd partner. -/
-inductive POp where
-  | matrix
-  | range
-  | exponent
-  | expLinear
-  | log
-  | logCamera
-  | cdl
-  | lut1d
-  | lut3d
-  | fixed (style : Nat)
-  | acesOutput
-  deriving Repr, DecidableEq
-
-def pOpName : POp → String
-  | .matrix => "MATRIX"
-  | .range => "RANGE"
-  | .exponent => "EXPONENT"
-  | .expLinear => "EXP_LINEAR"
-  | .log => "LOG"
-  | .logCamera => "LOG_CAMERA"
-  | .cdl => "CDL"
-  | .lut1d => "LUT1D"
-  | .lut3d => "LUT3D"
-  | .fixed s => "FIXEDFUNC(" ++ toString s ++ ")"
-  | .acesOutput => "ACES_OUTPUT"
-
-/-- The node's `!<Tag>`. -/
-def tagOf : YTree → Option String
-  | .scalar t _ => t
-  | .seq t _ => t
-  | .map t _ => t
-
-/-! ## Parameter-presence helpers (mirroring `read_vec` / `read_scalar`) -/
-
-/-- `read_vec` returns a positive count for a scalar or a non-empty
-sequence, zero otherwise. -/
-def vecPresent (o : Option YTree) : Bool :=
-  match o with
-  | some (.seq _ xs) => !xs.isEmpty
-  | some (.scalar _ _) => true
-  | _ => false
-
-def isDigit (c : Char) : Bool := c ≥ '0' && c ≤ '9'
-
-def digitVal (c : Char) : Float := (c.toNat - '0'.toNat).toFloat
-
-/-- The fractional part of `toc_parse_float`: digits after the point,
-each divided by the running power of ten. -/
-def parseFrac : List Char → Float → Float
-  | [], _ => 0.0
-  | c :: rest, sc => digitVal c / sc + parseFrac rest (sc * 10.0)
-
-/-- `toc_parse_float`'s grammar (leading spaces/commas, optional sign,
-digits with an optional fraction, optional exponent). Values, not just
-acceptance, are needed for the Range bound checks. -/
-def parseCfgFloat (s : String) : Option Float :=
-  let cs := s.toList.dropWhile
-    (fun c => c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == ',')
-  let (neg, cs) :=
-    match cs with
-    | '-' :: r => (true, r)
-    | '+' :: r => (false, r)
-    | r => (false, r)
-  let intPart := cs.takeWhile isDigit
-  let cs1 := cs.drop intPart.length
-  let (fracPart, cs2) :=
-    match cs1 with
-    | '.' :: r => (r.takeWhile isDigit, r.drop (r.takeWhile isDigit).length)
-    | _ => ([], cs1)
-  if intPart.isEmpty && fracPart.isEmpty then none
-  else
-    let v := intPart.foldl (fun a c => a * 10.0 + digitVal c) 0.0
-    let frac := parseFrac fracPart 10.0
-    let base := (v + frac) * (if neg then -1.0 else 1.0)
-    match cs2 with
-    | 'e' :: r => applyExp base r
-    | 'E' :: r => applyExp base r
-    | _ => some base
-where
-  applyExp (base : Float) (r : List Char) : Option Float :=
-    let (esign, r) :=
-      match r with
-      | '-' :: r' => (true, r')
-      | '+' :: r' => (false, r')
-      | r' => (false, r')
-    let ds := r.takeWhile isDigit
-    if ds.isEmpty then some base
-    else
-      let exp := ds.foldl (fun a c => if a < 10000 then a * 10 + (c.toNat - '0'.toNat) else a) 0
-      let m := (List.range (min exp 400)).foldl (fun a _ => a * 10.0) 1.0
-      some (if esign then base / m else base * m)
-
-/-- `read_scalar` succeeds only for a scalar that parses as a float. -/
-def scalarNumeric (o : Option YTree) : Bool :=
-  match o with
-  | some (.scalar _ s) => (parseCfgFloat s).isSome
-  | _ => false
-
-/-- A float parameter (`0.0` when missing or unparsable, as the C). -/
-def scalarFloat (o : Option YTree) : Float :=
-  match o with
-  | some (.scalar _ s) => (parseCfgFloat s).getD 0.0
-  | _ => 0.0
 
 /-! ## Fixed-function styles (`toc_lower_fixedfunc`) -/
 
@@ -207,17 +95,232 @@ def csTransformNode (cs : YTree) (wantToRef : Bool) : Option (YTree × Bool) :=
               | some a => pick a true
               | none => none
 
+/-! ## Numeric lowering (`toc_lower_transform`, `toc_lower_fixedfunc`) -/
+
+/-- `read_scalar`-based Range parameter. -/
+def scalarNumeric (o : Option YTree) : Bool :=
+  match o with
+  | some (.scalar _ s) => (parseCfgFloat s).isSome
+  | _ => false
+
+def scalarFloat (o : Option YTree) : Float :=
+  match o with
+  | some (.scalar _ s) => (parseCfgFloat s).getD 0.0
+  | _ => 0.0
+
+def zeros (n : Nat) : List FB := List.replicate n 0
+
+/-- `MonCurve` parameters from (gamma, offset): scale, offset, gamma,
+breakpoint, slope (C `moncurve_params`, double intermediates). -/
+def moncurve (gamma offset : FB) : List FB :=
+  let G : Float := if (f32of gamma).toFloat < 1.000001 then 1.000001 else (f32of gamma).toFloat
+  let O : Float := if (f32of offset).toFloat < 1e-6 then 1e-6 else (f32of offset).toFloat
+  let a := (G - 1.0) / O
+  let b := O * G / ((G - 1.0) * (1.0 + O))
+  let f (x : Float) : FB := fbits (Float.toFloat32 x)
+  let slope := a * (powf (Float.toFloat32 b) (Float.toFloat32 G)).toFloat
+  [f (1.0 / (1.0 + O)), f (O / (1.0 + O)), f G, f (O / (G - 1.0)), f slope]
+
+def lowerMatrix (node : YTree) (invert : Bool) : Except String (List COp) :=
+  let ident : List FB := [fconst 1, 0, 0, 0, 0, fconst 1, 0, 0, 0, 0, fconst 1, 0,
+    0, 0, 0, fconst 1]
+  let (rm0, cnt) := readVec node "matrix" 16 ident
+  let rm := if cnt == 16 then rm0 else ident
+  let (off, _) := readVec node "offset" 4 (zeros 4)
+  if !invert then .ok [.matrix (transpose4 rm) off]
+  else
+    match inv4x4 rm with
+    | none => .error "NONINVERTIBLE"
+    | some inv =>
+      let tmp := matvec4 inv off
+      .ok [.matrix (transpose4 inv) (tmp.map fneg)]
+
+def lowerExponent (node : YTree) (invert : Bool) : Except String (List COp) :=
+  let (e, _) := readVec node "value" 4 [fconst 1, fconst 1, fconst 1, fconst 1]
+  let e' := if invert then e.map finv else e
+  .ok [.exponent e' false]
+
+def lowerExpLinear (node : YTree) (invert : Bool) : Except String (List COp) :=
+  let (gamma, _) := readVec node "gamma" 4 [fconst 1, fconst 1, fconst 1, fconst 1]
+  let (offset, _) := readVec node "offset" 4 (zeros 4)
+  let mc := (List.range 4).map (fun i => moncurve (fuget gamma i) (fuget offset i))
+  let col (j : Nat) : List FB := mc.map (fun l => fuget l j)
+  .ok [.expLinear (col 0) (col 1) (col 2) (col 3) (col 4) invert false]
+
+def lowerLog (node : YTree) (invert : Bool) : Except String (List COp) :=
+  let base := readScalarD node "base" (fconst 2)
+  let (ls, _) := readVec2 node "log_side_slope" "logSideSlope" 3 [fconst 1, fconst 1, fconst 1]
+  let (lo, _) := readVec2 node "log_side_offset" "logSideOffset" 3 (zeros 3)
+  let (ns, _) := readVec2 node "lin_side_slope" "linSideSlope" 3 [fconst 1, fconst 1, fconst 1]
+  let (no, _) := readVec2 node "lin_side_offset" "linSideOffset" 3 (zeros 3)
+  .ok [.log ls lo ns no base invert]
+
+def lowerLogCamera (node : YTree) (invert : Bool) : Except String (List COp) :=
+  let base := readScalarD node "base" (fconst 2)
+  let (ls, _) := readVec2 node "log_side_slope" "logSideSlope" 3 [fconst 1, fconst 1, fconst 1]
+  let (lo, _) := readVec2 node "log_side_offset" "logSideOffset" 3 (zeros 3)
+  let (ns, _) := readVec2 node "lin_side_slope" "linSideSlope" 3 [fconst 1, fconst 1, fconst 1]
+  let (no, _) := readVec2 node "lin_side_offset" "linSideOffset" 3 (zeros 3)
+  let (brk, bn) := readVec2 node "lin_side_break" "linSideBreak" 3 (zeros 3)
+  if bn == 0 then .error "PARSE"
+  else
+    let (lslRaw, ln) := readVec2 node "linear_slope" "linearSlope" 3 (zeros 3)
+    let lnb := fmul (fbits (log2f (f32of base))) (fconst 0.6931471805599453)
+    let chan (i : Nat) : FB × FB :=
+      let xb := fadd (fmul (fuget ns i) (fuget brk i)) (fuget no i)
+      let xbsafe := if f32of xb > 0.0 then xb else fconst 1e-30
+      let yb := fadd (fmul (fuget ls i)
+        (fdiv (fbits (log2f (f32of xbsafe))) (fbits (log2f (f32of base))))) (fuget lo i)
+      let lsl := if ln != 0 then fuget lslRaw i
+                 else fdiv (fmul (fuget ls i) (fuget ns i))
+                        (fmul (if f32of xb != 0.0 then xb else fconst 1e-30) lnb)
+      (lsl, fsub yb (fmul lsl (fuget brk i)))
+    let pairs := (List.range 3).map chan
+    let lsl := pairs.map (·.1)
+    let loff := pairs.map (·.2)
+    .ok [.logCamera ls lo ns no brk lsl loff base invert]
+
+def lowerCdl (node : YTree) (invert : Bool) : Except String (List COp) :=
+  let (sl, _) := readVec node "slope" 3 [fconst 1, fconst 1, fconst 1]
+  let (of, _) := readVec node "offset" 3 (zeros 3)
+  let (pw, _) := readVec node "power" 3 [fconst 1, fconst 1, fconst 1]
+  let sat := readScalarD node "sat" (fconst 1)
+  let clampv := match getScalar node "style" with
+    | some s => s != "noclamp"
+    | none => true
+  if !invert then .ok [.cdl sl of pw sat (zeros 3) clampv false]
+  else
+    let ny := finv sat
+    let luma : List FB := [fconst 0.2126, fconst 0.7152, fconst 0.0722]
+    let m := (List.range 16).map (fun idx =>
+      let i := idx % 4
+      let j := idx / 4
+      if i < 3 && j < 3 then
+        fadd (if i == j then ny else 0) (fmul (fsub (fconst 1) ny) (fuget luma j))
+      else if idx == 15 then fconst 1 else 0)
+    let e := (List.range 4).map (fun i => if i < 3 then finv (fuget pw i) else fconst 1)
+    let rscale := (List.range 4).map (fun i => if i < 3 then finv (fuget sl i) else fconst 1)
+    let roff := (List.range 4).map (fun i =>
+      if i < 3 then fmul (fneg (fuget of i)) (fuget rscale i) else 0)
+    .ok [.matrix m (zeros 4), .exponent e false,
+      .range rscale roff (zeros 4) [fconst 1, fconst 1, fconst 1, fconst 1] clampv clampv]
+
+/-- `toc_push_range` plus the in-place inverse (`toc_invert_op`). -/
+def lowerRange (node : YTree) (invert : Bool) : Except String (List COp) :=
+  let hasMinIn := scalarNumeric (node.mapGet "minInValue")
+  let hasMaxIn := scalarNumeric (node.mapGet "maxInValue")
+  let hasMinOut := scalarNumeric (node.mapGet "minOutValue")
+  let hasMaxOut := scalarNumeric (node.mapGet "maxOutValue")
+  if hasMinIn != hasMinOut || hasMaxIn != hasMaxOut then .error "PARSE"
+  else if !hasMinIn && !hasMaxIn then .error "PARSE"
+  else if hasMinIn && hasMaxIn &&
+          !(scalarFloat (node.mapGet "maxInValue") >
+            scalarFloat (node.mapGet "minInValue")) then .error "PARSE"
+  else
+    let minIn := nodeFloat (node.mapGet "minInValue")
+    let maxIn := nodeFloat (node.mapGet "maxInValue")
+    let minOut := nodeFloat (node.mapGet "minOutValue")
+    let maxOut := nodeFloat (node.mapGet "maxOutValue")
+    let full := hasMinIn && hasMaxIn
+    let scale : FB :=
+      if full then fdiv (fsub maxOut minOut) (fsub maxIn minIn) else fconst 1
+    let offset : FB :=
+      if full then fsub minOut (fmul minIn scale)
+      else if hasMinIn then fsub minOut minIn else fsub maxOut maxIn
+    let unb : FB := fconst 3.4e38
+    let negUnb : FB := fconst (-3.4e38)
+    let mkScale := (List.range 4).map (fun i => if i < 3 then scale else fconst 1)
+    let mkOff := (List.range 4).map (fun i => if i < 3 then offset else 0)
+    let mkMin := (List.range 4).map (fun i => if i < 3 && hasMinIn then minOut else negUnb)
+    let mkMax := (List.range 4).map (fun i => if i < 3 && hasMaxIn then maxOut else unb)
+    let style := getScalar node "style"
+    let noclamp := match style with
+      | some s => s == "noClamp"
+      | none => false
+    let clampv := !(noclamp && full)
+    if !invert then
+      .ok [.range mkScale mkOff mkMin mkMax clampv clampv]
+    else
+      -- toc_invert_op on the Range op: map the forward output bounds back
+      -- through the inverse (the C compares against +-3.0e38, not the
+      -- 3.4e38 unbounded marker).
+      let ns := mkScale.map finv
+      let no := (List.zip mkOff ns).map (fun (o, s) => fmul (fneg o) s)
+      let thrHi : FB := fconst 3.0e38
+      let thrLo : FB := fconst (-3.0e38)
+      let aOf (i : Nat) : FB :=
+        let lo := fuget mkMin i
+        if f32of lo <= f32of thrLo then lo
+        else fadd (fmul lo (fuget ns i)) (fuget no i)
+      let bOf (i : Nat) : FB :=
+        let hi := fuget mkMax i
+        if f32of hi >= f32of thrHi then hi
+        else fadd (fmul hi (fuget ns i)) (fuget no i)
+      let newMin := (List.range 4).map (fun i =>
+        if f32of (aOf i) < f32of (bOf i) then aOf i else bOf i)
+      let newMax := (List.range 4).map (fun i =>
+        if f32of (aOf i) < f32of (bOf i) then bOf i else aOf i)
+      .ok [.range ns no newMin newMax clampv clampv]
+
+/-- `parse_param`: the `params` sequence entry at `idx`, or the default. -/
+def paramAt (params : Option YTree) (idx : Nat) (dflt : Float32) : FB :=
+  match params with
+  | some (.seq _ xs) =>
+    if xs.length > idx then
+      match (xs[idx]?).bind (·.scalarVal) with
+      | some s => (parseCfgFloat s).map (fun d => fbits (Float.toFloat32 d)) |>.getD (fconst dflt)
+      | none => fconst dflt
+    else fconst dflt
+  | _ => fconst dflt
+
+def lowerFixed (node : YTree) (invert : Bool) : Except String (List COp) :=
+  match getScalar node "style" with
+  | none => .error "PARSE"
+  | some style =>
+    match ffStyleId style with
+    | none => .error "UNSUPPORTED"
+    | some id =>
+      let st := if invert then ffInvert id else id
+      let params := node.mapGet "params"
+      let p (i : Nat) (d : Float32) : FB := paramAt params i d
+      if st == 6 || st == 7 then
+        .ok [.fixed st 1 ([p 0 0.78] ++ zeros 7)]
+      else if st == 8 || st == 9 then
+        .ok [.fixed st 2 ([fconst 0.075, fconst 0.1] ++ zeros 6)]
+      else if st == 0 || st == 1 then
+        .ok [.fixed st 2 ([fconst 0.05, fconst 0.08] ++ zeros 6)]
+      else if st == 2 || st == 3 then
+        .ok [.fixed st 1 ((if st == 3 then fconst 1.0192640913260627
+                           else fconst 0.9811) :: zeros 7)]
+      else if st == 4 || st == 5 then
+        .ok [.fixed st 7 ([p 0 0, p 1 0, p 2 0, p 3 0, p 4 0, p 5 0, p 6 1, 0])]
+      else
+        .ok [.fixed st 0 (zeros 8)]
+
+/-- `toc_lower_transform`. -/
+def pLowerTransform (node : YTree) (invert : Bool) : Except String (List COp) :=
+  match tagOf node with
+  | none => .ok []
+  | some tag =>
+    if tag = "MatrixTransform" then lowerMatrix node invert
+    else if tag = "ExponentTransform" then lowerExponent node invert
+    else if tag = "ExponentWithLinearTransform" then lowerExpLinear node invert
+    else if tag = "LogTransform" || tag == "LogAffineTransform" then lowerLog node invert
+    else if tag = "LogCameraTransform" then lowerLogCamera node invert
+    else if tag = "CDLTransform" then lowerCdl node invert
+    else if tag = "RangeTransform" then lowerRange node invert
+    else .error "UNSUPPORTED"
+
 /-! ## Pipeline construction -/
 
 def walkMaxDepth : Nat := 64
 
-/-- Work-fuel entry (every recursive call consumes one unit). -/
 def procFuel : Nat := 100000
 
 mutual
 /-- `walk` with its depth cap and one fuel unit. -/
 def pWalk (root : YTree) (depth fuel : Nat) (node : YTree) (invert : Bool) :
-    Except String (List POp) :=
+    Except String (List COp) :=
   match fuel with
   | 0 => .error "PARSE"
   | f + 1 =>
@@ -226,7 +329,7 @@ def pWalk (root : YTree) (depth fuel : Nat) (node : YTree) (invert : Bool) :
 
 /-- `walk_node`. -/
 def pWalkNode (root : YTree) (depth fuel : Nat) (node : YTree) (invert : Bool) :
-    Except String (List POp) :=
+    Except String (List COp) :=
   match fuel with
   | 0 => .error "PARSE"
   | f + 1 =>
@@ -256,12 +359,12 @@ def pWalkNode (root : YTree) (depth fuel : Nat) (node : YTree) (invert : Bool) :
       else if tag = "BuiltinTransform" then
         if (getScalar node "style").isNone then .error "PARSE"
         else .error "UNSUPPORTED"
-      else if tag = "FixedFunctionTransform" then pLowerFixed f node dirInv
-      else pLowerTransform f node dirInv
+      else if tag = "FixedFunctionTransform" then lowerFixed node dirInv
+      else pLowerTransform node dirInv
 
 /-- Walk a child list forward. -/
 def pWalkAll (root : YTree) (depth fuel : Nat) (xs : List YTree) (invert : Bool) :
-    Except String (List POp) :=
+    Except String (List COp) :=
   match fuel with
   | 0 => .error "PARSE"
   | f + 1 =>
@@ -273,7 +376,7 @@ def pWalkAll (root : YTree) (depth fuel : Nat) (xs : List YTree) (invert : Bool)
 
 /-- Walk a child list in reverse (inverted group). -/
 def pWalkAllRev (root : YTree) (depth fuel : Nat) (xs : List YTree)
-    (invert : Bool) : Except String (List POp) :=
+    (invert : Bool) : Except String (List COp) :=
   match fuel with
   | 0 => .error "PARSE"
   | f + 1 =>
@@ -285,7 +388,7 @@ def pWalkAllRev (root : YTree) (depth fuel : Nat) (xs : List YTree)
 
 /-- `emit_to_ref`. -/
 def pEmitToRef (root : YTree) (depth fuel : Nat) (csName : String)
-    (invert : Bool) : Except String (List POp) :=
+    (invert : Bool) : Except String (List COp) :=
   match fuel with
   | 0 => .error "PARSE"
   | f + 1 =>
@@ -300,7 +403,7 @@ def pEmitToRef (root : YTree) (depth fuel : Nat) (csName : String)
 
 /-- `emit_from_ref`. -/
 def pEmitFromRef (root : YTree) (depth fuel : Nat) (csName : String)
-    (invert : Bool) : Except String (List POp) :=
+    (invert : Bool) : Except String (List COp) :=
   match fuel with
   | 0 => .error "PARSE"
   | f + 1 =>
@@ -313,56 +416,9 @@ def pEmitFromRef (root : YTree) (depth fuel : Nat) (csName : String)
         | none => .ok []
         | some (t, needinv) => pWalk root depth f t (invert != needinv)
 
-/-- `toc_lower_transform`. -/
-def pLowerTransform (fuel : Nat) (node : YTree) (invert : Bool) :
-    Except String (List POp) :=
-  match fuel with
-  | 0 => .error "PARSE"
-  | _ + 1 =>
-    match tagOf node with
-    | none => .ok []
-    | some tag =>
-      if tag = "MatrixTransform" then .ok [.matrix]
-      else if tag = "ExponentTransform" then .ok [.exponent]
-      else if tag = "ExponentWithLinearTransform" then .ok [.expLinear]
-      else if tag = "LogTransform" || tag = "LogAffineTransform" then .ok [.log]
-      else if tag = "LogCameraTransform" then
-        if vecPresent (node.mapGet "lin_side_break") ||
-           vecPresent (node.mapGet "linSideBreak") then .ok [.logCamera]
-        else .error "PARSE"
-      else if tag = "CDLTransform" then
-        if invert then .ok [.matrix, .exponent, .range] else .ok [.cdl]
-      else if tag = "RangeTransform" then
-        let hasMinIn := scalarNumeric (node.mapGet "minInValue")
-        let hasMaxIn := scalarNumeric (node.mapGet "maxInValue")
-        let hasMinOut := scalarNumeric (node.mapGet "minOutValue")
-        let hasMaxOut := scalarNumeric (node.mapGet "maxOutValue")
-        if hasMinIn != hasMinOut || hasMaxIn != hasMaxOut then .error "PARSE"
-        else if !hasMinIn && !hasMaxIn then .error "PARSE"
-        else if hasMinIn && hasMaxIn then
-          if !(scalarFloat (node.mapGet "maxInValue") >
-               scalarFloat (node.mapGet "minInValue")) then .error "PARSE"
-          else .ok [.range]
-        else .ok [.range]
-      else .error "UNSUPPORTED"
-
-/-- `toc_lower_fixedfunc` (style id only). -/
-def pLowerFixed (fuel : Nat) (node : YTree) (invert : Bool) :
-    Except String (List POp) :=
-  match fuel with
-  | 0 => .error "PARSE"
-  | _ + 1 =>
-    match getScalar node "style" with
-    | none => .error "PARSE"
-    | some style =>
-      match ffStyleId style with
-      | some id => .ok [.fixed (if invert then ffInvert id else id)]
-      | none => .error "UNSUPPORTED"
-
-/-- Apply a view's looks in order (each look through its process space
-when present); the look list is capped at 8 by the caller. -/
+/-- Apply a view's looks in order (capped at 8 by the caller). -/
 def pApplyLooks (root : YTree) (fuel : Nat) (looks : List String) :
-    Except String (List POp) :=
+    Except String (List COp) :=
   match fuel with
   | 0 => .error "PARSE"
   | f + 1 =>
@@ -391,11 +447,11 @@ end
 
 /-- `toc_processor_from_colorspaces`. -/
 def pFromColorspaces (root : YTree) (src dst : String) :
-    Except String (List POp) :=
+    Except String (List COp) :=
   if isDataCs root src || isDataCs root dst then .ok []
   else
     (pEmitToRef root 0 procFuel src false).bind (fun a =>
-      let bridge : Except String (List POp) :=
+      let bridge : Except String (List COp) :=
         if refDomain root src != refDomain root dst then
           let vt := defaultViewTransform root
           let baseInv := refDomain root src
@@ -447,7 +503,7 @@ def findView (root : YTree) : List YTree → String → Option YTree
 
 /-- `toc_processor_from_display_view`. -/
 def pFromDisplayView (root : YTree) (srcCs display view : String) :
-    Except String (List POp) :=
+    Except String (List COp) :=
   match displayViews root display with
   | none => .error "NOT_FOUND"
   | some views =>
@@ -464,7 +520,7 @@ def pFromDisplayView (root : YTree) (srcCs display view : String) :
       else
         (pEmitToRef root 0 procFuel srcCs false).bind (fun ops0 =>
           (pApplyLooks root procFuel ((viewLooks vnode).take 8)).bind (fun ops1 =>
-            let vtOps : Except String (List POp) :=
+            let vtOps : Except String (List COp) :=
               match viewVt with
               | none => .ok []
               | some vtName =>
@@ -513,12 +569,55 @@ def pFromDisplayView (root : YTree) (srcCs display view : String) :
               | some c => (pEmitFromRef root 0 procFuel c false).map
                   (fun ops3 => ops0 ++ ops1 ++ ops2 ++ ops3))))
 
-/-! ## Result rendering (mirrors `test/v3/config_vectors.c`'s `pq` records) -/
+/-! ## Rendering -/
+
+/-- Kind names (`err:` payloads use the same spelling as the C). -/
+def copKindName : COp → String
+  | .matrix .. => "MATRIX"
+  | .range .. => "RANGE"
+  | .exponent .. => "EXPONENT"
+  | .expLinear .. => "EXP_LINEAR"
+  | .log .. => "LOG"
+  | .logCamera .. => "LOG_CAMERA"
+  | .cdl .. => "CDL"
+  | .lut1d .. => "LUT1D"
+  | .lut3d .. => "LUT3D"
+  | .fixed s .. => "FIXEDFUNC(" ++ toString s ++ ")"
 
 /-- `ok:K1,K2,...` or `err:CODE`. -/
-def renderProcResult (r : Except String (List POp)) : String :=
+def renderProcResult (r : Except String (List COp)) : String :=
   match r with
   | .error e => "err:" ++ e
-  | .ok ops => "ok:" ++ String.intercalate "," (ops.map pOpName)
+  | .ok ops => "ok:" ++ String.intercalate "," (ops.map copKindName)
+
+/-- 8 lowercase hex digits of a float bit pattern. -/
+def bitsHex (b : UInt32) : String :=
+  String.ofList ((List.range 8).map (fun i =>
+    hexDigChar ((b >>> UInt32.ofNat (28 - 4 * i)).toNat % 16)))
+
+def fmtBits (l : List FB) : String := String.join (l.map (fun b => " " ++ bitsHex b))
+
+def flag (b : Bool) : String := if b then "1" else "0"
+
+/-- The parameter recipe for one op (the C generator's `emit_recipe` format). -/
+def copRecipe : COp → String
+  | .matrix m off => "matrix" ++ fmtBits (m ++ off)
+  | .range scale offset lo hi cl hi' =>
+    "range" ++ fmtBits (scale ++ offset ++ lo ++ hi) ++ " " ++ flag cl ++ " " ++ flag hi'
+  | .exponent e mir => "exponent" ++ fmtBits e ++ " " ++ flag mir
+  | .expLinear sc of gm bk sl inv mir =>
+    "explinear" ++ fmtBits (sc ++ of ++ gm ++ bk ++ sl) ++ " " ++ bitStr inv ++ " " ++ flag mir
+  | .log ls lo ns no base inv =>
+    "log" ++ fmtBits (ls ++ lo ++ ns ++ no ++ [base]) ++ " " ++ flag inv
+  | .logCamera ls lo ns no brk sl so base inv =>
+    "logcam" ++ fmtBits (ls ++ lo ++ ns ++ no ++ brk ++ sl ++ so ++ [base]) ++ " " ++ bitStr inv
+  | .cdl sl of pw sat luma cl inv =>
+    "cdl" ++ fmtBits (sl ++ of ++ pw ++ [sat] ++ luma) ++ " " ++ flag cl ++ " " ++ flag inv
+  | .lut1d len ch dmin dmax data =>
+    "lut1d " ++ toString len ++ " " ++ toString ch ++ fmtBits ([dmin, dmax] ++ data)
+  | .lut3d size dmin dmax tet data =>
+    "lut3d " ++ toString size ++ " " ++ flag tet ++ fmtBits (dmin ++ dmax ++ data)
+  | .fixed style nparams params =>
+    "fixed " ++ toString style ++ " " ++ toString nparams ++ fmtBits params
 
 end Tocio

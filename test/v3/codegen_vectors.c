@@ -75,6 +75,8 @@ static void emit_recipe(FILE *out, size_t id, const cop *c) {
         break;
     case TOC_OP_LOG_CAMERA:
         fprintf(out, "cgop %zu logcam", id);
+        emit_bits(out, c->f, 22);
+        fprintf(out, " %d", c->i[0]);
         break;
     case TOC_OP_CDL:
         fprintf(out, "cgop %zu cdl", id);
