@@ -10,15 +10,15 @@
 
   Scope: the scalar path (`toc_codegen_c_opts.simd = 0`). The
   `LOG_CAMERA` op has no AOT-C case in the C either (it emits nothing).
-  `ACES_GAMUTCOMP13` needs the codegen-time `cg_gc_scale` pow
-  approximation and is reported UNSUPPORTED by the model (never
-  vectorized).
+  `ACES_GAMUTCOMP13` uses the bit-exact `Tocio.Math.powf` port for its
+  codegen-time scale.
 
   Copyright (c) 2026 Syoyo Fujita and TinyEXR authors
   SPDX-License-Identifier: BSD-3-Clause
 -/
 
 import Tocio.CodegenSnippets
+import Tocio.Math
 
 namespace Tocio
 
@@ -232,8 +232,17 @@ def emitLutArray (idx : Nat) (data : List FB) : String :=
 def ffYc : List FB :=
   [fbits (0.2627 : Float32), fbits (0.6780 : Float32), fbits (0.0593 : Float32)]
 
-/-- A fixed-function op's emitted statement (or UNSUPPORTED for
-GamutComp13, whose codegen-time scale needs the pow approximation). -/
+/-- `cg_gc_scale`: the codegen-time gamut-compression scale (matches
+the interpreter's `gc_scale` via the bit-exact `powf` port). -/
+def cgGcScale (lim thr power : Float32) : Float32 :=
+  if lim <= 1.0 || thr >= 1.0 then 1.0
+  else
+    let ip : Float32 := 1.0 / power
+    let t : Float32 := (lim - thr) / (1.0 - thr)
+    let d : Float32 := powf (powf t power - 1.0) ip
+    if d != 0.0 then (lim - thr) / d else 1.0
+
+/-- A fixed-function op's emitted statement. -/
 def emitFixed (style : Nat) (nparams : Nat) (p : List FB) :
     Except String String :=
   if style == 6 || style == 7 then
@@ -255,7 +264,16 @@ def emitFixed (style : Nat) (nparams : Nat) (p : List FB) :
     .ok ("  { float c[3]={r,g,b};tc_darktodim(c," ++ hexFloat gamma ++
       "); r=c[0];g=c[1];b=c[2];}\n")
   else if nparams >= 6 && (style == 4 || style == 5) then
-    .error "UNSUPPORTED"
+    let pw := f32of (fget p 6)
+    let inv := style == 5
+    .ok ("  { float c[3]={r,g,b};tc_gamutcomp(c," ++
+      hexFloat (fget p 3) ++ "," ++ hexFloat (fget p 4) ++ "," ++
+      hexFloat (fget p 5) ++ "," ++
+      hexFloat (fbits (cgGcScale (f32of (fget p 0)) (f32of (fget p 3)) pw)) ++ "," ++
+      hexFloat (fbits (cgGcScale (f32of (fget p 1)) (f32of (fget p 4)) pw)) ++ "," ++
+      hexFloat (fbits (cgGcScale (f32of (fget p 2)) (f32of (fget p 5)) pw)) ++ "," ++
+      hexFloat (fget p 6) ++ (if inv then ",1);" else ",0);") ++
+      " r=c[0];g=c[1];b=c[2];}\n")
   else if style == 10 || style == 11 || style == 12 || style == 13 then
     let is03 := style == 10 || style == 11
     let inv := style == 11 || style == 13

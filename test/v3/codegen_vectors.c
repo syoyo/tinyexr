@@ -30,7 +30,7 @@ static uint32_t fbits(float f) {
     return u;
 }
 
-#define N_DOCS 11
+#define N_DOCS 12
 
 typedef struct {
     int kind;
@@ -505,6 +505,19 @@ int main(int argc, char **argv) {
             setf(c->f, 4, e);
         }
         doc_names[9] = "my_apply";
+    }
+    /* 11: GamutComp13 forward/inverse (codegen-time pow scale) */
+    {
+        cop *c = add(11, TOC_OP_FIXEDFUNC);
+        c->f[0] = 1.05f; c->f[1] = 1.05f; c->f[2] = 1.05f;
+        c->f[3] = 0.8f; c->f[4] = 0.8f; c->f[5] = 0.8f;
+        c->f[6] = 1.2f;
+        c->i[0] = 4; c->i[1] = 7;
+        c = add(11, TOC_OP_FIXEDFUNC);
+        c->f[0] = 1.2f; c->f[1] = 1.1f; c->f[2] = 1.3f;
+        c->f[3] = 0.9f; c->f[4] = 0.7f; c->f[5] = 0.85f;
+        c->f[6] = 0.8f;
+        c->i[0] = 5; c->i[1] = 7;
     }
     /* 10: invalid function name (not a C identifier) -> error */
     {

@@ -96,7 +96,7 @@ The final implementation validation on 2026-11-09 produced:
 | `make tocio-spi-diff` | 200 SPI-file lines, C vs Lean parser + kernels bit-exact. |
 | `make tocio-clf-diff` | 396 CLF lines, C vs Lean parse, op contents and kernels exact. || `make tocio-csp-diff` | 74 CSP LUT lines, C vs Lean exact. |
 | `make tocio-config-diff` | 16 OCIO configs re-parsed by `Tocio.ConfigQuery`: colorspace enumeration, name/alias lookup order (scene then display section), family/encoding/isdata, display-section membership through role resolution, transform-attribute priority + invert flags (`to/from_reference`, `to/from_scene_reference`, `to/from_display_reference`), display/view/look/view-transform enumeration, `toc_cfg_view_looks` comma/space tokenization (trailing spaces preserved), default-view-transform fallback, and active displays/views; 0 mismatches. |
-| `make tocio-codegen-diff` | 11 op lists through the AOT-C emitter (matrix/ranges/exponents/exp-linear/log/CDL forward+inverse, 1D and 3D LUTs with embedded arrays, fixed-function styles including the ACES/HSV/XYZ/PQ/HLG helpers, REC2100, log-camera, empty lists, hex-float edges -0.0/subnormal/inf/nan, custom and invalid function names); generated sources byte-identical to the C. |
+| `make tocio-codegen-diff` | 12 op lists through the AOT-C emitter (matrix/ranges/exponents/exp-linear/log/CDL forward+inverse, 1D and 3D LUTs with embedded arrays, fixed-function styles including the ACES/HSV/XYZ/PQ/HLG helpers incl. GamutComp13's codegen-time pow scale, REC2100, log-camera, empty lists, hex-float edges -0.0/subnormal/inf/nan, custom and invalid function names); generated sources byte-identical to the C. |
 | `make tocio-proc-diff` | 57 processor-build pipeline queries over 12 configs (scene and display colorspace pairs, aliases/roles, simple/VT/look/shared views, `<USE_DISPLAY_NAME>`, forward and inverted groups and CDL, fixed-function styles forward/inverted, transform-parameter errors, cyclic colorspace references hitting the 64-level walk cap, and a 30-level nested group chain); op-kind sequences and error codes identical to the C. |
 | `make tocio-yaml-diff` | 48 YAML documents (quote-aware comments, quoted/escaped scalars, flow seqs/maps, block scalars `\|`/`>`, `---`/`...`, tab-indent/anchor/alias/trailing-content errors, 30-level nesting, 200-level depth-cap failure, and `!<Tag>` handling: block/value tags, tag-only lines, tag+inline-flow line consumption, unterminated tags, nested-tag overwrite, tag-text dump escaping, double tags, tabs after a tag, tags inside flow text) re-parsed by `Tocio/YamlEngine`; canonical tree dumps (including `<tag>` prefixes) byte-identical to the C. |
 | `make codec-diff` | 8192 comparisons across seven seeds and both libdeflate/in-tree backends; zero failures. Includes PIZ primitives, frequency tables, malformed/lenient packets and whole blocks. |
@@ -168,10 +168,9 @@ validation checks, not library proofs.
 - The AOT-C codegen model (`Tocio/CodegenC.lean`) ports the scalar
   `toc_emit_c` path: op bodies, the helper-source pre-scan, embedded LUT
   arrays and the bit-exact hex-float literal writer, pinned by `make
-  tocio-codegen-diff` (11 op lists, generated sources byte-identical).
-  Out of scope: the `simd` (SSE2/AVX2) code paths, `ACES_GAMUTCOMP13`
-  (its codegen-time scale needs the pow approximation; the model reports
-  UNSUPPORTED) and the GLSL/Metal/JIT backends.
+  tocio-codegen-diff` (12 op lists, generated sources byte-identical).
+  Out of scope: the `simd` (SSE2/AVX2) code paths and the GLSL/Metal/JIT
+  backends.
 - The YAML model (`Tocio/YamlEngine.lean`) is a C-faithful port of the
   `toc_yaml_parse` surface: line preprocessing (tab-indent rejection,
   quote-aware comment strip, blank/`---`/`...`), block maps and dash
