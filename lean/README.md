@@ -666,8 +666,9 @@ superseded by `Bc7Mode0Full` / `Etc2TModeDecode` and redefine the same names.
   i.e. exactness on the whole dyadic skeleton) and a proved one-ulp
   counterexample at `powf 3 1`, plus `mPowf_one_ulp_bound`: on the
   400-point slice "mantissa 1.25/1.5, exponent -99..100" the error is at
-  most 16 ULP (measured 13). Exactness is false off the skeleton; what
-  remains open is a bound uniform over arbitrary mantissas.
+  most 16 ULP (measured 13). Exactness is false off the skeleton; a
+  bound uniform over arbitrary mantissas is an accepted scope boundary
+  (covered by the differential corpus and tolerance fixtures).
 * `ConfigQuery.lean` models the `toc_config.c` query surface over the
   parsed tree and is pinned by `make tocio-config-diff` (16 configs; the
   transcript covers lookups, roles, displays/views/looks, view
@@ -693,7 +694,9 @@ superseded by `Bc7Mode0Full` / `Etc2TModeDecode` and redefine the same names.
   119 op parameter recipes bit-exact, singular matrices included as
   NONINVERTIBLE, and FileTransform through a file-reader map dispatching
   `.spi1d`/`.spi3d`/`.clf` plus content sniffing to the SPI/CLF loaders).
-  `.cube`/CSP payloads and `BuiltinTransform` are outside this model. The processor build
+  `.cube`/CSP payloads and `BuiltinTransform` (a ~100-style ACES table
+  with dedicated helpers, reported UNSUPPORTED) are accepted scope
+  boundaries, not tracked remaining items. The processor build
   (`toc_processor.c`) remains outside the differential.
 * `YamlEngine.lean` models the `toc_yaml_parse` surface (line
   preprocessing, block maps/dash sequences, block scalars, the flow

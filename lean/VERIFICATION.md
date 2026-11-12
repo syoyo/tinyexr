@@ -177,8 +177,11 @@ validation checks, not library proofs.
   proves a **quantitative bound**: for the 400-point structured slice
   "mantissa 1.25 or 1.5, exponent in [-99, 100]" (which contains the `3`
   counterexample) `powf x 1` is within **16 ULP** of `x` (measured max
-  13). What remains open is a bound uniform over *arbitrary* mantissas
-  (the differential corpus and tolerance fixtures cover those today). Texcomp is
+  13). A bound uniform over *arbitrary* mantissas is an accepted scope
+  boundary, not a pending task: the numeric analysis of the
+  `log2f`/`exp2f` polynomial approximations over all 2^23 mantissas is
+  out of scope, and those inputs are covered by the differential corpus
+  and the tolerance fixtures instead. Texcomp is
   covered by implementation-level differential gates rather than an
   engine-level one. Plan for completion is in
   `~/.opencode/plan/lean-remaining-tasks.md` (outside repo).
@@ -198,8 +201,11 @@ validation checks, not library proofs.
   to `Tocio.SpiFile`/`Tocio.Clf` and the results are converted into the
   processor's LUT ops (inverted requests are NONINVERTIBLE, missing files
   IO). `.cube` files, CSP payloads and the C's cube fallback stay outside
-  the model, as does BuiltinTransform (UNSUPPORTED, never vectorized).
-  Singular-matrix inversion is vectorized (NONINVERTIBLE).
+  the model by design, as does BuiltinTransform: its expansion is a
+  ~100-style ACES table with dedicated constant/curve helpers, it is
+  reported UNSUPPORTED by the model, and no vector uses it — an accepted
+  boundary, not a tracked remaining item. Singular-matrix inversion is
+  vectorized (NONINVERTIBLE).
 - The AOT-C codegen model (`Tocio/CodegenC.lean`) ports the scalar
   `toc_emit_c` path: op bodies, the helper-source pre-scan, embedded LUT
   arrays and the bit-exact hex-float literal writer, pinned by `make
