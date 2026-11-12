@@ -363,4 +363,28 @@ theorem mPow2_exact :
       mLog2f (mBits bits) = e ∧ mPowf (mBits bits) mC1 = mBits bits) = true := by
   decide
 
+
+/-- ULP distance between two model values (bit-pattern distance; the
+positive finite encodings are monotone in the value). -/
+def ulpDist (x y : Float32.Model) : Nat :=
+  let a := x.toBits.toNat
+  let b := y.toBits.toNat
+  if a >= b then a - b else b - a
+
+set_option maxRecDepth 200000 in
+set_option maxHeartbeats 8000000 in
+/-- **Quantitative bound.** For every value with mantissa 1.25 or 1.5 and
+exponent in `[-99, 100]` — a 400-point structured slice that includes the
+`3` counterexample — `powf x 1` is within **16 ULP** of `x` (the measured
+maximum is 13). Together with `mPow2_exact` (error 0 on the whole dyadic
+skeleton) this bounds the composition where exactness fails. -/
+theorem mPowf_one_ulp_bound :
+    (List.range 200).all (fun k =>
+      let e := (k + 28) <<< 23
+      let b125 := UInt32.ofNat (e ||| 0x200000)
+      let b15 := UInt32.ofNat (e ||| 0x400000)
+      ulpDist (mPowf (mBits b125) mC1) (mBits b125) ≤ 16 ∧
+      ulpDist (mPowf (mBits b15) mC1) (mBits b15) ≤ 16) = true := by
+  decide
+
 end Tocio

@@ -173,10 +173,12 @@ validation checks, not library proofs.
   (`mPowf_one_counterexample`: `powf 3 1 ≠ 3` by one ulp) and
   `mPow2_exact`: **all 254 normal powers of two** satisfy
   `mLog2f (2^n) = n` and `mPowf (2^n) 1 = 2^n` exactly — exactness on the
-  format's entire dyadic skeleton. Exactness is false off that skeleton,
-  so what remains open is a proved *error bound* for non-dyadic
-  mantissas (today covered by the differential corpus and the tolerance
-  fixtures). Texcomp is
+  format's entire dyadic skeleton. Off the skeleton, `mPowf_one_ulp_bound`
+  proves a **quantitative bound**: for the 400-point structured slice
+  "mantissa 1.25 or 1.5, exponent in [-99, 100]" (which contains the `3`
+  counterexample) `powf x 1` is within **16 ULP** of `x` (measured max
+  13). What remains open is a bound uniform over *arbitrary* mantissas
+  (the differential corpus and tolerance fixtures cover those today). Texcomp is
   covered by implementation-level differential gates rather than an
   engine-level one. Plan for completion is in
   `~/.opencode/plan/lean-remaining-tasks.md` (outside repo).
