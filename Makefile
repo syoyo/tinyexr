@@ -754,7 +754,7 @@ texcomp-astc-hdrenc-diff: texcomp lean-tools
 
 .PHONY: tocio-lean-check
 tocio-lean-check:
-	cd lean && $(LAKE) build Tocio.Op Tocio.Config Tocio.Transform Tocio.Lower Tocio.YamlTotal Tocio.Math Tocio.Ops Tocio.FixedFunc Tocio.YamlEngine Tocio.ConfigQuery Tocio.ProcessorModel Tocio.CodegenC Tocio.CodegenGLSL Tocio.FloatBridge
+	cd lean && $(LAKE) build Tocio.Op Tocio.Config Tocio.Transform Tocio.Lower Tocio.YamlTotal Tocio.Math Tocio.Ops Tocio.FixedFunc Tocio.YamlEngine Tocio.ConfigQuery Tocio.ProcessorModel Tocio.CodegenC Tocio.CodegenGLSL Tocio.FloatBridge Tocio.FloatModel
 	@echo "tocio-lean-check: OK"
 
 .PHONY: tocio-diff

@@ -157,7 +157,17 @@ validation checks, not library proofs.
   compiler externs with no kernel equations (see the toolchain's
   Init/Data/Float/Float32.lean), so the equivalence the toolchain leaves to
   users is mechanized as a hypothesis (`FloatBridge`) with projection
-  lemmas — not an axiom — and remains the one proof-level gap. Texcomp is
+  lemmas — not an axiom. On top of that, `Tocio/FloatModel.lean` states the
+  range kernel over both worlds (`KernelOps` with `modelOps` = exact
+  `Float32.Model` operations and `f32Ops` = the compiled primitives),
+  proves the transfer `rangeK_clamp`/`rangeK_noclamp`
+  (`toModel (rangeK f32Ops …) = rangeK modelOps …` under the bridge), the
+  clamp contract (`clampK_lo/hi/id/idem`), and kernel-checked exactness
+  theorems (`rangeK_identity_exact`, `rangeK_roundtrip_exact`,
+  `rangeK_saturate_exact`, `clampK_exact`) evaluated with `decide` in the
+  exact binary32 semantics — no `native_decide`. What remains open is the
+  universal numerical analysis (proving `exp2f ∘ log2f` exact for all
+  inputs), which the sampled-grid fixtures still bound. Texcomp is
   covered by implementation-level differential gates rather than an
   engine-level one. Plan for completion is in
   `~/.opencode/plan/lean-remaining-tasks.md` (outside repo).

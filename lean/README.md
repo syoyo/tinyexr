@@ -650,8 +650,17 @@ superseded by `Bc7Mode0Full` / `Etc2TModeDecode` and redefine the same names.
   `Float32.Model` is a full IEEE-754 semantics, but the `Float32`
   primitives are `@[extern]` with no kernel equations (the toolchain
   explicitly leaves the equivalence to users), so it is mechanized as a
-  `Prop` hypothesis with projection lemmas — the single remaining
-  proof-level gap for Tocio.
+  `Prop` hypothesis with projection lemmas. `FloatModel.lean` builds on
+  it: the range kernel is stated over a primitive bundle (`KernelOps`),
+  instantiated with the exact `Float32.Model` operations and with the
+  compiled `Float32` ones, the transfer `rangeK_clamp` / `rangeK_noclamp`
+  proves `toModel (rangeK f32Ops …) = rangeK modelOps …` under the
+  bridge, the clamp contract (`clampK_lo/hi/id/idem`) is proved from the
+  comparison results, and `rangeK_identity_exact`,
+  `rangeK_roundtrip_exact`, `rangeK_saturate_exact` and `clampK_exact`
+  are `decide`-checked facts in exact binary32 semantics (kernel-checked,
+  no `native_decide`). The remaining open piece is universal numerical
+  analysis of `exp2f ∘ log2f`, still bounded by the sampled grid.
 * `ConfigQuery.lean` models the `toc_config.c` query surface over the
   parsed tree and is pinned by `make tocio-config-diff` (16 configs; the
   transcript covers lookups, roles, displays/views/looks, view
