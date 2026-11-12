@@ -96,6 +96,7 @@ The final implementation validation on 2026-11-09 produced:
 | `make tocio-spi-diff` | 200 SPI-file lines, C vs Lean parser + kernels bit-exact. |
 | `make tocio-clf-diff` | 396 CLF lines, C vs Lean parse, op contents and kernels exact. || `make tocio-csp-diff` | 74 CSP LUT lines, C vs Lean exact. |
 | `make tocio-config-diff` | 16 OCIO configs re-parsed by `Tocio.ConfigQuery`: colorspace enumeration, name/alias lookup order (scene then display section), family/encoding/isdata, display-section membership through role resolution, transform-attribute priority + invert flags (`to/from_reference`, `to/from_scene_reference`, `to/from_display_reference`), display/view/look/view-transform enumeration, `toc_cfg_view_looks` comma/space tokenization (trailing spaces preserved), default-view-transform fallback, and active displays/views; 0 mismatches. |
+| `make tocio-glsl-diff` | 8 GLSL shaders across ES3.0/330/Vulkan450 (version headers, Vulkan sampler bindings, matrix/range/exponent/log/exp-linear/CDL, 1D/3D LUT texture sampling, HSV/XYZ/PQ/HLG/REC2100/RedMod/GamutComp13 helpers) plus 8 MSL sources: generated text and LUT texture descriptors identical to the C. |
 | `make tocio-codegen-diff` | 12 op lists through the AOT-C emitter (matrix/ranges/exponents/exp-linear/log/CDL forward+inverse, 1D and 3D LUTs with embedded arrays, fixed-function styles including the ACES/HSV/XYZ/PQ/HLG helpers incl. GamutComp13's codegen-time pow scale, REC2100, log-camera, empty lists, hex-float edges -0.0/subnormal/inf/nan, custom and invalid function names); generated sources byte-identical to the C. |
 | `make tocio-proc-diff` | 57 processor-build pipeline queries over 12 configs (scene and display colorspace pairs, aliases/roles, simple/VT/look/shared views, `<USE_DISPLAY_NAME>`, forward and inverted groups and CDL, fixed-function styles forward/inverted, transform-parameter errors, cyclic colorspace references hitting the 64-level walk cap, and a 30-level nested group chain); op-kind sequences and error codes identical to the C. |
 | `make tocio-yaml-diff` | 48 YAML documents (quote-aware comments, quoted/escaped scalars, flow seqs/maps, block scalars `\|`/`>`, `---`/`...`, tab-indent/anchor/alias/trailing-content errors, 30-level nesting, 200-level depth-cap failure, and `!<Tag>` handling: block/value tags, tag-only lines, tag+inline-flow line consumption, unterminated tags, nested-tag overwrite, tag-text dump escaping, double tags, tabs after a tag, tags inside flow text) re-parsed by `Tocio/YamlEngine`; canonical tree dumps (including `<tag>` prefixes) byte-identical to the C. |
@@ -140,7 +141,7 @@ validation checks, not library proofs.
 - Structural acceptance does not imply every compressed payload is valid.
   Differential/sanitizer gates supply independent implementation evidence.
 - Tocio is covered by engine-level differential gates: `make tocio-lean-diff`
-  runs the C unit tests plus nine Lean checkers — op kernels/FixedFunction
+  runs the C unit tests plus ten Lean checkers — op kernels/FixedFunction
   (4096 blocks, 12 documented RedMod seam residue blocks), LUT files (192
   lines), SPI files (200), CLF (396), CSP (74), the YAML parser
   (`test/v3/yaml_vectors.c` + `lean/YamlCheck.lean`, 48 documents), the
@@ -169,8 +170,14 @@ validation checks, not library proofs.
   `toc_emit_c` path: op bodies, the helper-source pre-scan, embedded LUT
   arrays and the bit-exact hex-float literal writer, pinned by `make
   tocio-codegen-diff` (12 op lists, generated sources byte-identical).
-  Out of scope: the `simd` (SSE2/AVX2) code paths and the GLSL/Metal/JIT
-  backends.
+  Out of scope: the `simd` (SSE2/AVX2) code paths and the JIT backend.
+- The GPU codegen model (`Tocio/CodegenGLSL.lean`,
+  `Tocio/CodegenMetal.lean`) ports the GLSL shader emitter (all three
+  targets) and the MSL emitter, including the shared decimal-float
+  literal writer and the LUT texture descriptors, pinned by `make
+  tocio-glsl-diff` (16 shaders byte-identical). `TOC_OP_ACES_OUTPUT`
+  needs the precomputed ACES 2.0 parameter blob and is outside the
+  model; LUT1D NEAREST interpolation is not vectorized (linear only).
 - The YAML model (`Tocio/YamlEngine.lean`) is a C-faithful port of the
   `toc_yaml_parse` surface: line preprocessing (tab-indent rejection,
   quote-aware comment strip, blank/`---`/`...`), block maps and dash

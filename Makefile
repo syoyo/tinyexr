@@ -23,7 +23,7 @@ MINIZ_SRC = ./deps/miniz/miniz.c
 # ---- legacy v1 single-header test (unchanged) -----------------------------
 TARGET = test_tinyexr
 
-.PHONY: all test clean help lib test-c test-c-threads test-c-tsan c11-gate lean-check lean-diff lean-gen lean-gen-update lean-gen-check codec-diff texcomp-web texcomp-bc6h-diff texcomp-bc7-diff texcomp-bc135-diff texcomp-etc2-diff texcomp-astc-diff texcomp-astc-ldr-diff texcomp-astc-uastc-diff texcomp-astc-hdrenc-diff texcomp-astc-quant-diff texcomp-astc-hdrimg-diff texcomp-astc-ldrimg-diff texcomp-astc-ldrdec-diff texcomp-uni-diff texcomp-uni-transcode-diff texcomp-etc2-enc-diff tocio-diff tocio-yaml-diff tocio-config-diff tocio-proc-diff tocio-codegen-diff fuzz fuzz-threads tocio-fuzz fuzz-jph fuzz-libdeflate fuzz-corpus fuzz-corpus-asan parse-test wasm freestanding-gate freestanding-zstd-gate examples-c bench bench-compare bench-htj2k arm-smoke host-smoke gpu-test vk-test jph-gpu-test bench-gpu-jph texcomp texcomp-arm texcomp-c11-gate texcomp-test texcomp-bench texcomp-astc-psnr texcomp-astc-arm-smoke texcomp-astc-arm-gate texcomp-astc-hdr-gate texcomp-uni-gate texcomp-bc6h-gate texcomp-wasm texcomp-wasm-simd wasm-texcomp wasm-texcomp-simd ptexatlas-c11-gate
+.PHONY: all test clean help lib test-c test-c-threads test-c-tsan c11-gate lean-check lean-diff lean-gen lean-gen-update lean-gen-check codec-diff texcomp-web texcomp-bc6h-diff texcomp-bc7-diff texcomp-bc135-diff texcomp-etc2-diff texcomp-astc-diff texcomp-astc-ldr-diff texcomp-astc-uastc-diff texcomp-astc-hdrenc-diff texcomp-astc-quant-diff texcomp-astc-hdrimg-diff texcomp-astc-ldrimg-diff texcomp-astc-ldrdec-diff texcomp-uni-diff texcomp-uni-transcode-diff texcomp-etc2-enc-diff tocio-diff tocio-yaml-diff tocio-config-diff tocio-proc-diff tocio-codegen-diff tocio-glsl-diff fuzz fuzz-threads tocio-fuzz fuzz-jph fuzz-libdeflate fuzz-corpus fuzz-corpus-asan parse-test wasm freestanding-gate freestanding-zstd-gate examples-c bench bench-compare bench-htj2k arm-smoke host-smoke gpu-test vk-test jph-gpu-test bench-gpu-jph texcomp texcomp-arm texcomp-c11-gate texcomp-test texcomp-bench texcomp-astc-psnr texcomp-astc-arm-smoke texcomp-astc-arm-gate texcomp-astc-hdr-gate texcomp-uni-gate texcomp-bc6h-gate texcomp-wasm texcomp-wasm-simd wasm-texcomp wasm-texcomp-simd ptexatlas-c11-gate
 
 all: $(TARGET)
 
@@ -754,7 +754,7 @@ texcomp-astc-hdrenc-diff: texcomp lean-tools
 
 .PHONY: tocio-lean-check
 tocio-lean-check:
-	cd lean && $(LAKE) build Tocio.Op Tocio.Config Tocio.Transform Tocio.Lower Tocio.YamlTotal Tocio.Math Tocio.Ops Tocio.FixedFunc Tocio.YamlEngine Tocio.ConfigQuery Tocio.ProcessorModel Tocio.CodegenC
+	cd lean && $(LAKE) build Tocio.Op Tocio.Config Tocio.Transform Tocio.Lower Tocio.YamlTotal Tocio.Math Tocio.Ops Tocio.FixedFunc Tocio.YamlEngine Tocio.ConfigQuery Tocio.ProcessorModel Tocio.CodegenC Tocio.CodegenGLSL
 	@echo "tocio-lean-check: OK"
 
 .PHONY: tocio-diff
@@ -847,8 +847,17 @@ tocio-codegen-diff: tocio-lib lean-tools
 	cd lean && $(LAKE) build ExrSpec codegencheck
 	./lean/.lake/build/bin/codegencheck build/lean-gen/codegen_vectors.txt
 
+tocio-glsl-diff: tocio-lib lean-tools
+	mkdir -p build/lean-gen
+	$(CC) -std=c11 -Wall -Wextra -Isandbox/tocio/include -Isandbox/tocio/src -O1 -ffp-contract=off \
+	  test/v3/glsl_vectors.c sandbox/tocio/src/*.c -lm -ldl \
+	  -o build/glsl_gen
+	./build/glsl_gen build/lean-gen/glsl_vectors.txt
+	cd lean && $(LAKE) build ExrSpec glslcheck
+	./lean/.lake/build/bin/glslcheck build/lean-gen/glsl_vectors.txt
+
 .PHONY: tocio-lean-diff
-tocio-lean-diff: tocio-test tocio-diff tocio-lut-diff tocio-spi-diff tocio-clf-diff tocio-csp-diff tocio-yaml-diff tocio-config-diff tocio-proc-diff tocio-codegen-diff
+tocio-lean-diff: tocio-test tocio-diff tocio-lut-diff tocio-spi-diff tocio-clf-diff tocio-csp-diff tocio-yaml-diff tocio-config-diff tocio-proc-diff tocio-codegen-diff tocio-glsl-diff
 	@echo "tocio-lean-diff: C tests + Lean differential passed"
 
 PARSE_HARNESS = test/v3/parse_harness

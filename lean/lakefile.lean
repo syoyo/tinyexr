@@ -318,6 +318,11 @@ lean_exe proccheck where
 lean_exe codegencheck where
   root := `CodegenCheck
 
+/-- Tocio GLSL codegen differential checker (C vectors vs Lean model). -/
+@[default_target]
+lean_exe glslcheck where
+  root := `GLSLCheck
+
 /-- ASTC debug dump (Lean side). -/
 @[default_target]
 lean_exe astcdebug where
