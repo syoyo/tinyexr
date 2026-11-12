@@ -303,6 +303,11 @@ lean_exe cspcheck where
 lean_exe yamlcheck where
   root := `YamlCheck
 
+/-- Tocio config-query differential checker (C vectors vs Lean model). -/
+@[default_target]
+lean_exe configcheck where
+  root := `ConfigCheck
+
 /-- ASTC debug dump (Lean side). -/
 @[default_target]
 lean_exe astcdebug where

@@ -95,6 +95,7 @@ The final implementation validation on 2026-11-09 produced:
 | `make tocio-lut-diff` | 192 LUT-file lines (`.cube` 1D/3D, `.spi1d`/`.spi3d`, `.clf`, `.csp`) re-parsed by the Lean readers, 0 mismatches. |
 | `make tocio-spi-diff` | 200 SPI-file lines, C vs Lean parser + kernels bit-exact. |
 | `make tocio-clf-diff` | 396 CLF lines, C vs Lean parse, op contents and kernels exact. || `make tocio-csp-diff` | 74 CSP LUT lines, C vs Lean exact. |
+| `make tocio-config-diff` | 16 OCIO configs re-parsed by `Tocio.ConfigQuery`: colorspace enumeration, name/alias lookup order (scene then display section), family/encoding/isdata, display-section membership through role resolution, transform-attribute priority + invert flags (`to/from_reference`, `to/from_scene_reference`, `to/from_display_reference`), display/view/look/view-transform enumeration, `toc_cfg_view_looks` comma/space tokenization (trailing spaces preserved), default-view-transform fallback, and active displays/views; 0 mismatches. |
 | `make tocio-yaml-diff` | 48 YAML documents (quote-aware comments, quoted/escaped scalars, flow seqs/maps, block scalars `\|`/`>`, `---`/`...`, tab-indent/anchor/alias/trailing-content errors, 30-level nesting, 200-level depth-cap failure, and `!<Tag>` handling: block/value tags, tag-only lines, tag+inline-flow line consumption, unterminated tags, nested-tag overwrite, tag-text dump escaping, double tags, tabs after a tag, tags inside flow text) re-parsed by `Tocio/YamlEngine`; canonical tree dumps (including `<tag>` prefixes) byte-identical to the C. |
 | `make codec-diff` | 8192 comparisons across seven seeds and both libdeflate/in-tree backends; zero failures. Includes PIZ primitives, frequency tables, malformed/lenient packets and whole blocks. |
 | `make lean-validation-test` | 20 tests, two optional skips; all executed tests passed. Includes gate negative controls and axiom-audit rejection tests. |
@@ -137,11 +138,12 @@ validation checks, not library proofs.
 - Structural acceptance does not imply every compressed payload is valid.
   Differential/sanitizer gates supply independent implementation evidence.
 - Tocio is covered by engine-level differential gates: `make tocio-lean-diff`
-  runs the C unit tests plus six Lean checkers — op kernels/FixedFunction
+  runs the C unit tests plus seven Lean checkers — op kernels/FixedFunction
   (4096 blocks, 12 documented RedMod seam residue blocks), LUT files (192
-  lines), SPI files (200), CLF (396), CSP (74) and the YAML parser
-  (`test/v3/yaml_vectors.c` + `lean/YamlCheck.lean`, 24 documents) — all at
-  0 mismatches. Tocio Float/YAML *reasoning* is still partial (kernel laws are
+  lines), SPI files (200), CLF (396), CSP (74), the YAML parser
+  (`test/v3/yaml_vectors.c` + `lean/YamlCheck.lean`, 48 documents) and the
+  config query layer (`test/v3/config_vectors.c` + `lean/ConfigCheck.lean`,
+  16 configs) — all at 0 mismatches. Tocio Float/YAML *reasoning* is still partial (kernel laws are
   sampled-grid `native_decide` fixtures; the YAML model's work fuel is a
   generous over-approximation rather than a proved exact bound). Texcomp is
   covered by implementation-level differential gates rather than an
