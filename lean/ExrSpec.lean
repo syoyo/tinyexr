@@ -195,3 +195,6 @@ import Exr.PizBlock
 import Exr.PizCodebookTotal
 import Exr.PizCanonicalMass
 import Exr.PizCanonicalWords
+import Texcomp.AstcLdrImgDec
+import Texcomp.Uni
+import Texcomp.UniTranscode

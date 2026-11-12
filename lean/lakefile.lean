@@ -117,6 +117,11 @@ lean_exe astcldrdeccheck where
 lean_exe unicheck where
   root := `UniCheck
 
+/-- texcomp "uni" BC1/BC7 transcode checker (C vs Lean model). -/
+@[default_target]
+lean_exe unitranscodecheck where
+  root := `UniTranscodeCheck
+
 /-- DDS/KTX header byte-layout checker (C writers vs Lean model). -/
 @[default_target]
 lean_exe ddsktxcheck where

@@ -588,10 +588,26 @@ exercise the failure paths).
 encode), decompress (= 4x4 ASTC image decode) and the ASTC transcode (byte
 copy; `uniTranscodeAstc_length`). Gate: `make texcomp-uni-diff` (40 images,
 24 compressed + 16 random-stream images, 16 of which are rejected by the C
-decoder and by the model alike). **Boundary:** `tc_uni_transcode_{bc7,bc1,etc2}`
-are "decode then run the target's whole-image encoder"; Lean has the decode
-half but only block-level BC7/BC1/ETC2 encoders (no image drivers), so those
-three transcodes are not modelled yet.
+decoder and by the model alike).
+
+`UniTranscode.lean` adds the BC1 and BC7 transcodes (`uniTranscodeBc1/Bc7`):
+UNI decode, then the target's whole-image encoder (edge-clamped row-major
+4x4 gather + `encodeBc1ColorBlock` / `bc7EncodeBlockDefault`, default options:
+quick = 2, no PCA, all modes, rdo = 0). Gate: `make texcomp-uni-transcode-diff`
+(36 streams: 20 accepted — flat, alpha-mixed and random content, BC7 modes
+1/3/4/5/6/7 all exercised — and 16 corrupt streams that fail identically).
+**Boundary:** `tc_uni_transcode_etc2` is not modelled: Lean has ETC2/EAC
+decoders only, so the ETC2 RGB encoder (flat/individual/differential/planar)
+and the EAC alpha encoder would have to be ported first. BC7 with `rdo > 0`
+(`tc_bc7_rdo_pass`) is likewise outside the model; uni transcoding never
+enables it.
+
+**Audit scope note.** `ExrSpec.lean` is the module root `lean-axiom-check`
+enumerates; the ASTC LDR/UASTC/uni modules were not reachable from it, so their
+theorems were silently outside the axiom census. `AstcLdrImgDec`, `Uni` and
+`UniTranscode` (and the encoder chain they import) are now imported there
+(census 3863 -> 3881, still no unexpected axioms). Modules that are only
+imported by their own `*Check` executable are still unaudited.
 
 ### Tocio: documented boundaries
 
