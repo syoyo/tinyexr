@@ -89,6 +89,8 @@ The final implementation validation on 2026-11-09 produced:
 | `make texcomp-bc135-diff` | 1536 BC1/BC3/BC5 blocks, C vs Lean byte-exact (BC5 snorm float step excluded, see Boundaries). |
 | `make texcomp-etc2-diff` | 1024 ETC2/EAC blocks (all 5 RGB modes + EAC alpha), C vs Lean byte-exact. |
 | `make texcomp-astc-diff` | 1024 ASTC LDR blocks (C-encoder output, all partition/CEM paths exercised), C vs Lean byte-exact. |
+| `make texcomp-astc-quant-diff` | 5394 colour-quant values: `tc_astc_hdr_color_roundtrip` — the sub-256 colour-roundtrip LUT the ASTC HDR CEM 11 endpoint packers use (e.g. level 12 in the 2-subset encoder) — at all 21 quant levels × 256 values plus the clamp/negative edges, C vs Lean exact. |
+| `make texcomp-astc-hdrenc-diff` | 240 ASTC HDR block-encoder vectors (60 seeds each of CEM 11 single/dual-plane, CEM 11 2-subset, CEM 7 and CEM 15), C vs Lean byte-exact including the SSE return and no-fit verdicts. |
 | `make tocio-diff` | 4096 Tocio blocks: seven op kernels + FixedFunction styles, C vs Lean bit-exact except 12 documented RedMod seam residue blocks (relative deviation ≤ 3e-3). |
 | `make codec-diff` | 8192 comparisons across seven seeds and both libdeflate/in-tree backends; zero failures. Includes PIZ primitives, frequency tables, malformed/lenient packets and whole blocks. |
 | `make lean-validation-test` | 20 tests, two optional skips; all executed tests passed. Includes gate negative controls and axiom-audit rejection tests. |
@@ -173,9 +175,14 @@ validation checks, not library proofs.
   (`Texcomp/Bc7Rdo.lean`, `make texcomp-bc7-rdo-diff`, 768 blocks with
   72 reuses), covering the 64-block decoded-pixel ring, the
   first-best-wins slot scan and the `rdo^2 * 16 * 4` distortion budget.
+  The sub-256 colour-roundtrip LUT used by ASTC HDR 2-subset encoding
+  (`tc_astc_hdr_color_roundtrip`, modelled as `Texcomp.hdrColorRoundtrip`)
+  is exhaustively gated (`make texcomp-astc-quant-diff`, all 21 quant
+  levels × 256 values plus the clamp edges) and exercised end to end
+  through the 2-subset CEM 11 encoder in `make texcomp-astc-hdrenc-diff`
+  (240 blocks, four HDR CEM kinds).
   Remaining Texcomp work: DDS/KTX pixel-payload parity beyond the
-  14-file container gate and the sub-256 colour-roundtrip LUT used by
-  ASTC HDR 2-subset encoding.
+  14-file container gate.
 - Tocio: Float64-vs-f32 note aside, the seven op kernels (matrix, range,
   exponent, exp-linear, log, log-camera, CDL) are bit-exact `Float32` ports
   with a C differential gate (3072 seeded groups). FixedFunction helpers
