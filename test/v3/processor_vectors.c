@@ -212,6 +212,79 @@ static void run_queries(FILE *out, size_t id, const toc_config *cfg,
     }
 }
 
+
+/* ---- embedded files for FileTransform vectors --------------------------- */
+
+static const char *FILE_SPI1D =
+    "Version 1\n"
+    "From 0.0 2.0\n"
+    "Length 4\n"
+    "Components 3\n"
+    "{\n"
+    "0.0 0.0 0.0\n"
+    "0.25 0.3 0.35\n"
+    "0.5 0.6 0.65\n"
+    "1.0 1.0 1.0\n"
+    "}\n";
+
+static const char *FILE_SPI3D =
+    "SPILUT 1.0\n"
+    "3 3\n"
+    "2 2 2\n"
+    "0 0 0 0.0 0.0 0.0\n"
+    "1 0 0 0.1 0.2 0.3\n"
+    "0 1 0 0.4 0.5 0.6\n"
+    "1 1 0 0.7 0.8 0.9\n"
+    "0 0 1 0.11 0.21 0.31\n"
+    "1 0 1 0.41 0.51 0.61\n"
+    "0 1 1 0.71 0.81 0.91\n"
+    "1 1 1 1.0 1.0 1.0\n";
+
+static const char *FILE_CLF =
+    "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+    "<ProcessList xmlns=\"urn:AMP:CLF\" id=\"t\">\n"
+    "<LUT1D outBitDepth=\"32f\">\n"
+    "<Array dim=\"4 3\">\n"
+    "0.0 0.0 0.0 0.25 0.3 0.35 0.5 0.6 0.65 1.0 1.0 1.0\n"
+    "</Array>\n"
+    "</LUT1D>\n"
+    "</ProcessList>\n";
+
+static toc_result file_reader(void *user, const char *name,
+                              const toc_allocator *a, char **out, size_t *len) {
+    const char *d = NULL;
+    size_t n;
+    char *buf;
+    (void)user;
+    if (!strcmp(name, "ramp.spi1d")) d = FILE_SPI1D;
+    else if (!strcmp(name, "cube.spi3d")) d = FILE_SPI3D;
+    else if (!strcmp(name, "ramp.clf")) d = FILE_CLF;
+    else if (!strcmp(name, "blobs/lut.txt")) d = FILE_SPI3D; /* sniffed */
+    if (!d) return TOC_ERROR_IO;
+    n = strlen(d);
+    buf = (char *)toc_malloc(a, n + 1);
+    if (!buf) return TOC_ERROR_OUT_OF_MEMORY;
+    memcpy(buf, d, n + 1);
+    *out = buf;
+    *len = n;
+    return TOC_SUCCESS;
+}
+
+static void emit_file_records(FILE *out) {
+    static const struct { const char *name; const char *data; } files[] = {
+        {"ramp.spi1d", NULL}, {"cube.spi3d", NULL}, {"ramp.clf", NULL},
+        {"blobs/lut.txt", NULL},
+    };
+    const char *data[4] = {FILE_SPI1D, FILE_SPI3D, FILE_CLF, FILE_SPI3D};
+    for (int i = 0; i < 4; i++) {
+        fprintf(out, "pfile ");
+        print_hex(out, files[i].name, strlen(files[i].name));
+        fputc(' ', out);
+        print_hex(out, data[i], strlen(data[i]));
+        fputc('\n', out);
+    }
+}
+
 int main(int argc, char **argv) {
     FILE *out = stdout;
     if (argc > 1) {
@@ -426,6 +499,29 @@ int main(int argc, char **argv) {
         "  - !<ColorSpace>\n"
         "    name: cb\n"
         "    to_scene_reference: !<ColorSpaceTransform> {src: cb, dst: ca}\n",
+        /* 12: FileTransform: spi1d, spi3d (with interpolation), clf,
+         *     inverted (NONINVERTIBLE), missing file (IO), sniffed spi3d */
+        "colorspaces:\n"
+        "  - !<ColorSpace>\n"
+        "    name: filespi1\n"
+        "    to_scene_reference: !<FileTransform> {src: ramp.spi1d}\n"
+        "  - !<ColorSpace>\n"
+        "    name: filespi3\n"
+        "    to_scene_reference: !<FileTransform> {src: cube.spi3d, interpolation: nearest}\n"
+        "  - !<ColorSpace>\n"
+        "    name: fileclf\n"
+        "    to_scene_reference: !<FileTransform> {src: ramp.clf}\n"
+        "  - !<ColorSpace>\n"
+        "    name: fileinv\n"
+        "    to_scene_reference: !<FileTransform> {src: ramp.spi1d, direction: inverse}\n"
+        "  - !<ColorSpace>\n"
+        "    name: filemissing\n"
+        "    to_scene_reference: !<FileTransform> {src: nope.spi1d}\n"
+        "  - !<ColorSpace>\n"
+        "    name: filesniff\n"
+        "    to_scene_reference: !<FileTransform> {src: blobs/lut.txt}\n"
+        "  - !<ColorSpace>\n"
+        "    name: plain\n",
         /* 11: numeric lowering paths: MonCurve, explicit LinearSlope log
          *    camera, noclamp CDL, matrix offsets, fixed-function params,
          *    singular matrix inversion */
@@ -530,6 +626,16 @@ int main(int argc, char **argv) {
         {0, "rgmax", "rgmax", NULL},
     };
     static const pquery q11[] = {
+        {0, "filespi1", "plain", NULL},
+        {0, "filespi3", "plain", NULL},
+        {0, "fileclf", "plain", NULL},
+        {0, "filesniff", "plain", NULL},
+        {0, "fileinv", "plain", NULL},
+        {0, "filemissing", "plain", NULL},
+        {0, "plain", "filespi1", NULL},
+        {0, "filespi1", "filespi1", NULL},
+    };
+    static const pquery q12[] = {
         {0, "ewl", "ewl", NULL},
         {0, "ewl2", "ewl2", NULL},
         {0, "logcam2", "logcam2", NULL},
@@ -542,7 +648,7 @@ int main(int argc, char **argv) {
     };
     static const pquery q9[] = {{0, "selfref", "other", NULL}};
     static const pquery q10[] = {{0, "ca", "cb", NULL}};
-    static const pquery *qsets[] = {q0, q1, q2, q3, q4, q5, q6, q7, q8, q9, q10, q11};
+    static const pquery *qsets[] = {q0, q1, q2, q3, q4, q5, q6, q7, q8, q9, q10, q11, q12};
     static const size_t qcounts[] = {sizeof(q0) / sizeof(q0[0]),
                                      sizeof(q1) / sizeof(q1[0]),
                                      sizeof(q2) / sizeof(q2[0]),
@@ -554,7 +660,8 @@ int main(int argc, char **argv) {
                                      sizeof(q8) / sizeof(q8[0]),
                                      sizeof(q9) / sizeof(q9[0]),
                                      sizeof(q10) / sizeof(q10[0]),
-                                     sizeof(q11) / sizeof(q11[0])};
+                                     sizeof(q11) / sizeof(q11[0]),
+                                     sizeof(q12) / sizeof(q12[0])};
 
     /* Under-cap probe: a 30-level nested GroupTransform chain stays inside
      * both the YAML depth cap (128) and the walk cap (64). Deep chains cannot
@@ -588,6 +695,8 @@ int main(int argc, char **argv) {
         depth_docs[d] = buf;
     }
 
+    emit_file_records(out);
+
     size_t ndocs = sizeof(docs) / sizeof(docs[0]);
     for (size_t id = 0; id < ndocs + 1; id++) {
         const char *text = id < ndocs ? docs[id] : depth_docs[id - ndocs];
@@ -600,6 +709,7 @@ int main(int argc, char **argv) {
         fprintf(out, "\n");
 
         rc = toc_config_parse(text, len, NULL, &cfg);
+        if (TOC_OK(rc) && cfg) toc_config_set_file_reader(cfg, file_reader, NULL);
         fprintf(out, "pcfg %zu | %d\n", id, TOC_OK(rc) ? 0 : 1);
         if (TOC_OK(rc) && cfg) {
             if (id < ndocs) {

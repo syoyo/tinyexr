@@ -39,6 +39,7 @@ def main (args : List String) : IO Unit := do
   let mut docs : List (Nat × String) := []
   let mut qs : List Q := []
   let mut pops : List (Nat × String) := []
+  let mut files : FileMap := []
   let mut cfgs : List (Nat × Nat) := []
   for line in lines do
     let sections := line.splitOn "|"
@@ -59,6 +60,10 @@ def main (args : List String) : IO Unit := do
       qs := qs ++ [{ doc := id, kind := kind, a := a, b := b, c := c, want := sec }]
     else if head == "pop" then
       pops := pops ++ [(id, sec)]
+    else if head == "pfile" then
+      let nm := String.ofList (hexToChars (hp.getD 1 ""))
+      let dt := String.ofList (hexToChars (hp.getD 2 ""))
+      files := files ++ [(nm, dt)]
 
   let mut bad := 0
   -- config verdicts
@@ -86,8 +91,8 @@ def main (args : List String) : IO Unit := do
         match tree with
         | none => .error "PARSE"
         | some root =>
-          if q.kind == "dv" then pFromDisplayView root q.a q.b q.c
-          else pFromColorspaces root q.a q.b
+          if q.kind == "dv" then pFromDisplayView files root q.a q.b q.c
+          else pFromColorspaces files root q.a q.b
       let got := renderProcResult res
       if got != q.want then
         IO.eprintln s!"pq {id} {q.kind} [{q.a}] [{q.b}] [{q.c}]:\n  C   : {q.want}\n  Lean: {got}"

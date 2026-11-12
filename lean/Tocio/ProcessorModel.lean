@@ -20,6 +20,8 @@
 -/
 
 import Tocio.ProcessorParams
+import Tocio.SpiFile
+import Tocio.Clf
 
 namespace Tocio
 
@@ -311,6 +313,80 @@ def pLowerTransform (node : YTree) (invert : Bool) : Except String (List COp) :=
     else if tag = "RangeTransform" then lowerRange node invert
     else .error "UNSUPPORTED"
 
+/-! ## FileTransform support (`toc_load_lutfile` + the reader hook) -/
+
+/-- The host file-reader contents: filename → file text. -/
+abbrev FileMap := List (String × String)
+
+/-- Suffix test (the C's `ends_with`). -/
+def endsWithS (s suf : String) : Bool :=
+  let sl := s.toList
+  let fl := suf.toList
+  fl.length <= sl.length && sl.drop (sl.length - fl.length) == fl
+
+/-- Strip leading bytes ≤ 0x20 (the C's sniffing skip). -/
+def dropLow (cs : List Char) : List Char :=
+  cs.dropWhile (fun c => c.toNat <= 0x20)
+
+def startsWithS (cs : List Char) (pre : String) : Bool :=
+  (cs.take pre.length) == pre.toList
+
+/-- Map a CLF op to the processor op (CLF LUT1D is 3-channel over
+[0,1]; LUT3D over [0,1]; CDL has no luma/inverse fields). -/
+def clfToCOp : ClfOp → COp
+  | .matrix m off => .matrix (m.map fbits) (off.map fbits)
+  | .range scale offset mn mx cl hi =>
+    .range (scale.map fbits) (offset.map fbits) (mn.map fbits) (mx.map fbits) cl hi
+  | .exponent e mir => .exponent (e.map fbits) mir
+  | .expLinear sc of gm brk sl inv mir =>
+    .expLinear (sc.map fbits) (of.map fbits) (gm.map fbits) (brk.map fbits)
+      (sl.map fbits) inv mir
+  | .log base inv ls lo ns no =>
+    .log (ls.map fbits) (lo.map fbits) (ns.map fbits) (no.map fbits) (fbits base) inv
+  | .logCam base inv ls lo ns no brk sl so =>
+    .logCamera (ls.map fbits) (lo.map fbits) (ns.map fbits) (no.map fbits)
+      (brk.map fbits) (sl.map fbits) (so.map fbits) (fbits base) inv
+  | .cdl sl of pw sat cl =>
+    .cdl (sl.map fbits) (of.map fbits) (pw.map fbits) (fbits sat) (zeros 3) cl false
+  | .lut1d len d => .lut1d len 3 (fbits (0.0 : Float32)) (fbits (1.0 : Float32)) (d.map fbits)
+  | .lut3d size d tet =>
+    .lut3d size (zeros 3) [fbits (1.0 : Float32), fbits (1.0 : Float32),
+      fbits (1.0 : Float32)] tet (d.map fbits)
+
+/-- `.spi1d` / `.spi3d` / `.clf` dispatch (the `startsWith` sniffs mirror
+the C's word checks). Inversion, `.cube`/`.csp` files and the cube
+fallback are outside the model. -/
+def loadLutFile (name data : String) (invert : Bool) : Except String (List COp) :=
+  let spi1 : Except String (List COp) :=
+    match loadSpi1d data with
+    | some c => .ok [.lut1d c.length c.channels (fbits c.domainMin) (fbits c.domainMax)
+        (c.data.map fbits)]
+    | none => .error "PARSE"
+  let spi3 : Except String (List COp) :=
+    match loadSpi3d data with
+    | some c => .ok [.lut3d c.size (zeros 3)
+        [fbits (1.0 : Float32), fbits (1.0 : Float32), fbits (1.0 : Float32)]
+        false (c.data.map fbits)]
+    | none => .error "PARSE"
+  let clf : Except String (List COp) :=
+    match loadClf data with
+    | .ok ops => .ok (ops.map clfToCOp)
+    | .error .parse => .error "PARSE"
+    | .error .unsupported => .error "UNSUPPORTED"
+  if invert then .error "NONINVERTIBLE"
+  else if endsWithS name ".spi1d" then spi1
+  else if endsWithS name ".spi3d" then spi3
+  else if endsWithS name ".clf" || endsWithS name ".CLF" then clf
+  else if endsWithS name ".cube" || endsWithS name ".CUBE" then .error "UNSUPPORTED"
+  else if endsWithS name ".csp" || endsWithS name ".CSP" then .error "UNSUPPORTED"
+  else
+    let hd := dropLow data.toList
+    if startsWithS hd "SPILUT" then spi3
+    else if startsWithS hd "Version" then spi1
+    else if startsWithS hd "CSPLUT" then .error "UNSUPPORTED"
+    else if startsWithS hd "<?xml" || startsWithS hd "<ProcessList" then clf
+    else .error "UNSUPPORTED"
+
 /-! ## Pipeline construction -/
 
 def walkMaxDepth : Nat := 64
@@ -319,16 +395,16 @@ def procFuel : Nat := 100000
 
 mutual
 /-- `walk` with its depth cap and one fuel unit. -/
-def pWalk (root : YTree) (depth fuel : Nat) (node : YTree) (invert : Bool) :
+def pWalk (files : FileMap) (root : YTree) (depth fuel : Nat) (node : YTree) (invert : Bool) :
     Except String (List COp) :=
   match fuel with
   | 0 => .error "PARSE"
   | f + 1 =>
     if depth ≥ walkMaxDepth then .error "PARSE"
-    else pWalkNode root (depth + 1) f node invert
+    else pWalkNode files root (depth + 1) f node invert
 
 /-- `walk_node`. -/
-def pWalkNode (root : YTree) (depth fuel : Nat) (node : YTree) (invert : Bool) :
+def pWalkNode (files : FileMap) (root : YTree) (depth fuel : Nat) (node : YTree) (invert : Bool) :
     Except String (List COp) :=
   match fuel with
   | 0 => .error "PARSE"
@@ -343,19 +419,23 @@ def pWalkNode (root : YTree) (depth fuel : Nat) (node : YTree) (invert : Bool) :
       if tag = "GroupTransform" then
         match node.mapGet "children" with
         | some (.seq _ xs) =>
-          if !dirInv then pWalkAll root depth f xs false
-          else pWalkAllRev root depth f xs true
+          if !dirInv then pWalkAll files root depth f xs false
+          else pWalkAllRev files root depth f xs true
         | _ => .ok []
       else if tag = "ColorSpaceTransform" then
         match getScalar node "src", getScalar node "dst" with
         | some src, some dst =>
           let (s, d) := if dirInv then (dst, src) else (src, dst)
-          (pEmitToRef root depth f s false).bind (fun a =>
-            (pEmitFromRef root depth f d false).map (fun b => a ++ b))
+          (pEmitToRef files root depth f s false).bind (fun a =>
+            (pEmitFromRef files root depth f d false).map (fun b => a ++ b))
         | _, _ => .error "PARSE"
       else if tag = "FileTransform" then
-        if (getScalar node "src").isNone then .error "PARSE"
-        else .error "UNSUPPORTED"
+        match getScalar node "src" with
+        | none => .error "PARSE"
+        | some src =>
+          match files.find? (fun p => p.1 == src) with
+          | none => .error "IO"
+          | some (_, data) => loadLutFile src data dirInv
       else if tag = "BuiltinTransform" then
         if (getScalar node "style").isNone then .error "PARSE"
         else .error "UNSUPPORTED"
@@ -363,7 +443,7 @@ def pWalkNode (root : YTree) (depth fuel : Nat) (node : YTree) (invert : Bool) :
       else pLowerTransform node dirInv
 
 /-- Walk a child list forward. -/
-def pWalkAll (root : YTree) (depth fuel : Nat) (xs : List YTree) (invert : Bool) :
+def pWalkAll (files : FileMap) (root : YTree) (depth fuel : Nat) (xs : List YTree) (invert : Bool) :
     Except String (List COp) :=
   match fuel with
   | 0 => .error "PARSE"
@@ -371,11 +451,11 @@ def pWalkAll (root : YTree) (depth fuel : Nat) (xs : List YTree) (invert : Bool)
     match xs with
     | [] => .ok []
     | x :: rest =>
-      (pWalk root depth f x invert).bind (fun a =>
-        (pWalkAll root depth f rest invert).map (fun b => a ++ b))
+      (pWalk files root depth f x invert).bind (fun a =>
+        (pWalkAll files root depth f rest invert).map (fun b => a ++ b))
 
 /-- Walk a child list in reverse (inverted group). -/
-def pWalkAllRev (root : YTree) (depth fuel : Nat) (xs : List YTree)
+def pWalkAllRev (files : FileMap) (root : YTree) (depth fuel : Nat) (xs : List YTree)
     (invert : Bool) : Except String (List COp) :=
   match fuel with
   | 0 => .error "PARSE"
@@ -383,11 +463,11 @@ def pWalkAllRev (root : YTree) (depth fuel : Nat) (xs : List YTree)
     match xs.reverse with
     | [] => .ok []
     | x :: rest =>
-      (pWalk root depth f x invert).bind (fun a =>
-        (pWalkAllRev root depth f rest.reverse invert).map (fun b => a ++ b))
+      (pWalk files root depth f x invert).bind (fun a =>
+        (pWalkAllRev files root depth f rest.reverse invert).map (fun b => a ++ b))
 
 /-- `emit_to_ref`. -/
-def pEmitToRef (root : YTree) (depth fuel : Nat) (csName : String)
+def pEmitToRef (files : FileMap) (root : YTree) (depth fuel : Nat) (csName : String)
     (invert : Bool) : Except String (List COp) :=
   match fuel with
   | 0 => .error "PARSE"
@@ -399,10 +479,10 @@ def pEmitToRef (root : YTree) (depth fuel : Nat) (csName : String)
       else
         match csTransformNode cs true with
         | none => .ok []
-        | some (t, needinv) => pWalk root depth f t (invert != needinv)
+        | some (t, needinv) => pWalk files root depth f t (invert != needinv)
 
 /-- `emit_from_ref`. -/
-def pEmitFromRef (root : YTree) (depth fuel : Nat) (csName : String)
+def pEmitFromRef (files : FileMap) (root : YTree) (depth fuel : Nat) (csName : String)
     (invert : Bool) : Except String (List COp) :=
   match fuel with
   | 0 => .error "PARSE"
@@ -414,10 +494,10 @@ def pEmitFromRef (root : YTree) (depth fuel : Nat) (csName : String)
       else
         match csTransformNode cs false with
         | none => .ok []
-        | some (t, needinv) => pWalk root depth f t (invert != needinv)
+        | some (t, needinv) => pWalk files root depth f t (invert != needinv)
 
 /-- Apply a view's looks in order (capped at 8 by the caller). -/
-def pApplyLooks (root : YTree) (fuel : Nat) (looks : List String) :
+def pApplyLooks (files : FileMap) (root : YTree) (fuel : Nat) (looks : List String) :
     Except String (List COp) :=
   match fuel with
   | 0 => .error "PARSE"
@@ -430,27 +510,27 @@ def pApplyLooks (root : YTree) (fuel : Nat) (looks : List String) :
       | some lk =>
         match getScalar lk "process_space" with
         | some ps =>
-          (pEmitFromRef root 0 f ps false).bind (fun a =>
+          (pEmitFromRef files root 0 f ps false).bind (fun a =>
             (match lk.mapGet "transform" with
-             | some tf => pWalk root 0 f tf false
+             | some tf => pWalk files root 0 f tf false
              | none => .ok []).bind (fun b =>
-              (pEmitToRef root 0 f ps false).bind (fun c =>
-                (pApplyLooks root f rest).map (fun d => a ++ b ++ c ++ d))))
+              (pEmitToRef files root 0 f ps false).bind (fun c =>
+                (pApplyLooks files root f rest).map (fun d => a ++ b ++ c ++ d))))
         | none =>
           (match lk.mapGet "transform" with
-           | some tf => pWalk root 0 f tf false
+           | some tf => pWalk files root 0 f tf false
            | none => .ok []).bind (fun a =>
-            (pApplyLooks root f rest).map (fun b => a ++ b))
+            (pApplyLooks files root f rest).map (fun b => a ++ b))
 end
 
 /-! ## Public builders -/
 
 /-- `toc_processor_from_colorspaces`. -/
-def pFromColorspaces (root : YTree) (src dst : String) :
+def pFromColorspaces (files : FileMap) (root : YTree) (src dst : String) :
     Except String (List COp) :=
   if isDataCs root src || isDataCs root dst then .ok []
   else
-    (pEmitToRef root 0 procFuel src false).bind (fun a =>
+    (pEmitToRef files root 0 procFuel src false).bind (fun a =>
       let bridge : Except String (List COp) :=
         if refDomain root src != refDomain root dst then
           let vt := defaultViewTransform root
@@ -470,10 +550,10 @@ def pFromColorspaces (root : YTree) (src dst : String) :
                   | none => (v.mapGet "to_reference").map (fun tf => (tf, !baseInv))
           match chosen with
           | none => .error "UNSUPPORTED"
-          | some (tf, inv) => pWalk root 0 procFuel tf inv
+          | some (tf, inv) => pWalk files root 0 procFuel tf inv
         else .ok []
       bridge.bind (fun b =>
-        (pEmitFromRef root 0 procFuel dst false).map (fun c => a ++ b ++ c)))
+        (pEmitFromRef files root 0 procFuel dst false).map (fun c => a ++ b ++ c)))
 
 /-- The views of a display, or `none` when the mapping/sequence is absent. -/
 def displayViews (root : YTree) (display : String) : Option (List YTree) :=
@@ -502,7 +582,7 @@ def findView (root : YTree) : List YTree → String → Option YTree
       else findView root rest view
 
 /-- `toc_processor_from_display_view`. -/
-def pFromDisplayView (root : YTree) (srcCs display view : String) :
+def pFromDisplayView (files : FileMap) (root : YTree) (srcCs display view : String) :
     Except String (List COp) :=
   match displayViews root display with
   | none => .error "NOT_FOUND"
@@ -518,8 +598,8 @@ def pFromDisplayView (root : YTree) (srcCs display view : String) :
                | some c => isDataCs root c
                | none => false) then .ok []
       else
-        (pEmitToRef root 0 procFuel srcCs false).bind (fun ops0 =>
-          (pApplyLooks root procFuel ((viewLooks vnode).take 8)).bind (fun ops1 =>
+        (pEmitToRef files root 0 procFuel srcCs false).bind (fun ops0 =>
+          (pApplyLooks files root procFuel ((viewLooks vnode).take 8)).bind (fun ops1 =>
             let vtOps : Except String (List COp) :=
               match viewVt with
               | none => .ok []
@@ -528,16 +608,16 @@ def pFromDisplayView (root : YTree) (srcCs display view : String) :
                 | none => .error "NOT_FOUND"
                 | some vt =>
                   match vt.mapGet "from_scene_reference" with
-                  | some tf => pWalk root 0 procFuel tf false
+                  | some tf => pWalk files root 0 procFuel tf false
                   | none =>
                     match vt.mapGet "from_reference" with
-                    | some tf => pWalk root 0 procFuel tf false
+                    | some tf => pWalk files root 0 procFuel tf false
                     | none =>
                       match vt.mapGet "to_scene_reference" with
-                      | some tf => pWalk root 0 procFuel tf true
+                      | some tf => pWalk files root 0 procFuel tf true
                       | none =>
                         match vt.mapGet "to_reference" with
-                        | some tf => pWalk root 0 procFuel tf true
+                        | some tf => pWalk files root 0 procFuel tf true
                         | none =>
                           match vt.mapGet "from_display_reference" with
                           | none => .error "UNSUPPORTED"
@@ -552,8 +632,8 @@ def pFromDisplayView (root : YTree) (srcCs display view : String) :
                               match btf with
                               | none => .error "UNSUPPORTED"
                               | some b =>
-                                (pWalk root 0 procFuel b false).bind (fun x =>
-                                  (pWalk root 0 procFuel dtf false).map
+                                (pWalk files root 0 procFuel b false).bind (fun x =>
+                                  (pWalk files root 0 procFuel dtf false).map
                                     (fun y => x ++ y))
             vtOps.bind (fun ops2 =>
               let viewDc : Option String :=
@@ -566,7 +646,7 @@ def pFromDisplayView (root : YTree) (srcCs display view : String) :
                 | none => none
               match dc with
               | none => .ok (ops0 ++ ops1 ++ ops2)
-              | some c => (pEmitFromRef root 0 procFuel c false).map
+              | some c => (pEmitFromRef files root 0 procFuel c false).map
                   (fun ops3 => ops0 ++ ops1 ++ ops2 ++ ops3))))
 
 /-! ## Rendering -/
