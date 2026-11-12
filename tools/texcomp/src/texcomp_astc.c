@@ -1470,13 +1470,14 @@ static void tc_astc_project_ideal_avx2(const uint8_t block[144][4],
     uint32_t packed_lo = lo[0] | (lo[1] << 8) | (lo[2] << 16) | (lo[3] << 24);
     uint32_t packed_hi = hi[0] | (hi[1] << 8) | (hi[2] << 16) | (hi[3] << 24);
     const __m256i zero = _mm256_setzero_si256();
-    const __m128i zero128 = _mm_setzero_si128();
     const __m256i lo16 = _mm256_cvtepu8_epi16(_mm_set1_epi32((int32_t)packed_lo));
     const __m256i hi16 = _mm256_cvtepu8_epi16(_mm_set1_epi32((int32_t)packed_hi));
     const __m256i dir16 = _mm256_sub_epi16(hi16, lo16);
     const __m256i vrecip = _mm256_set1_epi32((int32_t)recip);
     const __m256i round = _mm256_set1_epi64x(1ll << 30);
     const __m256i v64 = _mm256_set1_epi32(64);
+    /* blended dwords hold t0,t4,t1,t5,t2,t6,t3,t7; restore texel order */
+    const __m256i order = _mm256_setr_epi32(0, 2, 4, 6, 1, 3, 5, 7);
     uint32_t i = 0;
     for (; i + 8u <= count; i += 8u) {
         __m128i px0 = _mm_loadu_si128((const __m128i *)block[i]);
@@ -1485,70 +1486,25 @@ static void tc_astc_project_ideal_avx2(const uint8_t block[144][4],
         __m256i pb = _mm256_cvtepu8_epi16(px1);
         __m256i da = _mm256_madd_epi16(_mm256_sub_epi16(pa, lo16), dir16);
         __m256i db = _mm256_madd_epi16(_mm256_sub_epi16(pb, lo16), dir16);
+        /* pairwise add: dword 2k (and 2k+1) of sa/sb = dot of texel k */
         __m256i sa = _mm256_add_epi32(
             da, _mm256_shuffle_epi32(da, _MM_SHUFFLE(2, 3, 0, 1)));
         __m256i sb = _mm256_add_epi32(
             db, _mm256_shuffle_epi32(db, _MM_SHUFFLE(2, 3, 0, 1)));
-        __m128i sa_lo = _mm256_castsi256_si128(sa);
-        __m128i sa_hi = _mm256_extracti128_si256(sa, 1);
-        __m128i sb_lo = _mm256_castsi256_si128(sb);
-        __m128i sb_hi = _mm256_extracti128_si256(sb, 1);
-        __m128i dots0 = _mm_unpacklo_epi32(sa_lo, sb_lo);
-        __m128i dots1 = _mm_unpackhi_epi32(sa_lo, sb_lo);
-        __m128i dots2 = _mm_unpacklo_epi32(sa_hi, sb_hi);
-        __m128i dots3 = _mm_unpackhi_epi32(sa_hi, sb_hi);
-        __m128i pos0 = _mm_cmpgt_epi32(dots0, zero128);
-        __m128i pos1 = _mm_cmpgt_epi32(dots1, zero128);
-        __m128i pos2 = _mm_cmpgt_epi32(dots2, zero128);
-        __m128i pos3 = _mm_cmpgt_epi32(dots3, zero128);
-        __m128i d64_0 = _mm_slli_epi32(_mm_and_si128(dots0, pos0), 6);
-        __m128i d64_1 = _mm_slli_epi32(_mm_and_si128(dots1, pos1), 6);
-        __m128i d64_2 = _mm_slli_epi32(_mm_and_si128(dots2, pos2), 6);
-        __m128i d64_3 = _mm_slli_epi32(_mm_and_si128(dots3, pos3), 6);
-        __m128i even0 = _mm_srli_epi64(
-            _mm_add_epi64(_mm_mul_epu32(d64_0, _mm256_castsi256_si128(vrecip)),
-                          _mm256_castsi256_si128(round)), 31);
-        __m128i odd0 = _mm_srli_epi64(
-            _mm_add_epi64(_mm_mul_epu32(_mm_srli_si128(d64_0, 4),
-                                        _mm256_castsi256_si128(vrecip)),
-                          _mm256_castsi256_si128(round)), 31);
-        __m128i even1 = _mm_srli_epi64(
-            _mm_add_epi64(_mm_mul_epu32(d64_1, _mm256_castsi256_si128(vrecip)),
-                          _mm256_castsi256_si128(round)), 31);
-        __m128i odd1 = _mm_srli_epi64(
-            _mm_add_epi64(_mm_mul_epu32(_mm_srli_si128(d64_1, 4),
-                                        _mm256_castsi256_si128(vrecip)),
-                          _mm256_castsi256_si128(round)), 31);
-        __m128i even2 = _mm_srli_epi64(
-            _mm_add_epi64(_mm_mul_epu32(d64_2, _mm256_castsi256_si128(vrecip)),
-                          _mm256_castsi256_si128(round)), 31);
-        __m128i odd2 = _mm_srli_epi64(
-            _mm_add_epi64(_mm_mul_epu32(_mm_srli_si128(d64_2, 4),
-                                        _mm256_castsi256_si128(vrecip)),
-                          _mm256_castsi256_si128(round)), 31);
-        __m128i even3 = _mm_srli_epi64(
-            _mm_add_epi64(_mm_mul_epu32(d64_3, _mm256_castsi256_si128(vrecip)),
-                          _mm256_castsi256_si128(round)), 31);
-        __m128i odd3 = _mm_srli_epi64(
-            _mm_add_epi64(_mm_mul_epu32(_mm_srli_si128(d64_3, 4),
-                                        _mm256_castsi256_si128(vrecip)),
-                          _mm256_castsi256_si128(round)), 31);
-        __m128i w0 = _mm_unpacklo_epi32(even0, odd0);
-        __m128i w1 = _mm_unpacklo_epi32(even1, odd1);
-        __m128i w2 = _mm_unpacklo_epi32(even2, odd2);
-        __m128i w3 = _mm_unpacklo_epi32(even3, odd3);
-        __m128i v64_128 = _mm256_castsi256_si128(v64);
-        __m128i over0 = _mm_cmpgt_epi32(w0, v64_128);
-        __m128i over1 = _mm_cmpgt_epi32(w1, v64_128);
-        __m128i over2 = _mm_cmpgt_epi32(w2, v64_128);
-        __m128i over3 = _mm_cmpgt_epi32(w3, v64_128);
+        __m256i dots = _mm256_permutevar8x32_epi32(
+            _mm256_blend_epi32(sa, _mm256_slli_epi64(sb, 32), 0xAA), order);
+        /* scalar: dot <= 0 -> 0, else project_weight(dot * 64, recip) */
+        __m256i d64 = _mm256_slli_epi32(_mm256_max_epi32(dots, zero), 6);
+        __m256i even = _mm256_srli_epi64(
+            _mm256_add_epi64(_mm256_mul_epu32(d64, vrecip), round), 31);
+        __m256i odd = _mm256_srli_epi64(
+            _mm256_add_epi64(
+                _mm256_mul_epu32(_mm256_srli_epi64(d64, 32), vrecip), round),
+            31);
+        /* keep only the low dword of each (uint32_t cast), then clamp to 64 */
+        __m256i w = _mm256_blend_epi32(even, _mm256_slli_epi64(odd, 32), 0xAA);
         uint32_t tmp[8];
-        _mm_storeu_si128((__m128i *)tmp,
-            _mm_or_si128(_mm_and_si128(over0, v64_128),
-                         _mm_andnot_si128(over0, w0)));
-        _mm_storeu_si128((__m128i *)(tmp + 4),
-            _mm_or_si128(_mm_and_si128(over1, v64_128),
-                         _mm_andnot_si128(over1, w1)));
+        _mm256_storeu_si256((__m256i *)tmp, _mm256_min_epu32(w, v64));
         ideal[i + 0u] = (uint8_t)tmp[0];
         ideal[i + 1u] = (uint8_t)tmp[1];
         ideal[i + 2u] = (uint8_t)tmp[2];
@@ -1582,17 +1538,18 @@ static uint64_t tc_astc_recon_sse_avx2(const uint8_t block[144][4],
     uint32_t i = 0;
     uint64_t err;
     for (; i + 8u <= count; i += 8u) {
-        __m256i w8 = _mm256_cvtepu8_epi16(
-            _mm_loadl_epi64((const __m128i *)(wt + i)));
+        /* per-texel weight replicated over its 4 channels; AVX2 widening and
+         * shuffles are per 128-bit lane, so expand bytes first (SSSE3 pshufb)
+         * and widen once: words 0..15 = texels i..i+3 (wa) / i+4..i+7 (wb). */
+        __m128i w128 = _mm_loadl_epi64((const __m128i *)(wt + i));
+        __m256i wa = _mm256_cvtepu8_epi16(_mm_shuffle_epi8(
+            w128, _mm_setr_epi8(0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3)));
+        __m256i wb = _mm256_cvtepu8_epi16(_mm_shuffle_epi8(
+            w128, _mm_setr_epi8(4, 4, 4, 4, 5, 5, 5, 5, 6, 6, 6, 6, 7, 7, 7, 7)));
         __m128i px0 = _mm_loadu_si128((const __m128i *)block[i]);
         __m128i px1 = _mm_loadu_si128((const __m128i *)block[i + 4u]);
         __m256i pa = _mm256_cvtepu8_epi16(px0);
         __m256i pb = _mm256_cvtepu8_epi16(px1);
-        __m256i wa = _mm256_shuffle_epi32(
-            _mm256_shufflelo_epi16(w8, _MM_SHUFFLE(1, 1, 0, 0)), 0);
-        __m256i wb = _mm256_shuffle_epi32(
-            _mm256_shufflelo_epi16(w8, _MM_SHUFFLE(3, 3, 2, 2)),
-            _MM_SHUFFLE(3, 2, 3, 2));
         __m256i ra = _mm256_srli_epi16(
             _mm256_adds_epi16(
                 _mm256_adds_epi16(
@@ -1636,8 +1593,14 @@ static uint64_t tc_astc_recon_sse_pt_avx2(const uint8_t block[144][4],
     uint32_t i = 0;
     uint64_t err;
     for (; i + 8u <= count; i += 8u) {
-        __m256i w8 = _mm256_cvtepu8_epi16(
-            _mm_loadl_epi64((const __m128i *)(wt + i)));
+        /* per-texel weight replicated over its 4 channels; AVX2 widening and
+         * shuffles are per 128-bit lane, so expand bytes first (SSSE3 pshufb)
+         * and widen once: words 0..15 = texels i..i+3 (wa) / i+4..i+7 (wb). */
+        __m128i w128 = _mm_loadl_epi64((const __m128i *)(wt + i));
+        __m256i wa = _mm256_cvtepu8_epi16(_mm_shuffle_epi8(
+            w128, _mm_setr_epi8(0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3)));
+        __m256i wb = _mm256_cvtepu8_epi16(_mm_shuffle_epi8(
+            w128, _mm_setr_epi8(4, 4, 4, 4, 5, 5, 5, 5, 6, 6, 6, 6, 7, 7, 7, 7)));
         __m128i p0 = _mm_loadu_si128((const __m128i *)block[i]);
         __m128i p1 = _mm_loadu_si128((const __m128i *)block[i + 4u]);
         __m128i q0_0 = _mm_loadu_si128((const __m128i *)e0t[i]);
@@ -1650,11 +1613,6 @@ static uint64_t tc_astc_recon_sse_pt_avx2(const uint8_t block[144][4],
         __m256i e0b = _mm256_cvtepu8_epi16(q0_1);
         __m256i e1a = _mm256_cvtepu8_epi16(q1_0);
         __m256i e1b = _mm256_cvtepu8_epi16(q1_1);
-        __m256i wa = _mm256_shuffle_epi32(
-            _mm256_shufflelo_epi16(w8, _MM_SHUFFLE(1, 1, 0, 0)), 0);
-        __m256i wb = _mm256_shuffle_epi32(
-            _mm256_shufflelo_epi16(w8, _MM_SHUFFLE(3, 3, 2, 2)),
-            _MM_SHUFFLE(3, 2, 3, 2));
         __m256i ra = _mm256_srli_epi16(
             _mm256_adds_epi16(
                 _mm256_adds_epi16(
@@ -1691,38 +1649,29 @@ tc_astc_recon_sse_dual_avx2(const uint8_t block[144][4], uint32_t count,
                              const uint8_t wtc[144], const uint8_t wta[144]) {
     uint32_t packed_e0 = e0[0] | (e0[1] << 8) | (e0[2] << 16) | (e0[3] << 24);
     uint32_t packed_e1 = e1[0] | (e1[1] << 8) | (e1[2] << 16) | (e1[3] << 24);
-    const __m256i zero = _mm256_setzero_si256();
-    const __m256i e0_16 =
-        _mm256_unpacklo_epi8(_mm256_set1_epi32((int32_t)packed_e0), zero);
-    const __m256i e1_16 =
-        _mm256_unpacklo_epi8(_mm256_set1_epi32((int32_t)packed_e1), zero);
+    const __m256i e0_16 = _mm256_cvtepu8_epi16(
+        _mm_set1_epi32((int32_t)packed_e0));
+    const __m256i e1_16 = _mm256_cvtepu8_epi16(
+        _mm_set1_epi32((int32_t)packed_e1));
     const __m256i v64 = _mm256_set1_epi16(64);
     const __m256i v32 = _mm256_set1_epi16(32);
     __m256i acc = _mm256_setzero_si256();
     uint32_t i = 0;
     uint64_t err;
     for (; i + 8u <= count; i += 8u) {
-        __m256i px = _mm256_loadu_si256((const __m256i *)block[i]);
-        __m256i pa = _mm256_unpacklo_epi8(px, zero);
-        __m256i pb = _mm256_unpackhi_epi8(px, zero);
-        __m256i wa = _mm256_set_epi16(
-            (int16_t)wtc[i + 5u], (int16_t)wtc[i + 5u],
-            (int16_t)wtc[i + 5u], (int16_t)wta[i + 5u],
-            (int16_t)wtc[i + 4u], (int16_t)wtc[i + 4u],
-            (int16_t)wtc[i + 4u], (int16_t)wta[i + 4u],
-            (int16_t)wtc[i + 1u], (int16_t)wtc[i + 1u],
-            (int16_t)wtc[i + 1u], (int16_t)wta[i + 1u],
-            (int16_t)wtc[i], (int16_t)wtc[i],
-            (int16_t)wtc[i], (int16_t)wta[i]);
-        __m256i wb = _mm256_set_epi16(
-            (int16_t)wtc[i + 7u], (int16_t)wtc[i + 7u],
-            (int16_t)wtc[i + 7u], (int16_t)wta[i + 7u],
-            (int16_t)wtc[i + 6u], (int16_t)wtc[i + 6u],
-            (int16_t)wtc[i + 6u], (int16_t)wta[i + 6u],
-            (int16_t)wtc[i + 3u], (int16_t)wtc[i + 3u],
-            (int16_t)wtc[i + 3u], (int16_t)wta[i + 3u],
-            (int16_t)wtc[i + 2u], (int16_t)wtc[i + 2u],
-            (int16_t)wtc[i + 2u], (int16_t)wta[i + 2u]);
+        __m128i px0 = _mm_loadu_si128((const __m128i *)block[i]);
+        __m128i px1 = _mm_loadu_si128((const __m128i *)block[i + 4u]);
+        __m256i pa = _mm256_cvtepu8_epi16(px0);
+        __m256i pb = _mm256_cvtepu8_epi16(px1);
+        /* colour weight on R,G,B and alpha weight on A (scalar: c == 3 ->
+         * wta). bytes 0..7 = wtc, 8..15 = wta; pick [c c c a] per texel. */
+        __m128i wv = _mm_unpacklo_epi64(
+            _mm_loadl_epi64((const __m128i *)(wtc + i)),
+            _mm_loadl_epi64((const __m128i *)(wta + i)));
+        __m256i wa = _mm256_cvtepu8_epi16(_mm_shuffle_epi8(
+            wv, _mm_setr_epi8(0, 0, 0, 8, 1, 1, 1, 9, 2, 2, 2, 10, 3, 3, 3, 11)));
+        __m256i wb = _mm256_cvtepu8_epi16(_mm_shuffle_epi8(
+            wv, _mm_setr_epi8(4, 4, 4, 12, 5, 5, 5, 13, 6, 6, 6, 14, 7, 7, 7, 15)));
         __m256i ra = _mm256_srli_epi16(
             _mm256_add_epi16(
                 _mm256_add_epi16(
@@ -1743,92 +1692,17 @@ tc_astc_recon_sse_dual_avx2(const uint8_t block[144][4], uint32_t count,
         acc = _mm256_add_epi32(acc, _mm256_madd_epi16(db, db));
     }
     {
-        uint64_t lanes[4];
+        uint32_t lanes[8];
+        uint32_t j;
         _mm256_storeu_si256((__m256i *)lanes, acc);
-        err = lanes[0] + lanes[1] + lanes[2] + lanes[3];
+        err = 0;
+        for (j = 0; j < 8u; ++j) err += (uint64_t)lanes[j];
     }
     for (; i < count; ++i) {
         uint32_t c;
         for (c = 0; c < 4u; ++c) {
             uint32_t w = c == 3u ? wta[i] : wtc[i];
             uint32_t recon = (e0[c] * (64u - w) + e1[c] * w + 32u) >> 6;
-            int32_t d = (int32_t)block[i][c] - (int32_t)recon;
-            err += (uint64_t)(d * d);
-        }
-    }
-    return err;
-}
-
-static uint64_t TC_TARGET("avx2")
-tc_astc_recon_sse_dual_pt_avx2(const uint8_t block[144][4], uint32_t count,
-                                const uint8_t e0t[144][4],
-                                const uint8_t e1t[144][4],
-                                const uint8_t wtc[144],
-                                const uint8_t wta[144]) {
-    const __m256i zero = _mm256_setzero_si256();
-    const __m256i v64 = _mm256_set1_epi16(64);
-    const __m256i v32 = _mm256_set1_epi16(32);
-    __m256i acc = _mm256_setzero_si256();
-    uint32_t i = 0;
-    uint64_t err;
-    for (; i + 8u <= count; i += 8u) {
-        __m256i px = _mm256_loadu_si256((const __m256i *)block[i]);
-        __m256i e0_all = _mm256_loadu_si256((const __m256i *)e0t[i]);
-        __m256i e1_all = _mm256_loadu_si256((const __m256i *)e1t[i]);
-        __m256i pa = _mm256_unpacklo_epi8(px, zero);
-        __m256i pb = _mm256_unpackhi_epi8(px, zero);
-        __m256i e0a = _mm256_unpacklo_epi8(e0_all, zero);
-        __m256i e0b = _mm256_unpackhi_epi8(e0_all, zero);
-        __m256i e1a = _mm256_unpacklo_epi8(e1_all, zero);
-        __m256i e1b = _mm256_unpackhi_epi8(e1_all, zero);
-        __m256i wa = _mm256_set_epi16(
-            (int16_t)wtc[i + 5u], (int16_t)wtc[i + 5u],
-            (int16_t)wtc[i + 5u], (int16_t)wta[i + 5u],
-            (int16_t)wtc[i + 4u], (int16_t)wtc[i + 4u],
-            (int16_t)wtc[i + 4u], (int16_t)wta[i + 4u],
-            (int16_t)wtc[i + 1u], (int16_t)wtc[i + 1u],
-            (int16_t)wtc[i + 1u], (int16_t)wta[i + 1u],
-            (int16_t)wtc[i], (int16_t)wtc[i],
-            (int16_t)wtc[i], (int16_t)wta[i]);
-        __m256i wb = _mm256_set_epi16(
-            (int16_t)wtc[i + 7u], (int16_t)wtc[i + 7u],
-            (int16_t)wtc[i + 7u], (int16_t)wta[i + 7u],
-            (int16_t)wtc[i + 6u], (int16_t)wtc[i + 6u],
-            (int16_t)wtc[i + 6u], (int16_t)wta[i + 6u],
-            (int16_t)wtc[i + 3u], (int16_t)wtc[i + 3u],
-            (int16_t)wtc[i + 3u], (int16_t)wta[i + 3u],
-            (int16_t)wtc[i + 2u], (int16_t)wtc[i + 2u],
-            (int16_t)wtc[i + 2u], (int16_t)wta[i + 2u]);
-        __m256i ra = _mm256_srli_epi16(
-            _mm256_add_epi16(
-                _mm256_add_epi16(
-                    _mm256_mullo_epi16(e0a, _mm256_sub_epi16(v64, wa)),
-                    _mm256_mullo_epi16(e1a, wa)),
-                v32),
-            6);
-        __m256i rb = _mm256_srli_epi16(
-            _mm256_add_epi16(
-                _mm256_add_epi16(
-                    _mm256_mullo_epi16(e0b, _mm256_sub_epi16(v64, wb)),
-                    _mm256_mullo_epi16(e1b, wb)),
-                v32),
-            6);
-        __m256i da = _mm256_sub_epi16(pa, ra);
-        __m256i db = _mm256_sub_epi16(pb, rb);
-        acc = _mm256_add_epi32(acc, _mm256_madd_epi16(da, da));
-        acc = _mm256_add_epi32(acc, _mm256_madd_epi16(db, db));
-    }
-    {
-        uint64_t lanes[4];
-        _mm256_storeu_si256((__m256i *)lanes, acc);
-        err = lanes[0] + lanes[1] + lanes[2] + lanes[3];
-    }
-    for (; i < count; ++i) {
-        uint32_t c;
-        for (c = 0; c < 4u; ++c) {
-            uint32_t w = c == 3u ? wta[i] : wtc[i];
-            uint32_t recon =
-                ((uint32_t)e0t[i][c] * (64u - w) + (uint32_t)e1t[i][c] * w + 32u) >> 6;
             int32_t d = (int32_t)block[i][c] - (int32_t)recon;
             err += (uint64_t)(d * d);
         }
@@ -1845,6 +1719,7 @@ tc_astc_infill_recon_avx2(const uint8_t *grid_wt,
                             uint32_t count, const uint8_t *ideal) {
     const __m128i v8 = _mm_set1_epi32(8);
     const __m128i v64 = _mm_set1_epi32(64);
+    const __m128i vff = _mm_set1_epi32(0xFF);
     const __m128i zero = _mm_setzero_si128();
     __m128i acc = zero;
     uint32_t i;
@@ -1855,8 +1730,12 @@ tc_astc_infill_recon_avx2(const uint8_t *grid_wt,
         __m128i idx_hi = _mm_cvtepu8_epi32(_mm_srli_si128(idx, 4));
         __m128i cb_lo = _mm_cvtepu8_epi32(cb);
         __m128i cb_hi = _mm_cvtepu8_epi32(_mm_srli_si128(cb, 4));
-        __m128i g_lo = _mm_i32gather_epi32((const int *)grid_wt, idx_lo, 1);
-        __m128i g_hi = _mm_i32gather_epi32((const int *)grid_wt, idx_hi, 1);
+        /* scale-1 dword gathers fetch 4 bytes at each byte index; scalar reads
+         * exactly grid_wt[idx], so keep only the low byte of every lane. */
+        __m128i g_lo = _mm_and_si128(
+            _mm_i32gather_epi32((const int *)grid_wt, idx_lo, 1), vff);
+        __m128i g_hi = _mm_and_si128(
+            _mm_i32gather_epi32((const int *)grid_wt, idx_hi, 1), vff);
         __m128i p_lo = _mm_mullo_epi32(g_lo, cb_lo);
         __m128i p_hi = _mm_mullo_epi32(g_hi, cb_hi);
         __m128i sl = _mm_shuffle_epi32(p_lo, _MM_SHUFFLE(2, 3, 0, 1));
@@ -1892,9 +1771,11 @@ tc_astc_infill_recon_avx2(const uint8_t *grid_wt,
     }
 }
 
-/* AVX2 weight accumulation for weights_from_ideal. Gathers 4 accumulators
- * per texel (all 4 taps are always padded to 4 entries), multiplies
- * ideal[i] by each contribution, adds, and stores back individually. */
+/* AVX2-build weight accumulation for weights_from_ideal. Must match the
+ * scalar loop exactly: only the first tw_count taps contribute, in order.
+ * (An earlier gather/add/scatter form lost updates for texels with fewer than
+ * 4 taps, because the padded taps repeat tap 0's index and their stores of the
+ * stale value overwrote tap 0's update, so this is deliberately a plain loop.) */
 TC_TARGET("avx2")
 static void tc_astc_accum_weights_avx2(uint32_t weight_accum[64],
                                         const tc_astc_decim_cache_entry *decim,
@@ -1902,23 +1783,10 @@ static void tc_astc_accum_weights_avx2(uint32_t weight_accum[64],
                                         const uint8_t ideal[144]) {
     uint32_t i;
     for (i = 0; i < count; ++i) {
-        __m128i idx = _mm_cvtepu8_epi32(
-            _mm_loadl_epi64((const __m128i *)decim->tw_idx[i]));
-        __m128i cb = _mm_cvtepu8_epi32(
-            _mm_loadl_epi64((const __m128i *)decim->tw_contrib[i]));
-        __m128i vacc = _mm_i32gather_epi32(
-            (const int *)weight_accum, idx, 4);
-        __m128i vval = _mm_set1_epi32((int)ideal[i]);
-        __m128i vprod = _mm_mullo_epi32(vval, cb);
-        vacc = _mm_add_epi32(vacc, vprod);
-        {
-            int32_t temp[4];
-            _mm_storeu_si128((__m128i *)temp, vacc);
-            weight_accum[(uint32_t) _mm_extract_epi32(idx, 0)] = (uint32_t)temp[0];
-            weight_accum[(uint32_t) _mm_extract_epi32(idx, 1)] = (uint32_t)temp[1];
-            weight_accum[(uint32_t) _mm_extract_epi32(idx, 2)] = (uint32_t)temp[2];
-            weight_accum[(uint32_t) _mm_extract_epi32(idx, 3)] = (uint32_t)temp[3];
-        }
+        uint32_t n = decim->tw_count[i], j;
+        for (j = 0; j < n; ++j)
+            weight_accum[decim->tw_idx[i][j]] +=
+                (uint32_t)ideal[i] * decim->tw_contrib[i][j];
     }
 }
 #endif /* __AVX2__ */
@@ -2895,8 +2763,10 @@ static void tc_astc_lsq_sums_avx2(const uint8_t block[144][4], uint32_t count,
         acc_bb = _mm256_add_epi32(acc_bb, _mm256_madd_epi16(b16, b16));
         uint32_t t;
         for (t = 0; t < 16u; t += 4u) {
-            __m128i p0 = _mm_loadu_si128((const __m128i *)block[i + t]);
-            __m128i p1 = _mm_loadu_si128((const __m128i *)block[i + t + 2u]);
+            /* only the low 2 texels (8 bytes) of each load are used; a 16-byte
+             * load of block[i + t + 2] overran the block at the last batch. */
+            __m128i p0 = _mm_loadl_epi64((const __m128i *)block[i + t]);
+            __m128i p1 = _mm_loadl_epi64((const __m128i *)block[i + t + 2u]);
             __m128i px0 = _mm_unpacklo_epi8(p0, zero128);
             __m128i px1 = _mm_unpacklo_epi8(p1, zero128);
             int16_t b0 = (int16_t)wt[i + t], a0 = (int16_t)(64u - wt[i + t]);
@@ -3002,8 +2872,8 @@ static void tc_astc_lsq_sums_partition_avx2(
             int16_t a1 = act1 ? (int16_t)(64u - wt[i + t + 1u]) : 0;
             int16_t a2 = act2 ? (int16_t)(64u - wt[i + t + 2u]) : 0;
             int16_t a3 = act3 ? (int16_t)(64u - wt[i + t + 3u]) : 0;
-            __m128i p0 = _mm_loadu_si128((const __m128i *)block[i + t]);
-            __m128i p1 = _mm_loadu_si128((const __m128i *)block[i + t + 2u]);
+            __m128i p0 = _mm_loadl_epi64((const __m128i *)block[i + t]);
+            __m128i p1 = _mm_loadl_epi64((const __m128i *)block[i + t + 2u]);
             __m128i px0 = _mm_unpacklo_epi8(p0, zero128);
             __m128i px1 = _mm_unpacklo_epi8(p1, zero128);
             __m128i bw0 = _mm_set_epi16(0, b1, 0, b1, 0, b0, 0, b0);
