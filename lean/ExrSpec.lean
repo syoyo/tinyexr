@@ -198,3 +198,7 @@ import Exr.PizCanonicalWords
 import Texcomp.AstcLdrImgDec
 import Texcomp.Uni
 import Texcomp.UniTranscode
+import Texcomp.AstcHdrEnc
+import Texcomp.Bc1Props
+import Texcomp.Bc6hDecode
+import Tocio.LowerRecon

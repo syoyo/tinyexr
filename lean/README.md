@@ -620,7 +620,11 @@ enumerates; the ASTC LDR/UASTC/uni modules were not reachable from it, so their
 theorems were silently outside the axiom census. `AstcLdrImgDec`, `Uni` and
 `UniTranscode` (and the encoder chain they import) are now imported there
 (census 3863 -> 3885, still no unexpected axioms). Modules that are only
-imported by their own `*Check` executable are still unaudited.
+imported by their own `*Check` executable are still unaudited. A later sweep
+added `AstcHdrEnc`, `Bc1Props`, `Bc6hDecode` and `Tocio.LowerRecon` (census 3885 -> 3919).
+Deliberately left out: `Tocio.FloatSemantics` (its `native_decide` fixtures are not on
+the approved list), the `*Dbg` modules, and `Bc7Mode0` / `Etc2TModeDecode3`, which are
+superseded by `Bc7Mode0Full` / `Etc2TModeDecode` and redefine the same names.
 
 ### Tocio: documented boundaries
 
