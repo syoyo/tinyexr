@@ -72,6 +72,7 @@ import Texcomp.AstcDecode
 import Texcomp.AstcHdr
 import Texcomp.AstcHdrPack
 import Tocio.Math
+import Tocio.FloatBridge
 import Tocio.Ops
 import Tocio.FixedFunc
 import Tocio.LutFile

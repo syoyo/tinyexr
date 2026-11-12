@@ -149,9 +149,15 @@ validation checks, not library proofs.
   16 configs) and the processor build (`test/v3/processor_vectors.c` +
   `lean/ProcessorCheck.lean`, 57 pipeline queries) and the AOT-C codegen
   (`test/v3/codegen_vectors.c` + `lean/CodegenCheck.lean`, 11 op lists) —
-  all at 0 mismatches. Tocio Float/YAML *reasoning* is still partial (kernel laws are
-  sampled-grid `native_decide` fixtures; the YAML model's work fuel is a
-  generous over-approximation rather than a proved exact bound). Texcomp is
+  all at 0 mismatches. Tocio Float/YAML *reasoning* is still partial (kernel
+  laws are sampled-grid `native_decide` fixtures; the YAML model's work fuel
+  is a generous over-approximation rather than a proved exact bound). The
+  float bridge is recorded in `Tocio/FloatBridge.lean`: Lean 4.35 ships an
+  exact IEEE-754 model (`Float32.Model`) but the `Float32` primitives are
+  compiler externs with no kernel equations (see the toolchain's
+  Init/Data/Float/Float32.lean), so the equivalence the toolchain leaves to
+  users is mechanized as a hypothesis (`FloatBridge`) with projection
+  lemmas — not an axiom — and remains the one proof-level gap. Texcomp is
   covered by implementation-level differential gates rather than an
   engine-level one. Plan for completion is in
   `~/.opencode/plan/lean-remaining-tasks.md` (outside repo).

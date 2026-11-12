@@ -645,7 +645,13 @@ superseded by `Bc7Mode0Full` / `Etc2TModeDecode` and redefine the same names.
   induction on `fuel` with a three-worker conjunctive motive suffices.
 * `FloatSemantics.lean` proves the kernel laws on a sampled grid via
   `native_decide`; the full C-float correspondence remains gated by
-  `make tocio-diff` (4096 blocks, 0 mismatches).
+  `make tocio-diff` (4096 blocks, 0 mismatches). `FloatBridge.lean`
+  records the exact missing kernel connection: Lean 4.35's
+  `Float32.Model` is a full IEEE-754 semantics, but the `Float32`
+  primitives are `@[extern]` with no kernel equations (the toolchain
+  explicitly leaves the equivalence to users), so it is mechanized as a
+  `Prop` hypothesis with projection lemmas — the single remaining
+  proof-level gap for Tocio.
 * `ConfigQuery.lean` models the `toc_config.c` query surface over the
   parsed tree and is pinned by `make tocio-config-diff` (16 configs; the
   transcript covers lookups, roles, displays/views/looks, view
