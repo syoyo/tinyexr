@@ -308,6 +308,11 @@ lean_exe yamlcheck where
 lean_exe configcheck where
   root := `ConfigCheck
 
+/-- Tocio processor-build differential checker (C vectors vs Lean model). -/
+@[default_target]
+lean_exe proccheck where
+  root := `ProcessorCheck
+
 /-- ASTC debug dump (Lean side). -/
 @[default_target]
 lean_exe astcdebug where
