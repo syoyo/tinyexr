@@ -81,7 +81,7 @@ make lean-validation-sanitize # sanitized codec vectors and malformed-vector reg
 | `Exr/Zip.lean` | ZIP predictor/interleave composition with inverse, validated reconstruction after external inflate, bad header/checksum rejection; container layer: ADLER32 checksum (pure fold, with the block-boundary deferred-mod equivalence), zlib header validation (CM/CINFO/FDICT/check digits), the big-endian trailer, block validation, 16-line ZIP geometry. |
 | `CodecGen.lean` | `codecgen <out.bin> <seed>`: PXR24 (uint/half/float, mixed sampled blocks), B44/B44A, RLE, ZIP, ADLER32 and PIZ kernel/Huffman vectors for `test/v3/codec_diff.c`. |
 | `Texcomp/*` | `Container` (DDS/KTX/ASTC-file headers + payloads + writer verdicts), BC1/BC3/BC4/BC5 decoders and BC1/BC4/BC5 encoders, BC6H block decoders and every BC6H block encoder (unsigned 0–13, signed 0–8/12/13), BC7 pack path/mode 6/seeds/full default-option encoder/decoder-driven RDO pass, ETC2 individual/T-mode/EAC, the ASTC LDR top-level block encoder (`AstcLdr`), ASTC LDR + HDR endpoint packers, colour quantizer, weight decimation, weight infill, the encoder block-mode filter, the partition cache, the block-mode candidate ranking, the endpoint/colour-quant plumbing and the projection/least-squares/SSE fit kernels, the partition search, the partition-RGB and dual-RGBA encoders, and the ISE bit packer. Every model has a C-vs-Lean differential gate (`make texcomp-*-diff`). |
-| `Tocio/*` | OCIO scaffolding: `Op` (op kinds + FixedFunction styles), Matrix/Range/Exponent/Log/CDL/LUT/YAML/Config/Resolve/Lower/Processor. `YamlTotal.lean`: fuel-bounded total YAML parser with the general inductive height-bound theorem (`parseTotal_height_bound` / `parseYamlTotalV_height_bound`: any accepted document has height ≤ the fuel budget) plus concrete depth-cap theorems (100/127 parse, 129 fails; boundary documented, see below). `FloatSemantics.lean`: identity/sign/round-trip laws for the exponent kernels, CDL round-trip within the C's 2e-3 tolerance on the non-negative grid, and Range clamp boundary semantics. |
+| `Tocio/*` | OCIO scaffolding: `Op` (op kinds + FixedFunction styles), Matrix/Range/Exponent/Log/CDL/LUT/YAML/Config/Resolve/Lower/Processor. `YamlTotal.lean`: fuel-bounded total YAML parser with the general inductive height-bound theorem (`parseTotal_height_bound` / `parseYamlTotalV_height_bound`: any accepted document has height ≤ the fuel budget) plus concrete depth-cap theorems (100/127 parse, 129 fails; boundary documented, see below). `FloatSemantics.lean`: identity/sign/round-trip laws for the exponent kernels, CDL round-trip within the C's 2e-3 tolerance on the non-negative grid, and Range clamp boundary semantics. `YamlEngine.lean`: C-faithful block+flow parser model (`yamlParse` / `dumpYaml`) pinned byte-for-byte against `toc_yaml_parse` by `make tocio-yaml-diff` (24 documents; `!<Tag>` properties outside this slice). |
 
 ## Conformance matrix
 
@@ -646,4 +646,12 @@ superseded by `Bc7Mode0Full` / `Etc2TModeDecode` and redefine the same names.
 * `FloatSemantics.lean` proves the kernel laws on a sampled grid via
   `native_decide`; the full C-float correspondence remains gated by
   `make tocio-diff` (4096 blocks, 0 mismatches).
+* `YamlEngine.lean` models the tag-free `toc_yaml_parse` surface (line
+  preprocessing, block maps/dash sequences, block scalars, the flow
+  parser, anchor/alias and trailing-content rejection, the 128-entry
+  depth cap) and is pinned by `make tocio-yaml-diff`: 24 documents whose
+  canonical tree dumps are byte-identical to the C (0 mismatches). The
+  `!<Tag>` property path is the remaining slice; termination fuel
+  (`8 * length + 1024`) is a generous gate-validated over-approximation
+  rather than a proved bound, while the depth cap counter is exact.
 

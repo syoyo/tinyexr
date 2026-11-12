@@ -298,6 +298,11 @@ lean_exe clfcheck where
 lean_exe cspcheck where
   root := `CspCheck
 
+/-- Tocio YAML parser differential checker (C vectors vs Lean model). -/
+@[default_target]
+lean_exe yamlcheck where
+  root := `YamlCheck
+
 /-- ASTC debug dump (Lean side). -/
 @[default_target]
 lean_exe astcdebug where

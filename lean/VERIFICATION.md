@@ -92,6 +92,10 @@ The final implementation validation on 2026-11-09 produced:
 | `make texcomp-astc-quant-diff` | 5394 colour-quant values: `tc_astc_hdr_color_roundtrip` — the sub-256 colour-roundtrip LUT the ASTC HDR CEM 11 endpoint packers use (e.g. level 12 in the 2-subset encoder) — at all 21 quant levels × 256 values plus the clamp/negative edges, C vs Lean exact. |
 | `make texcomp-astc-hdrenc-diff` | 240 ASTC HDR block-encoder vectors (60 seeds each of CEM 11 single/dual-plane, CEM 11 2-subset, CEM 7 and CEM 15), C vs Lean byte-exact including the SSE return and no-fit verdicts. |
 | `make tocio-diff` | 4096 Tocio blocks: seven op kernels + FixedFunction styles, C vs Lean bit-exact except 12 documented RedMod seam residue blocks (relative deviation ≤ 3e-3). |
+| `make tocio-lut-diff` | 192 LUT-file lines (`.cube` 1D/3D, `.spi1d`/`.spi3d`, `.clf`, `.csp`) re-parsed by the Lean readers, 0 mismatches. |
+| `make tocio-spi-diff` | 200 SPI-file lines, C vs Lean parser + kernels bit-exact. |
+| `make tocio-clf-diff` | 396 CLF lines, C vs Lean parse, op contents and kernels exact. || `make tocio-csp-diff` | 74 CSP LUT lines, C vs Lean exact. |
+| `make tocio-yaml-diff` | 24 YAML documents (quote-aware comments, quoted/escaped scalars, flow seqs/maps, block scalars `\|`/`>`, `---`/`...`, tab-indent/anchor/alias/trailing-content errors, 30-level nesting, 200-level depth-cap failure) re-parsed by `Tocio/YamlEngine`; canonical tree dumps byte-identical to the C. |
 | `make codec-diff` | 8192 comparisons across seven seeds and both libdeflate/in-tree backends; zero failures. Includes PIZ primitives, frequency tables, malformed/lenient packets and whole blocks. |
 | `make lean-validation-test` | 20 tests, two optional skips; all executed tests passed. Includes gate negative controls and axiom-audit rejection tests. |
 | `make lean-diff` | 126 structural files checked; zero disagreements. |
@@ -132,11 +136,28 @@ validation checks, not library proofs.
   C execution semantics to Lean remain outside the proved model.
 - Structural acceptance does not imply every compressed payload is valid.
   Differential/sanitizer gates supply independent implementation evidence.
-- Tocio models are scaffolding: Tocio Float/YAML reasoning is incomplete, and no
-  engine differential harness exists yet (`tocio-lean-diff` currently runs only
-  the C tests). Texcomp is covered by implementation-level differential gates
-  rather than an engine-level one. Plan for completion is in
+- Tocio is covered by engine-level differential gates: `make tocio-lean-diff`
+  runs the C unit tests plus six Lean checkers — op kernels/FixedFunction
+  (4096 blocks, 12 documented RedMod seam residue blocks), LUT files (192
+  lines), SPI files (200), CLF (396), CSP (74) and the YAML parser
+  (`test/v3/yaml_vectors.c` + `lean/YamlCheck.lean`, 24 documents) — all at
+  0 mismatches. Tocio Float/YAML *reasoning* is still partial (kernel laws are
+  sampled-grid `native_decide` fixtures; the YAML model's work fuel is a
+  generous over-approximation rather than a proved exact bound). Texcomp is
+  covered by implementation-level differential gates rather than an
+  engine-level one. Plan for completion is in
   `~/.opencode/plan/lean-remaining-tasks.md` (outside repo).
+- The YAML model (`Tocio/YamlEngine.lean`) is a C-faithful port of the
+  tag-free `toc_yaml_parse` surface: line preprocessing (tab-indent
+  rejection, quote-aware comment strip, blank/`---`/`...`), block maps and
+  dash sequences with inline/flow/block-scalar values, the flow parser
+  (quote/escape-aware `{k: v}` / `[a, b]` scans), anchor/alias rejection,
+  trailing-content rejection and the exact 128-entry depth cap (the `cap`
+  counter is decremented only where the C does `depth++`). `!<Tag>`
+  properties are the remaining slice — no vector in the gate exercises
+  them. Termination uses a work fuel (`8 * length + 1024`) decremented on
+  every recursive call; it is a validated over-approximation, not a proved
+  bound.
 - Texcomp BC/RG/ETC2/EAC/ASTC block decoders are now faithful byte-exact ports
   with C differential gates. The ASTC HDR *endpoint packers* (`cem11Pack`,
   `cem7Pack`, `hdrAlphaPack` — encoder side) are also byte-exact against the
