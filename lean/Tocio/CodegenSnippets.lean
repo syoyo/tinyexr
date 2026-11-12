@@ -1,0 +1,52 @@
+/-
+  TinyEXR - tocio AOT-C codegen helper source snippets.
+
+  These strings are the exact helper sources `toc_codegen_c.c`
+  emits (MATH_SRC, the LUT helpers and the fixed-function
+  helpers). They are extracted verbatim from the C so the
+  `tocio-codegen-diff` gate can compare generated sources
+  byte-for-byte.
+
+  Copyright (c) 2026 Syoyo Fujita and TinyEXR authors
+  SPDX-License-Identifier: BSD-3-Clause
+-/
+
+namespace Tocio
+
+/-- Verbatim `MATH_SRC`. -/
+def MATH_SRC : String :=
+  "static float tc_log2f(float x){union{float f;unsigned u;}v;int e;float m,t,t2,ln;if(!(x>0.0f))return x<0.0f?(0.0f/0.0f):-1e38f;v.f=x;e=(int)((v.u>>23)&0xffu)-127;v.u=(v.u&0x007fffffu)|0x3f800000u;m=v.f;t=(m-1.0f)/(m+1.0f);t2=t*t;ln=2.0f*t*(1.0f+t2*(1.0f/3.0f+t2*(1.0f/5.0f+t2*(1.0f/7.0f+t2*(1.0f/9.0f)))));return (float)e+ln*1.4426950408889634f;}\nstatic float tc_exp2f(float x){union{unsigned u;float f;}v;float k,f,g,p;int ki;if(x>127.0f)return 1e38f;if(x<-126.0f)return 0.0f;k=(x>=0.0f)?(float)(int)(x+0.5f):(float)(int)(x-0.5f);f=x-k;g=f*0.6931471805599453f;p=1.0f+g*(1.0f+g*(0.5f+g*(1.0f/6.0f+g*(1.0f/24.0f+g*(1.0f/120.0f+g*(1.0f/720.0f))))));ki=(int)k;v.u=(unsigned)((ki+127)<<23);return p*v.f;}\nstatic float tc_powf(float x,float y){if(!(x>0.0f))return x==0.0f?(y>0.0f?0.0f:1.0f):(0.0f/0.0f);return tc_exp2f(y*tc_log2f(x));}\nstatic float tc_raisef(float b,float x){if(!(b>0.0f))return 0.0f;return tc_exp2f(x*tc_log2f(b));}\n"
+
+/-- Verbatim `LUT1D_SRC`. -/
+def LUT1D_SRC : String :=
+  "static void tc_lut1d(const float*d,int N,int ch,float lo,float hi,float*c){int k;float den=hi-lo;for(k=0;k<3;++k){float u=den!=0.0f?(c[k]-lo)/den:0.0f,g,f,a,b;int i;if(!(u>0.0f))u=0.0f;if(u>1.0f)u=1.0f;g=u*(float)(N-1);i=(int)g;if(i>=N-1)i=N-2;f=g-(float)i;if(ch==1){a=d[i];b=d[i+1];}else{a=d[i*3+k];b=d[(i+1)*3+k];}c[k]=a+(b-a)*f;}}\n"
+
+/-- Verbatim `FIXEDFUNC_SRC_GLOW`. -/
+def FIXEDFUNC_SRC_GLOW : String :=
+  "static float tc_glow_yc(float r,float g,float b){float c=b*(b-g)+g*(g-r)+r*(r-b);float ch=c>0?sqrtf(c):0;return(b+g+r+1.75f*ch)/3.0f;}\nstatic float tc_glow_sat(float r,float g,float b){float mn,rng;mn=r<g?r:g;mn=mn<b?mn:b;rng=(r>g?r:g)>b?(r>g?r:g):b;rng=rng<1e-10f?1e-10f:rng;return((rng<1e-10f?1e-10f:rng)-(mn<1e-10f?1e-10f:mn))/rng;}\nstatic float tc_glow_sig(float s){float x=(s-0.4f)*5.0f,sg,t,ss;sg=x>=0?1.0f:-1.0f;t=0.5f*sg*x;t=t>1.0f?1.0f:t;t=t<0.0f?0.0f:t;t=1.0f-t;ss=(1.0f+sg*(1.0f-t*t))*0.5f;return ss;}\nstatic void tc_glow(float*px,float gg,float gm,int inv){float r=px[0],g=px[1],b=px[2];float yc=tc_glow_yc(r,g,b);float sa=tc_glow_sat(r,g,b);float s=tc_glow_sig(sa);float gv=gg*s,go;if(yc>=gm*2.0f)go=0.0f;else if(!inv){go=yc<=gm*2.0f/3.0f?gv:gv*(gm/yc-0.5f);}else{go=yc<=(1.0f+gv)*gm*2.0f/3.0f?-gv/(1.0f+gv):gv*(gm/yc-0.5f)/(gv*0.5f-1.0f);}float f=1.0f+go;px[0]=r*f;px[1]=g*f;px[2]=b*f;}\n"
+
+/-- Verbatim `FIXEDFUNC_SRC_DARKTODIM`. -/
+def FIXEDFUNC_SRC_DARKTODIM : String :=
+  "static void tc_darktodim(float*px,float g){float y=0.27222872f*px[0]+0.67408177f*px[1]+0.05368952f*px[2];y=y<1e-10f?1e-10f:y;y=tc_powf(y,g-1.0f);px[0]*=y;px[1]*=y;px[2]*=y;}\n"
+
+/-- Verbatim `FIXEDFUNC_SRC_RGB2HSV`. -/
+def FIXEDFUNC_SRC_RGB2HSV : String :=
+  "static void tc_rgb2hsv(float*px){float r=px[0],g=px[1],b=px[2];float mn=r<g?r:g;mn=mn<b?mn:b;float mx=r>g?r:g;mx=mx>b?mx:b;float v=mx,s=0.0f,h=0.0f,d;if(mn!=mx){d=mx-mn;if(mx!=0)s=d/mx;if(r==mx)h=(g-b)/d;else if(g==mx)h=2.0f+(b-r)/d;else h=4.0f+(r-g)/d;if(h<0)h+=6.0f;h*=0.16666667f;}if(mn<0.0f)v+=mn;if(-mn>mx)s=(mx-mn)/-mn;px[0]=h;px[1]=s;px[2]=v;}\nstatic void tc_hsv2rgb(float*px){float h=(px[0]-(float)(int)px[0])*6.0f;float s=px[1];s=s<0?0:s;s=s>1.999f?1.999f:s;float v=px[2];float r=(h<3?((h-3)>-(h-3)?(h-3):-(h-3)):((h-3)>-(h-3)?(h-3):-(h-3)))-1.0f;r=r<0?0:r;r=r>1?1:r;float gv=2.0f-(h<2?(2-h):(h-2));gv=gv<0?0:gv;gv=gv>1?1:gv;float bv=2.0f-(h<4?(4-h):(h-4));bv=bv<0?0:bv;bv=bv>1?1:bv;float mx=v,mn=v*(1.0f-s),dd;if(s>1.0f){mn=v*(1.0f-s)/(2.0f-s);mx=v-mn;}if(v<0.0f){mn=v/(2.0f-s);mx=v-mn;}dd=mx-mn;px[0]=r*dd+mn;px[1]=gv*dd+mn;px[2]=bv*dd+mn;}\n"
+
+/-- Verbatim `FIXEDFUNC_SRC_XYZ`. -/
+def FIXEDFUNC_SRC_XYZ : String :=
+  "static void tc_xyz2xyy(float*px){float d=px[0]+px[1]+px[2];d=d==0?0:1.0f/d;px[0]=px[0]*d;px[1]=px[1]*d;}\nstatic void tc_xyy2xyz(float*px){float d=px[1]==0?0:1.0f/px[1];px[0]=px[2]*px[0]*d;px[2]=px[2]*(1.0f-px[0]-px[1])*d;}\nstatic void tc_xyz2uvy(float*px){float d=px[0]+15.0f*px[1]+3.0f*px[2];d=d==0?0:1.0f/d;px[0]=4.0f*px[0]*d;px[1]=9.0f*px[1]*d;}\nstatic void tc_uvy2xyz(float*px){float d=px[1]==0?0:1.0f/px[1];px[0]=2.25f*px[2]*px[0]*d;px[2]=0.75f*px[2]*(4.0f-px[0]-6.6666667f*px[1])*d;}\nstatic void tc_xyz2luv(float*px){float X=px[0],Y=px[1],Z=px[2];float d=X+15.0f*Y+3.0f*Z;d=d==0?0:1.0f/d;float u=4.0f*X*d,v=9.0f*Y*d;float ls=Y<=0.008856452f?9.032963f*Y:1.16f*tc_powf(Y,0.33333333f)-0.16f;px[0]=ls;px[1]=13.0f*ls*(u-0.19783001f);px[2]=13.0f*ls*(v-0.46831999f);}\nstatic void tc_luv2xyz(float*px){float ls=px[0],us=px[1],vs=px[2];float d=ls==0?0:0.07692308f/ls;float u=us*d+0.19783001f,v=vs*d+0.46831999f;float t=(ls+0.16f)*0.86206897f;float Y=ls<=0.08f?0.11070565f*ls:t*t*t;float dd=v==0?0:0.25f/v;px[0]=9.0f*Y*u*dd;px[1]=Y;px[2]=Y*(12.0f-3.0f*u-20.0f*v)*dd;}\n"
+
+/-- Verbatim `FIXEDFUNC_SRC_HDR`. -/
+def FIXEDFUNC_SRC_HDR : String :=
+  "static float tc_pq_enc(float L){float m1=0.1593017578125f,m2=78.84375f,c1=0.8359375f,c2=18.8515625f,c3=18.6875f,Lm;if(L<=0.0f)return 0.0f;Lm=tc_powf(L*0.01f,m1);return tc_powf((c1+c2*Lm)/(1.0f+c3*Lm),m2);}\nstatic float tc_pq_dec(float N){float m1=0.1593017578125f,m2=78.84375f,c1=0.8359375f,c2=18.8515625f,c3=18.6875f,Np,nu,de;if(N<=0.0f)return 0.0f;Np=tc_powf(N,1.0f/m2);nu=Np-c1;if(nu<0.0f)nu=0.0f;de=c2-c3*Np;if(de<=0.0f)return 0.0f;return tc_powf(nu/de,1.0f/m1)*100.0f;}\nstatic float tc_hlg_enc(float E){float a=0.17883277f,b=0.28466892f,c=0.55991073f;if(E<=0.0f)return 0.0f;if(E<=1.0f/12.0f)return tc_exp2f(0.5f*tc_log2f(3.0f*E));return a*(tc_log2f(12.0f*E-b)*0.6931471805599453f)+c;}\nstatic float tc_hlg_dec(float E){float a=0.17883277f,b=0.28466892f,c=0.55991073f;if(E<=0.0f)return 0.0f;if(E<=0.5f)return E*E/3.0f;return (tc_exp2f(((E-c)/a)*1.4426950408889634f)+b)/12.0f;}\n"
+
+/-- Verbatim `LUT3D_SRC`. -/
+def LUT3D_SRC : String :=
+  "static void tc_lut3d(const float*d,int N,const float*dn,const float*dx,int tet,float*c){int ic[3],k;float f[3];for(k=0;k<3;++k){float den=dx[k]-dn[k],u=den!=0.0f?(c[k]-dn[k])/den:0.0f,g;if(!(u>0.0f))u=0.0f;if(u>1.0f)u=1.0f;g=u*(float)(N-1);ic[k]=(int)g;if(ic[k]>=N-1)ic[k]=N-2;f[k]=g-(float)ic[k];}\n#define C(R,G,B) (d+((((size_t)(B)*N+(G))*N+(R))*3))\n{const float*c000=C(ic[0],ic[1],ic[2]);const float*c100=C(ic[0]+1,ic[1],ic[2]);const float*c010=C(ic[0],ic[1]+1,ic[2]);const float*c110=C(ic[0]+1,ic[1]+1,ic[2]);const float*c001=C(ic[0],ic[1],ic[2]+1);const float*c101=C(ic[0]+1,ic[1],ic[2]+1);const float*c011=C(ic[0],ic[1]+1,ic[2]+1);const float*c111=C(ic[0]+1,ic[1]+1,ic[2]+1);float fr=f[0],fg=f[1],fb=f[2];for(k=0;k<3;++k){float v;if(tet){if(fr>=fg&&fg>=fb)v=c000[k]+fr*(c100[k]-c000[k])+fg*(c110[k]-c100[k])+fb*(c111[k]-c110[k]);else if(fr>=fb&&fb>=fg)v=c000[k]+fr*(c100[k]-c000[k])+fb*(c101[k]-c100[k])+fg*(c111[k]-c101[k]);else if(fb>=fr&&fr>=fg)v=c000[k]+fb*(c001[k]-c000[k])+fr*(c101[k]-c001[k])+fg*(c111[k]-c101[k]);else if(fg>=fr&&fr>=fb)v=c000[k]+fg*(c010[k]-c000[k])+fr*(c110[k]-c010[k])+fb*(c111[k]-c110[k]);else if(fg>=fb&&fb>=fr)v=c000[k]+fg*(c010[k]-c000[k])+fb*(c011[k]-c010[k])+fr*(c111[k]-c011[k]);else v=c000[k]+fb*(c001[k]-c000[k])+fg*(c011[k]-c001[k])+fr*(c111[k]-c011[k]);}else{float x00=c000[k]+(c100[k]-c000[k])*fr,x01=c001[k]+(c101[k]-c001[k])*fr,x10=c010[k]+(c110[k]-c010[k])*fr,x11=c011[k]+(c111[k]-c011[k])*fr,y0=x00+(x10-x00)*fg,y1=x01+(x11-x01)*fg;v=y0+(y1-y0)*fb;}c[k]=v;}}\n#undef C\n}\n"
+
+/-- Verbatim `FIXEDFUNC_SRC_ACES`. -/
+def FIXEDFUNC_SRC_ACES : String :=
+  "static float tc_sqrtf(float x){return x>0.0f?tc_exp2f(0.5f*tc_log2f(x)):0.0f;}\nstatic float tc_atan2f(float y,float x){float ax=x<0.0f?-x:x,ay=y<0.0f?-y:y,a,r,a2;int q;if(ax+ay==0.0f)return 0.0f;if(ay<ax){a=y/x;q=0;}else{a=x/y;q=2;}if(x<0.0f&&ay<ax)q=1;if(y<0.0f&&ay>=ax)q=3;a2=a*a;r=a*(1.0f-a2*(1.0f/3.0f-a2*(1.0f/5.0f-a2*(1.0f/7.0f-a2*(1.0f/9.0f)))));if(q==1)r=(r<0.0f?-3.141592653589793f:3.141592653589793f)+r;else if(q==2)r=1.5707963267948966f-r;else if(q==3)r=-1.5707963267948966f-r;return r;}\nstatic float tc_rm_hue(float r,float g,float b,float iw){float a=2.0f*r-(g+b),bb=1.7320508075688772f*(g-b),hue=tc_atan2f(bb,a),knot=hue*iw+2.0f;int j=(int)knot;static const float M[4][4]={{0.25f,0,0,0},{-0.75f,0.75f,0.75f,0.25f},{0.75f,-1.5f,0,1.0f},{-0.25f,0.75f,-0.75f,0.25f}};if(j<0||j>=4)return 0.0f;{float t=knot-(float)j;const float*c=M[j];return c[3]+t*(c[2]+t*(c[1]+t*c[0]));}}\nstatic float tc_rm_sat(float r,float g,float b){float mn=r<g?r:g,mx=r>g?r:g;mn=mn<b?mn:b;mx=mx>b?mx:b;return((mx>1e-10f?mx:1e-10f)-(mn>1e-10f?mn:1e-10f))/(mx>1e-2f?mx:1e-2f);}\nstatic void tc_redmod(float*px,float scale,float pivot,float iw,int inv){float r=px[0],g=px[1],b=px[2],fH=tc_rm_hue(r,g,b,iw);if(fH>0.0f){float nr,oms=1.0f-scale;if(inv){float mc=g<b?g:b,aa=fH*oms-1.0f,bb=r-fH*(pivot+mc)*oms,cc=fH*pivot*mc*oms,disc=bb*bb-4.0f*aa*cc;nr=disc>=0.0f?(-bb-tc_sqrtf(disc))/(2.0f*aa):r;}else{float fS=tc_rm_sat(r,g,b);nr=r+fH*fS*(pivot-r)*oms;}if(g>=b){float hf=(g-b)/((r-b)>1e-10f?(r-b):1e-10f);g=hf*(nr-b)+b;}else{float hf=(b-g)/((r-g)>1e-10f?(r-g):1e-10f);b=hf*(nr-g)+g;}r=nr;}px[0]=r;px[1]=g;px[2]=b;}\nstatic float tc_gc_one(float dist,float thr,float scale,float power,int inv){float ip=1.0f/power,nd,p;if(inv){if(dist>=thr+scale)return dist;nd=(dist-thr)/scale;p=tc_powf(nd,power);return thr+scale*tc_powf(-(p/(p-1.0f)),ip);}nd=(dist-thr)/scale;p=tc_powf(nd,power);return thr+scale*nd/tc_powf(1.0f+p,ip);}\nstatic float tc_gc_apply(float v,float ach,float thr,float scale,float power,int inv){float dist,af;if(ach==0.0f)return 0.0f;af=ach<0.0f?-ach:ach;dist=(ach-v)/af;if(dist<thr)return v;return ach-tc_gc_one(dist,thr,scale,power,inv)*af;}\nstatic void tc_gamutcomp(float*px,float tC,float tM,float tY,float sC,float sM,float sY,float pw,int inv){float r=px[0],g=px[1],b=px[2],ach=r>g?r:g;ach=ach>b?ach:b;px[0]=tc_gc_apply(r,ach,tC,sC,pw,inv);px[1]=tc_gc_apply(g,ach,tM,sM,pw,inv);px[2]=tc_gc_apply(b,ach,tY,sY,pw,inv);}\n"
+
+end Tocio

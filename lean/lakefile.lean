@@ -313,6 +313,11 @@ lean_exe configcheck where
 lean_exe proccheck where
   root := `ProcessorCheck
 
+/-- Tocio AOT-C codegen differential checker (C vectors vs Lean model). -/
+@[default_target]
+lean_exe codegencheck where
+  root := `CodegenCheck
+
 /-- ASTC debug dump (Lean side). -/
 @[default_target]
 lean_exe astcdebug where

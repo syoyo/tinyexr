@@ -96,6 +96,7 @@ The final implementation validation on 2026-11-09 produced:
 | `make tocio-spi-diff` | 200 SPI-file lines, C vs Lean parser + kernels bit-exact. |
 | `make tocio-clf-diff` | 396 CLF lines, C vs Lean parse, op contents and kernels exact. || `make tocio-csp-diff` | 74 CSP LUT lines, C vs Lean exact. |
 | `make tocio-config-diff` | 16 OCIO configs re-parsed by `Tocio.ConfigQuery`: colorspace enumeration, name/alias lookup order (scene then display section), family/encoding/isdata, display-section membership through role resolution, transform-attribute priority + invert flags (`to/from_reference`, `to/from_scene_reference`, `to/from_display_reference`), display/view/look/view-transform enumeration, `toc_cfg_view_looks` comma/space tokenization (trailing spaces preserved), default-view-transform fallback, and active displays/views; 0 mismatches. |
+| `make tocio-codegen-diff` | 11 op lists through the AOT-C emitter (matrix/ranges/exponents/exp-linear/log/CDL forward+inverse, 1D and 3D LUTs with embedded arrays, fixed-function styles including the ACES/HSV/XYZ/PQ/HLG helpers, REC2100, log-camera, empty lists, hex-float edges -0.0/subnormal/inf/nan, custom and invalid function names); generated sources byte-identical to the C. |
 | `make tocio-proc-diff` | 57 processor-build pipeline queries over 12 configs (scene and display colorspace pairs, aliases/roles, simple/VT/look/shared views, `<USE_DISPLAY_NAME>`, forward and inverted groups and CDL, fixed-function styles forward/inverted, transform-parameter errors, cyclic colorspace references hitting the 64-level walk cap, and a 30-level nested group chain); op-kind sequences and error codes identical to the C. |
 | `make tocio-yaml-diff` | 48 YAML documents (quote-aware comments, quoted/escaped scalars, flow seqs/maps, block scalars `\|`/`>`, `---`/`...`, tab-indent/anchor/alias/trailing-content errors, 30-level nesting, 200-level depth-cap failure, and `!<Tag>` handling: block/value tags, tag-only lines, tag+inline-flow line consumption, unterminated tags, nested-tag overwrite, tag-text dump escaping, double tags, tabs after a tag, tags inside flow text) re-parsed by `Tocio/YamlEngine`; canonical tree dumps (including `<tag>` prefixes) byte-identical to the C. |
 | `make codec-diff` | 8192 comparisons across seven seeds and both libdeflate/in-tree backends; zero failures. Includes PIZ primitives, frequency tables, malformed/lenient packets and whole blocks. |
@@ -139,18 +140,38 @@ validation checks, not library proofs.
 - Structural acceptance does not imply every compressed payload is valid.
   Differential/sanitizer gates supply independent implementation evidence.
 - Tocio is covered by engine-level differential gates: `make tocio-lean-diff`
-  runs the C unit tests plus eight Lean checkers — op kernels/FixedFunction
+  runs the C unit tests plus nine Lean checkers — op kernels/FixedFunction
   (4096 blocks, 12 documented RedMod seam residue blocks), LUT files (192
   lines), SPI files (200), CLF (396), CSP (74), the YAML parser
   (`test/v3/yaml_vectors.c` + `lean/YamlCheck.lean`, 48 documents), the
   config query layer (`test/v3/config_vectors.c` + `lean/ConfigCheck.lean`,
   16 configs) and the processor build (`test/v3/processor_vectors.c` +
-  `lean/ProcessorCheck.lean`, 57 pipeline queries) — all at 0 mismatches. Tocio Float/YAML *reasoning* is still partial (kernel laws are
+  `lean/ProcessorCheck.lean`, 57 pipeline queries) and the AOT-C codegen
+  (`test/v3/codegen_vectors.c` + `lean/CodegenCheck.lean`, 11 op lists) —
+  all at 0 mismatches. Tocio Float/YAML *reasoning* is still partial (kernel laws are
   sampled-grid `native_decide` fixtures; the YAML model's work fuel is a
   generous over-approximation rather than a proved exact bound). Texcomp is
   covered by implementation-level differential gates rather than an
   engine-level one. Plan for completion is in
   `~/.opencode/plan/lean-remaining-tasks.md` (outside repo).
+- The processor model (`Tocio/ProcessorModel.lean`) pins pipeline
+  *construction* — op kinds and order — not numeric parameters (those are
+  covered by the kernel/LUT gates). It covers the transform walk (groups
+  with forward/reverse child order, `direction: inverse`, colorspace
+  references, fixed-function styles), the 64-level walk cap (exercised by
+  colorspace-reference cycles), reference-space bridging through the
+  default view transform, view looks with/without a process space, shared
+  views, reverse and display-referred view transforms, and
+  `<USE_DISPLAY_NAME>`. FileTransform and BuiltinTransform payloads are
+  outside the model (UNSUPPORTED, never vectorized); singular-matrix
+  inversion failures are likewise not vectorized.
+- The AOT-C codegen model (`Tocio/CodegenC.lean`) ports the scalar
+  `toc_emit_c` path: op bodies, the helper-source pre-scan, embedded LUT
+  arrays and the bit-exact hex-float literal writer, pinned by `make
+  tocio-codegen-diff` (11 op lists, generated sources byte-identical).
+  Out of scope: the `simd` (SSE2/AVX2) code paths, `ACES_GAMUTCOMP13`
+  (its codegen-time scale needs the pow approximation; the model reports
+  UNSUPPORTED) and the GLSL/Metal/JIT backends.
 - The YAML model (`Tocio/YamlEngine.lean`) is a C-faithful port of the
   `toc_yaml_parse` surface: line preprocessing (tab-indent rejection,
   quote-aware comment strip, blank/`---`/`...`), block maps and dash
