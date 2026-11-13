@@ -166,9 +166,50 @@ def matvec4 (m v : List FB) : List FB :=
          (fadd (fmul (fuget m (r * 4 + 2)) (fuget v 2))
                (fmul (fuget m (r * 4 + 3)) (fuget v 3))))
 
+/-- Suffix test (the C's `ends_with`). -/
+def endsWithS (s suf : String) : Bool :=
+  let sl := s.toList
+  let fl := suf.toList
+  fl.length <= sl.length && sl.drop (sl.length - fl.length) == fl
+
+/-- `MonCurve` parameters from (gamma, offset): scale, offset, gamma,
+breakpoint, slope (C `moncurve_params`, double intermediates). -/
+def moncurve (gamma offset : FB) : List FB :=
+  let G : Float := if (f32of gamma).toFloat < 1.000001 then 1.000001 else (f32of gamma).toFloat
+  let O : Float := if (f32of offset).toFloat < 1e-6 then 1e-6 else (f32of offset).toFloat
+  let a := (G - 1.0) / O
+  let b := O * G / ((G - 1.0) * (1.0 + O))
+  let f (x : Float) : FB := fbits (Float.toFloat32 x)
+  let slope := a * (powf (Float.toFloat32 b) (Float.toFloat32 G)).toFloat
+  [f (1.0 / (1.0 + O)), f (O / (1.0 + O)), f G, f (O / (G - 1.0)), f slope]
+
 /-- Row-major to column-major (the C stores the transpose of the config
 matrix). -/
 def transpose4 (m : List FB) : List FB :=
   (List.range 16).map (fun i => fuget m ((i % 4) * 4 + i / 4))
+
+/-- `toc_invert_op` on a Range op: the inverse `(scale, offset, min, max)`.
+The inverse clamps to the forward *input* bounds, so the forward output
+bounds are mapped back through the inverse; unbounded sides (the C
+compares against +-3.0e38, not the 3.4e38 marker) stay unbounded. -/
+def invertRange (scale offset lo hi : List FB) :
+    List FB × List FB × List FB × List FB :=
+  let ns := scale.map finv
+  let no := (List.zip offset ns).map (fun (o, s) => fmul (fneg o) s)
+  let thrHi : FB := fconst 3.0e38
+  let thrLo : FB := fconst (-3.0e38)
+  let aOf (i : Nat) : FB :=
+    let l := fuget lo i
+    if f32of l <= f32of thrLo then l
+    else fadd (fmul l (fuget ns i)) (fuget no i)
+  let bOf (i : Nat) : FB :=
+    let h := fuget hi i
+    if f32of h >= f32of thrHi then h
+    else fadd (fmul h (fuget ns i)) (fuget no i)
+  let newMin := (List.range 4).map (fun i =>
+    if f32of (aOf i) < f32of (bOf i) then aOf i else bOf i)
+  let newMax := (List.range 4).map (fun i =>
+    if f32of (aOf i) < f32of (bOf i) then bOf i else aOf i)
+  (ns, no, newMin, newMax)
 
 end Tocio

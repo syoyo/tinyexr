@@ -291,6 +291,6 @@ where
         h ("  { v.rgb=select((exp((v.rgb-0.55991073)/0.17883277)+0.28466892)/12.0,\n" ++
           "               v.rgb*v.rgb/3.0, v.rgb<=float3(0.5)); }\n")
       else h ""
-    | .logCamera .. => .ok ("", texIdx)
+    | .logCamera .. | .aces2 .. => .ok ("", texIdx)
 
 end Tocio

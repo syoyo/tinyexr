@@ -361,7 +361,7 @@ def glslOp (texIdx : Nat) (op : COp) : Except String (String × Nat) :=
       h ("  { v.rgb=mix((exp((v.rgb-0.55991073)/0.17883277)+0.28466892)/12.0,\n" ++
         "            v.rgb*v.rgb/3.0, lessThanEqual(v.rgb,vec3(0.5))); }\n")
     else h ""
-  | .logCamera .. => .ok ("", texIdx)
+  | .logCamera .. | .aces2 .. => .ok ("", texIdx)
 
 /-- `toc_emit_glsl` for the modelled op kinds. -/
 def emitGLSL (target : String) (ops : List COp) : Except String GLSLOut :=

@@ -79,6 +79,10 @@ inductive COp where
         (inverse : Bool)
   | logCamera (ls lo ns no brk lslope loff : List FB) (base : FB)
         (inverse : Bool)
+  /-- ACES 2.0 output transform (`TOC_OP_ACES_OUTPUT`): the op carries the
+  derived init scalars (tonescale, chroma, JMh matrices — see
+  `Tocio.Builtins.aces2Scalars`) plus its direction. -/
+  | aces2 (scalars : List FB) (inverse : Bool)
 
 def chanName : Nat → String
   | 0 => "r"
@@ -366,6 +370,7 @@ def emitOp (k : Nat) (op : COp) : Except String String :=
     .ok (emitExpLinear scale offset gamma brk slope inv mirror)
   | .log ls lo ns no base inv => .ok (emitLog ls lo ns no base inv)
   | .logCamera .. => .ok ""
+  | .aces2 .. => .ok "" -- the C AOT-C emitter has no ACES_OUTPUT case
   | .cdl slope off power sat luma clamp inv =>
     .ok (emitCdl slope off power sat luma clamp inv)
   | .lut1d len ch dmin dmax _ =>

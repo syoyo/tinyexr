@@ -14,14 +14,17 @@
   `make tocio-proc-params-diff`; the kernel gates cover op semantics.
   FileTransform is modelled through a file-reader map (extension
   dispatch and content sniffing to the SPI/CLF loaders, converted into
-  LUT ops). `.cube`/CSP payloads, the C cube fallback and
-  BuiltinTransform are outside the model (UNSUPPORTED, never vectorized).
+  LUT ops). BuiltinTransform styles expand through
+  `Tocio.Builtins.builtinExpand` (matrices, log curves, derived
+  colorimetry, display/camera builtins, ACES 2.0 output chains).
+  `.cube`/CSP payloads and the C cube fallback are outside the model
+  (UNSUPPORTED, never vectorized).
 
   Copyright (c) 2026 Syoyo Fujita and TinyEXR authors
   SPDX-License-Identifier: BSD-3-Clause
 -/
 
-import Tocio.ProcessorParams
+import Tocio.Builtins
 import Tocio.SpiFile
 import Tocio.Clf
 
@@ -113,17 +116,6 @@ def scalarFloat (o : Option YTree) : Float :=
   | _ => 0.0
 
 def zeros (n : Nat) : List FB := List.replicate n 0
-
-/-- `MonCurve` parameters from (gamma, offset): scale, offset, gamma,
-breakpoint, slope (C `moncurve_params`, double intermediates). -/
-def moncurve (gamma offset : FB) : List FB :=
-  let G : Float := if (f32of gamma).toFloat < 1.000001 then 1.000001 else (f32of gamma).toFloat
-  let O : Float := if (f32of offset).toFloat < 1e-6 then 1e-6 else (f32of offset).toFloat
-  let a := (G - 1.0) / O
-  let b := O * G / ((G - 1.0) * (1.0 + O))
-  let f (x : Float) : FB := fbits (Float.toFloat32 x)
-  let slope := a * (powf (Float.toFloat32 b) (Float.toFloat32 G)).toFloat
-  [f (1.0 / (1.0 + O)), f (O / (1.0 + O)), f G, f (O / (G - 1.0)), f slope]
 
 def lowerMatrix (node : YTree) (invert : Bool) : Except String (List COp) :=
   let ident : List FB := [fconst 1, 0, 0, 0, 0, fconst 1, 0, 0, 0, 0, fconst 1, 0,
@@ -245,25 +237,8 @@ def lowerRange (node : YTree) (invert : Bool) : Except String (List COp) :=
     if !invert then
       .ok [.range mkScale mkOff mkMin mkMax clampv clampv]
     else
-      -- toc_invert_op on the Range op: map the forward output bounds back
-      -- through the inverse (the C compares against +-3.0e38, not the
-      -- 3.4e38 unbounded marker).
-      let ns := mkScale.map finv
-      let no := (List.zip mkOff ns).map (fun (o, s) => fmul (fneg o) s)
-      let thrHi : FB := fconst 3.0e38
-      let thrLo : FB := fconst (-3.0e38)
-      let aOf (i : Nat) : FB :=
-        let lo := fuget mkMin i
-        if f32of lo <= f32of thrLo then lo
-        else fadd (fmul lo (fuget ns i)) (fuget no i)
-      let bOf (i : Nat) : FB :=
-        let hi := fuget mkMax i
-        if f32of hi >= f32of thrHi then hi
-        else fadd (fmul hi (fuget ns i)) (fuget no i)
-      let newMin := (List.range 4).map (fun i =>
-        if f32of (aOf i) < f32of (bOf i) then aOf i else bOf i)
-      let newMax := (List.range 4).map (fun i =>
-        if f32of (aOf i) < f32of (bOf i) then bOf i else aOf i)
+      -- toc_invert_op on the Range op (shared with the builtin expansion).
+      let (ns, no, newMin, newMax) := invertRange mkScale mkOff mkMin mkMax
       .ok [.range ns no newMin newMax clampv clampv]
 
 /-- `parse_param`: the `params` sequence entry at `idx`, or the default. -/
@@ -319,12 +294,6 @@ def pLowerTransform (node : YTree) (invert : Bool) : Except String (List COp) :=
 
 /-- The host file-reader contents: filename → file text. -/
 abbrev FileMap := List (String × String)
-
-/-- Suffix test (the C's `ends_with`). -/
-def endsWithS (s suf : String) : Bool :=
-  let sl := s.toList
-  let fl := suf.toList
-  fl.length <= sl.length && sl.drop (sl.length - fl.length) == fl
 
 /-- Strip leading bytes ≤ 0x20 (the C's sniffing skip). -/
 def dropLow (cs : List Char) : List Char :=
@@ -439,8 +408,9 @@ def pWalkNode (files : FileMap) (root : YTree) (depth fuel : Nat) (node : YTree)
           | none => .error "IO"
           | some (_, data) => loadLutFile src data dirInv
       else if tag = "BuiltinTransform" then
-        if (getScalar node "style").isNone then .error "PARSE"
-        else .error "UNSUPPORTED"
+        match getScalar node "style" with
+        | none => .error "PARSE"
+        | some style => builtinExpand style dirInv
       else if tag = "FixedFunctionTransform" then lowerFixed node dirInv
       else pLowerTransform node dirInv
 
@@ -665,6 +635,7 @@ def copKindName : COp → String
   | .lut1d .. => "LUT1D"
   | .lut3d .. => "LUT3D"
   | .fixed s .. => "FIXEDFUNC(" ++ toString s ++ ")"
+  | .aces2 .. => "ACES_OUTPUT"
 
 /-- `ok:K1,K2,...` or `err:CODE`. -/
 def renderProcResult (r : Except String (List COp)) : String :=
@@ -701,5 +672,6 @@ def copRecipe : COp → String
     "lut3d " ++ toString size ++ " " ++ flag tet ++ fmtBits (dmin ++ dmax ++ data)
   | .fixed style nparams params =>
     "fixed " ++ toString style ++ " " ++ toString nparams ++ fmtBits params
+  | .aces2 sc inv => "aces2" ++ fmtBits sc ++ " " ++ flag inv
 
 end Tocio

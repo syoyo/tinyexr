@@ -12,8 +12,9 @@
  * The checker rebuilds the same pipeline with the Lean model and compares
  * the result strings byte-for-byte.
  *
- * Vectors avoid FileTransform/BuiltinTransform (outside the model) and
- * never query the same view twice: `toc_cfg_view_looks` splits the looks
+ * FileTransform is driven by the embedded reader map (`pfile` records);
+ * BuiltinTransform styles expand through the model too. Vectors never query
+ * the same view twice: `toc_cfg_view_looks` splits the looks
  * scalar in place, so a second call on the same view sees a mutated
  * buffer.
  */
@@ -172,6 +173,37 @@ static void emit_op_recipe(FILE *out, size_t id, size_t qi, size_t k,
                 op->u.fixedfunc.nparams);
         emit_bits(out, op->u.fixedfunc.params, 8);
         break;
+    case TOC_OP_ACES_OUTPUT: {
+        /* Every scalar `toc_aces2_init` derives from (peak, limiting primaries):
+         * tonescale, chroma compression, both JMh matrices. The hue-indexed
+         * tables are not modelled. */
+        const toc_aces2 *t = (const toc_aces2 *)op->u.aces.t;
+        fprintf(out, "aces2");
+        emit_bits(out, &t->ts_n, 1);
+        emit_bits(out, &t->ts_n_r, 1);
+        emit_bits(out, &t->ts_g, 1);
+        emit_bits(out, &t->ts_t_1, 1);
+        emit_bits(out, &t->ts_c_t, 1);
+        emit_bits(out, &t->ts_s_2, 1);
+        emit_bits(out, &t->ts_u_2, 1);
+        emit_bits(out, &t->ts_m_2, 1);
+        emit_bits(out, &t->ts_fwd_limit, 1);
+        emit_bits(out, &t->ts_inv_limit, 1);
+        emit_bits(out, &t->ts_log_peak, 1);
+        emit_bits(out, &t->cc_sat, 1);
+        emit_bits(out, &t->cc_sat_thr, 1);
+        emit_bits(out, &t->cc_compr, 1);
+        emit_bits(out, &t->cc_scale, 1);
+        emit_bits(out, &t->limit_J_max, 1);
+        emit_bits(out, &t->model_gamma_inv, 1);
+        emit_bits(out, &t->mid_J, 1);
+        emit_bits(out, &t->focus_dist, 1);
+        emit_bits(out, &t->lower_hull_gamma_inv, 1);
+        emit_bits(out, t->out.rgb_to_cam, 9);
+        emit_bits(out, t->out.cone_to_aab, 9);
+        fprintf(out, " %d", op->u.aces.inverse);
+        break;
+    }
     default:
         fprintf(out, "noop");
         break;
@@ -550,6 +582,222 @@ int main(int argc, char **argv) {
         "  - !<ColorSpace>\n"
         "    name: sing\n"
         "    to_scene_reference: !<MatrixTransform> {matrix: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]}\n",
+        /* 13: BuiltinTransform expansion: the ACES AP matrices and log curves,
+         *     derived colorimetry, camera-log and display builtins, the
+         *     ACES 2.0 output chains, an unknown style, and inverses. */
+        "colorspaces:\n"
+        "  - !<ColorSpace>\n"
+        "    name: plain\n"
+        "  - !<ColorSpace>\n"
+        "    name: b0\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: ACEScg_to_ACES2065-1}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b1\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: ACES2065-1_to_ACEScg}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b2\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: ACEScct_to_ACES2065-1}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b3\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: ACES2065-1_to_ACEScct}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b4\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: ACEScc_to_ACES2065-1}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b5\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: ACES2065-1_to_ACEScc}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b6\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: UTILITY - ACES-AP0_to_CIE-XYZ-D65_BFD}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b7\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: ACES-LMT - ACES 1.3 Reference Gamut Compression}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b8\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: ARRI_ALEXA-LOGC-EI800-AWG_to_ACES2065-1}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b9\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: ARRI_LOGC4_to_ACES2065-1}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b10\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: SONY_SLOG3-SGAMUT3_to_ACES2065-1}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b11\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: SONY_SLOG3-SGAMUT3.CINE_to_ACES2065-1}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b12\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: SONY_SLOG3-SGAMUT3-VENICE_to_ACES2065-1}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b13\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: SONY_SLOG3-SGAMUT3.CINE-VENICE_to_ACES2065-1}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b14\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: RED_LOG3G10-RWG_to_ACES2065-1}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b15\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: PANASONIC_VLOG-VGAMUT_to_ACES2065-1}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b16\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: CIE-XYZ-D65_to_sRGB}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b17\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: CIE-XYZ-D65_to_DisplayP3}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b18\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: CIE-XYZ-D65_to_Display-P3}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b19\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: CIE-XYZ-D65_to_DisplayP3-HDR}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b20\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: CIE-XYZ-D65_to_G2.2-REC.709}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b21\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: CIE-XYZ-D65_to_G2.6-P3-D65}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b22\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: CIE-XYZ-D65_to_DCI-P3}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b23\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: CIE-XYZ-D65_to_REC.1886-REC.709}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b24\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: CIE-XYZ-D65_to_Rec.1886-Rec.709}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b25\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: CIE-XYZ-D65_to_REC.1886-REC.2020}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b26\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: CIE-XYZ-D65_to_REC.2100-PQ}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b27\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: CIE-XYZ-D65_to_Rec.2100-PQ}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b28\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: CIE-XYZ-D65_to_ST2084-P3-D65}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b29\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: CIE-XYZ-D65_to_Rec.2100-HLG}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b30\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: CIE-XYZ-D65_to_DCDM-D65}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b31\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: CIE-XYZ-D65_to_ST2084-DCDM-D65}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b32\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: Linear-sRGB_to_Linear-P3-D65}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b33\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: Linear-Rec709_to_Linear-Rec2020}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b34\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: ACEScg_to_Linear-AP0}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b35\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: Linear-AP0_to_CIE-XYZ-D65}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b36\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: DISPLAY - CIE-XYZ-D65_to_sRGB - MIRROR NEGS}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b37\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: ACES-OUTPUT - ACES2065-1_to_CIE-XYZ-D65 - SDR-100nit-REC709_2.0}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b38\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: ACES-OUTPUT - ACES2065-1_to_CIE-XYZ-D65 - SDR-100nit-P3-D65_2.0}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b39\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: ACES-OUTPUT - ACES2065-1_to_CIE-XYZ-D65 - HDR-500nit-P3-D65_2.0}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b40\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: ACES-OUTPUT - ACES2065-1_to_CIE-XYZ-D65 - HDR-1000nit-P3-D65_2.0}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b41\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: ACES-OUTPUT - ACES2065-1_to_CIE-XYZ-D65 - HDR-1000nit-REC2020_2.0}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b42\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: ACES-OUTPUT - ACES2065-1_to_CIE-XYZ-D65 - HDR-108nit-P3-D65_2.0}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b43\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: ACES-OUTPUT - ACES2065-1_to_CIE-XYZ-D65 - HDR-300nit-P3-D65_2.0}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b44\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: ACES-OUTPUT - ACES2065-1_to_CIE-XYZ-D65 - HDR-2000nit-P3-D65_2.0}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b45\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: ACES-OUTPUT - ACES2065-1_to_CIE-XYZ-D65 - HDR-4000nit-P3-D65_2.0}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b46\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: ACES-OUTPUT - ACES2065-1_to_CIE-XYZ-D65 - HDR-500nit-REC2020_2.0}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b47\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: ACES-OUTPUT - ACES2065-1_to_CIE-XYZ-D65 - HDR-2000nit-REC2020_2.0}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b48\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: ACES-OUTPUT - ACES2065-1_to_CIE-XYZ-D65 - HDR-4000nit-REC2020_2.0}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b49\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: ACES-OUTPUT - ACES2065-1_to_CIE-XYZ-D65 - SDR-100nit-REC709-D60-in-REC709-D65_2.0}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b50\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: ACES-OUTPUT - ACES2065-1_to_CIE-XYZ-D65 - SDR-100nit-REC709-D60-in-P3-D65_2.0}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b51\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: ACES-OUTPUT - ACES2065-1_to_CIE-XYZ-D65 - SDR-100nit-REC709-D60-in-REC2020-D65_2.0}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b52\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: ACES-OUTPUT - ACES2065-1_to_CIE-XYZ-D65 - SDR-100nit-P3-D60-in-P3-D65_2.0}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b53\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: ACES-OUTPUT - ACES2065-1_to_CIE-XYZ-D65 - SDR-100nit-P3-D60-in-XYZ-E_2.0}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b54\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: ACES-OUTPUT - ACES2065-1_to_CIE-XYZ-D65 - HDR-108nit-P3-D60-in-P3-D65_2.0}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b55\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: ACES-OUTPUT - ACES2065-1_to_CIE-XYZ-D65 - HDR-300nit-P3-D60-in-XYZ-E_2.0}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b56\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: ACES-OUTPUT - ACES2065-1_to_CIE-XYZ-D65 - HDR-500nit-P3-D60-in-P3-D65_2.0}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b57\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: ACES-OUTPUT - ACES2065-1_to_CIE-XYZ-D65 - HDR-1000nit-P3-D60-in-P3-D65_2.0}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b58\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: ACES-OUTPUT - ACES2065-1_to_CIE-XYZ-D65 - HDR-2000nit-P3-D60-in-P3-D65_2.0}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b59\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: ACES-OUTPUT - ACES2065-1_to_CIE-XYZ-D65 - HDR-4000nit-P3-D60-in-P3-D65_2.0}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b60\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: ACES-OUTPUT - ACES2065-1_to_CIE-XYZ-D65 - HDR-500nit-P3-D60-in-REC2020-D65_2.0}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b61\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: ACES-OUTPUT - ACES2065-1_to_CIE-XYZ-D65 - HDR-1000nit-P3-D60-in-REC2020-D65_2.0}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b62\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: ACES-OUTPUT - ACES2065-1_to_CIE-XYZ-D65 - HDR-2000nit-P3-D60-in-REC2020-D65_2.0}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b63\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: ACES-OUTPUT - ACES2065-1_to_CIE-XYZ-D65 - HDR-4000nit-P3-D60-in-REC2020-D65_2.0}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b64\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: ACES-OUTPUT - ACES2065-1_to_CIE-XYZ-D65 - HDR-500nit-REC2020-D60-in-REC2020-D65_2.0}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b65\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: ACES-OUTPUT - ACES2065-1_to_CIE-XYZ-D65 - HDR-1000nit-REC2020-D60-in-REC2020-D65_2.0}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b66\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: ACES-OUTPUT - ACES2065-1_to_CIE-XYZ-D65 - HDR-2000nit-REC2020-D60-in-REC2020-D65_2.0}\n"
+        "  - !<ColorSpace>\n"
+        "    name: b67\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: ACES-OUTPUT - ACES2065-1_to_CIE-XYZ-D65 - HDR-4000nit-REC2020-D60-in-REC2020-D65_2.0}\n"
+        "  - !<ColorSpace>\n"
+        "    name: bbad\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: NoSuchBuiltin}\n"
+        "  - !<ColorSpace>\n"
+        "    name: binv\n"
+        "    to_scene_reference: !<BuiltinTransform> {style: ACEScg_to_ACES2065-1, direction: inverse}\n",
     };
 
     static const pquery q0[] = {
@@ -648,7 +896,99 @@ int main(int argc, char **argv) {
     };
     static const pquery q9[] = {{0, "selfref", "other", NULL}};
     static const pquery q10[] = {{0, "ca", "cb", NULL}};
-    static const pquery *qsets[] = {q0, q1, q2, q3, q4, q5, q6, q7, q8, q9, q10, q11, q12};
+    static const pquery q13[] = {
+        {0, "b0", "plain", NULL},
+        {0, "b1", "plain", NULL},
+        {0, "b2", "plain", NULL},
+        {0, "b3", "plain", NULL},
+        {0, "b4", "plain", NULL},
+        {0, "b5", "plain", NULL},
+        {0, "b6", "plain", NULL},
+        {0, "b7", "plain", NULL},
+        {0, "b8", "plain", NULL},
+        {0, "b9", "plain", NULL},
+        {0, "b10", "plain", NULL},
+        {0, "b11", "plain", NULL},
+        {0, "b12", "plain", NULL},
+        {0, "b13", "plain", NULL},
+        {0, "b14", "plain", NULL},
+        {0, "b15", "plain", NULL},
+        {0, "b16", "plain", NULL},
+        {0, "b17", "plain", NULL},
+        {0, "b18", "plain", NULL},
+        {0, "b19", "plain", NULL},
+        {0, "b20", "plain", NULL},
+        {0, "b21", "plain", NULL},
+        {0, "b22", "plain", NULL},
+        {0, "b23", "plain", NULL},
+        {0, "b24", "plain", NULL},
+        {0, "b25", "plain", NULL},
+        {0, "b26", "plain", NULL},
+        {0, "b27", "plain", NULL},
+        {0, "b28", "plain", NULL},
+        {0, "b29", "plain", NULL},
+        {0, "b30", "plain", NULL},
+        {0, "b31", "plain", NULL},
+        {0, "b32", "plain", NULL},
+        {0, "b33", "plain", NULL},
+        {0, "b34", "plain", NULL},
+        {0, "b35", "plain", NULL},
+        {0, "b36", "plain", NULL},
+        {0, "b37", "plain", NULL},
+        {0, "b38", "plain", NULL},
+        {0, "b39", "plain", NULL},
+        {0, "b40", "plain", NULL},
+        {0, "b41", "plain", NULL},
+        {0, "b42", "plain", NULL},
+        {0, "b43", "plain", NULL},
+        {0, "b44", "plain", NULL},
+        {0, "b45", "plain", NULL},
+        {0, "b46", "plain", NULL},
+        {0, "b47", "plain", NULL},
+        {0, "b48", "plain", NULL},
+        {0, "b49", "plain", NULL},
+        {0, "b50", "plain", NULL},
+        {0, "b51", "plain", NULL},
+        {0, "b52", "plain", NULL},
+        {0, "b53", "plain", NULL},
+        {0, "b54", "plain", NULL},
+        {0, "b55", "plain", NULL},
+        {0, "b56", "plain", NULL},
+        {0, "b57", "plain", NULL},
+        {0, "b58", "plain", NULL},
+        {0, "b59", "plain", NULL},
+        {0, "b60", "plain", NULL},
+        {0, "b61", "plain", NULL},
+        {0, "b62", "plain", NULL},
+        {0, "b63", "plain", NULL},
+        {0, "b64", "plain", NULL},
+        {0, "b65", "plain", NULL},
+        {0, "b66", "plain", NULL},
+        {0, "b67", "plain", NULL},
+        {0, "plain", "b0", NULL},
+        {0, "plain", "b1", NULL},
+        {0, "plain", "b2", NULL},
+        {0, "plain", "b3", NULL},
+        {0, "plain", "b4", NULL},
+        {0, "plain", "b5", NULL},
+        {0, "plain", "b6", NULL},
+        {0, "plain", "b7", NULL},
+        {0, "plain", "b8", NULL},
+        {0, "plain", "b12", NULL},
+        {0, "plain", "b16", NULL},
+        {0, "plain", "b30", NULL},
+        {0, "plain", "b26", NULL},
+        {0, "plain", "b29", NULL},
+        {0, "plain", "b32", NULL},
+        {0, "plain", "b34", NULL},
+        {0, "plain", "b36", NULL},
+        {0, "plain", "b43", NULL},
+        {0, "bbad", "plain", NULL},
+        {0, "binv", "plain", NULL},
+        {0, "b0", "b1", NULL},
+    };
+
+    static const pquery *qsets[] = {q0, q1, q2, q3, q4, q5, q6, q7, q8, q9, q10, q11, q12, q13};
     static const size_t qcounts[] = {sizeof(q0) / sizeof(q0[0]),
                                      sizeof(q1) / sizeof(q1[0]),
                                      sizeof(q2) / sizeof(q2[0]),
@@ -661,7 +1001,8 @@ int main(int argc, char **argv) {
                                      sizeof(q9) / sizeof(q9[0]),
                                      sizeof(q10) / sizeof(q10[0]),
                                      sizeof(q11) / sizeof(q11[0]),
-                                     sizeof(q12) / sizeof(q12[0])};
+                                     sizeof(q12) / sizeof(q12[0]),
+                                     sizeof(q13) / sizeof(q13[0])};
 
     /* Under-cap probe: a 30-level nested GroupTransform chain stays inside
      * both the YAML depth cap (128) and the walk cap (64). Deep chains cannot
