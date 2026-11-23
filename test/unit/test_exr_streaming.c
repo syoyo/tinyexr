@@ -1082,6 +1082,128 @@ static void viewer_levels(void) {
 }
 #endif
 
+
+
+
+
+
+/* task.md S8/S9: shared sampling helper and checked arithmetic guards. */
+static void helper_arithmetic_regression(void) {
+    size_t out = 0;
+    int s, lo, hi;
+    CHECK(exr_mul_ovf((size_t)-1, 2u, &out));
+    CHECK(exr_add_ovf((size_t)-1, 1u, &out));
+    CHECK(!exr_mul_ovf(3u, 4u, &out) && out == 12u);
+    CHECK(!exr_add_ovf(3u, 4u, &out) && out == 7u);
+    for (s = 1; s <= 8; ++s)
+        for (lo = -5; lo <= 2; ++lo)
+            for (hi = lo; hi <= lo + 12; ++hi) {
+                int64_t n = exr_floordiv(hi, s) - exr_floordiv((int64_t)lo - 1, s);
+                int want = (n > 0 && n <= INT32_MAX) ? (int)n : 0;
+                CHECK(exr_num_samples(lo, hi, s) == want);
+            }
+}
+
+/* task.md S7: channel extraction checks the caller-supplied destination
+ * size instead of trusting the header's channel geometry. */
+static void channel_extract_bounds_regression(void) {
+    exr_image img;
+    exr_reader *r = NULL;
+    exr_part out;
+    exr_block_info bi;
+    void *data = NULL;
+    uint8_t *blk = NULL, *dst = NULL, small[8];
+    size_t size = 0;
+    memset(&out, 0, sizeof(out));
+    REQUIRE(fixture(&img, 1, 4, 4, 0, 0, 0) == EXR_SUCCESS);
+    REQUIRE(exr_save_to_memory(&data, &size, NULL, &img, EXR_COMPRESSION_NONE) == EXR_SUCCESS);
+    REQUIRE(exr_reader_open_memory(data, size, NULL, &r) == EXR_SUCCESS);
+    REQUIRE(exr_reader_parse_header(r) == EXR_SUCCESS);
+    REQUIRE(exr_reader_read_part(r, 0, &out) == EXR_SUCCESS);
+    REQUIRE(exr_reader_block_info(r, 0, 0, &bi) == EXR_SUCCESS);
+    blk = (uint8_t *)malloc(bi.uncompressed_size);
+    dst = (uint8_t *)malloc(bi.uncompressed_size);
+    REQUIRE(blk && dst);
+    REQUIRE(exr_reader_decode_block(r, 0, 0, blk, bi.uncompressed_size) == EXR_SUCCESS);
+    CHECK(exr_block_extract_channel(&out.header, &bi, blk, bi.uncompressed_size,
+                                    0, small, 1) == EXR_ERROR_INVALID_ARGUMENT);
+    CHECK(exr_block_extract_channel(&out.header, &bi, blk, bi.uncompressed_size,
+                                    -1, dst, bi.uncompressed_size) == EXR_ERROR_INVALID_ARGUMENT);
+    CHECK(exr_block_extract_channel(&out.header, &bi, blk, bi.uncompressed_size,
+                                    0, dst, bi.uncompressed_size) == EXR_SUCCESS);
+    free(blk);
+    free(dst);
+    exr_part_free(NULL, &out);
+    exr_reader_close(r);
+    free(data);
+    exr_image_free(&img);
+}
+
+/* task.md S4: tile dimensions that overflow the 32-bit ceil-div expression
+ * are rejected before any level math runs. */
+static void extreme_tile_sizes_rejected(void) {
+    exr_image img;
+    void *data = NULL;
+    size_t size = 0;
+    REQUIRE(fixture(&img, 1, 8, 8, 1, 0, 0) == EXR_SUCCESS);
+    img.parts[0].header.tile_x_size = 0x7fffffffu;
+    CHECK(exr_save_to_memory(&data, &size, NULL, &img, EXR_COMPRESSION_NONE) ==
+          EXR_ERROR_INVALID_ARGUMENT);
+    CHECK(!data && !size);
+    img.parts[0].header.tile_x_size = 16;
+    img.parts[0].header.tile_y_size = 0x7fffffffu;
+    CHECK(exr_save_to_memory(&data, &size, NULL, &img, EXR_COMPRESSION_NONE) ==
+          EXR_ERROR_INVALID_ARGUMENT);
+    img.parts[0].header.tile_y_size = 0;
+    CHECK(exr_save_to_memory(&data, &size, NULL, &img, EXR_COMPRESSION_NONE) ==
+          EXR_ERROR_INVALID_ARGUMENT);
+    exr_image_free(&img);
+}
+
+/* task.md S2: a configured image-byte limit rejects a whole-image load
+ * before any pixel plane is allocated. */
+static void image_budget_regression(void) {
+    exr_image img;
+    exr_context *ctx = NULL;
+    exr_reader *r = NULL;
+    exr_part out;
+    void *data = NULL;
+    size_t size = 0;
+    memset(&out, 0, sizeof(out));
+    REQUIRE(fixture(&img, 1, 4, 4, 0, 0, 0) == EXR_SUCCESS);
+    REQUIRE(exr_save_to_memory(&data, &size, NULL, &img, EXR_COMPRESSION_NONE) == EXR_SUCCESS);
+    REQUIRE(exr_context_create(NULL, &ctx) == EXR_SUCCESS);
+    REQUIRE(exr_context_set_max_image_bytes(ctx, 1) == EXR_SUCCESS);
+    REQUIRE(exr_reader_open_memory_ctx(ctx, data, size, NULL, &r) == EXR_SUCCESS);
+    CHECK(exr_reader_read_part(r, 0, &out) == EXR_ERROR_LIMIT_EXCEEDED);
+    CHECK(!out.header.channels && !out.images);
+    exr_part_free(NULL, &out);
+    exr_reader_close(r);
+    exr_context_destroy(ctx);
+    free(data);
+    exr_image_free(&img);
+}
+
+/* task.md S1/S5: a failed parse latches its error and owns no partial parts;
+ * the writer rejects a header the shared validator rejects. */
+static void reader_writer_invariants(void) {
+    static const uint8_t bad[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+    exr_reader *r = NULL;
+    exr_writer *w = NULL;
+    exr_header h;
+    exr_result a, b;
+    REQUIRE(exr_reader_open_memory(bad, sizeof(bad), NULL, &r) == EXR_SUCCESS);
+    a = exr_reader_parse_header(r);
+    b = exr_reader_parse_header(r);
+    CHECK(a == EXR_ERROR_INVALID_FILE && b == a);
+    CHECK(r->num_parts == 0 && r->parts_cap == 0 && r->parts == NULL);
+    exr_reader_close(r);
+    memset(&h, 0, sizeof(h));
+    REQUIRE(exr_writer_create(NULL, &w) == EXR_SUCCESS);
+    CHECK(exr_writer_add_part(w, &h, NULL) == EXR_ERROR_INVALID_ARGUMENT);
+    exr_writer_destroy(w);
+}
+
 int main(void) {
 #if defined(__EMSCRIPTEN__)
     CHECK(sizeof(void *) == 4 && sizeof(size_t) == 4);
@@ -1109,6 +1231,11 @@ int main(void) {
     metadata_and_large_chunk();
     context_failure_reuse();
     encode_limit_matrix();
+    reader_writer_invariants();
+    image_budget_regression();
+    extreme_tile_sizes_rejected();
+    channel_extract_bounds_regression();
+    helper_arithmetic_regression();
     printf("streaming/hardening: %d passed, %d failed\n", passed, failed);
     return failed ? 1 : 0;
 }

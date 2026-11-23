@@ -18,6 +18,7 @@ import Texcomp.Bc7Encode
 import Texcomp.Bc7Mode6
 import Texcomp.Bc7Seed
 import Texcomp.Bc7EncodeAll
+import Texcomp.Bc7EncodeImage
 import Texcomp.Bc6hKernels
 import Texcomp.Bc6hEncMode0
 import Texcomp.Bc6hEncMode1213
@@ -27,6 +28,7 @@ import Texcomp.Bc6hEncMode1
 import Texcomp.Bc6hEncMode9
 import Texcomp.Bc6hEncSf16
 import Texcomp.Bc6hEncodeBlock
+import Texcomp.Bc6hEncodeImage
 import Texcomp.Bc7Rdo
 import Texcomp.AstcDecim
 import Texcomp.AstcWeightInfill
@@ -82,6 +84,10 @@ import Tocio.ClfXml
 import Tocio.Clf
 import Tocio.Csp
 import Tocio.LoaderBounds
+import Tocio.LoaderBoundsXml
+import Tocio.YamlFuelExact
+import Tocio.LoaderBoundsCsp
+import Tocio.LoaderBoundsClf
 import Tocio.CdlInverse
 import Texcomp.Astc
 import Texcomp.AstcImage
@@ -98,6 +104,9 @@ import Texcomp.Bc7DecodeImage
 import Texcomp.Bc5
 import Texcomp.Bc5Image
 import Texcomp.Bc5Decode
+import Texcomp.Bc5EncodeImage
+import Texcomp.EacEncodeImage
+import Texcomp.Bc3EncodeImage
 import Texcomp.Bc4
 import Texcomp.Bc4Image
 import Texcomp.Bc4Decode
@@ -110,14 +119,17 @@ import Texcomp.Bc3Decode
 import Texcomp.Bc3DecodeImage
 import Tocio.Matrix
 import Tocio.MatrixInv
-import Tocio.MatrixInv2
-import Tocio.MatrixInv3
+import Tocio.LutModel
+import Tocio.CodegenSemantics
+import Tocio.MatrixModel
+import Tocio.MatrixInv
+import Tocio.MatrixInv
 import Tocio.MatrixProps
 import Tocio.MatrixProps2
 import Tocio.MatrixProps3
 import Tocio.MatrixProps4
-import Tocio.MatrixInv5
-import Tocio.MatrixInv4
+import Tocio.MatrixInv
+import Tocio.MatrixInv
 import Tocio.Range
 import Tocio.RangeInv
 import Tocio.Exponent
@@ -148,6 +160,8 @@ import Tocio.LowerAll
 import Tocio.ExpLinear
 import Tocio.LogCamera
 import Exr.Version
+import Exr.Jph
+import Exr.ReaderState
 import Exr.Attribute
 import Exr.Tiles
 import Exr.File
@@ -157,6 +171,10 @@ import Exr.Size
 import Exr.Deep
 import Exr.Rle
 import Exr.Zip
+import Exr.Deflate
+import Exr.HeaderValidate
+import Exr.ImageBudget
+import Exr.TileGeom
 import Exr.TypedEmit
 
 import Exr.Chunk
@@ -204,3 +222,8 @@ import Texcomp.AstcHdrEnc
 import Texcomp.Bc1Props
 import Texcomp.Bc6hDecode
 import Tocio.LowerRecon
+import Tir.Geometry
+import Tir.Edge
+import Tir.Table
+import Tir.Kernels
+import Tir.Streaming

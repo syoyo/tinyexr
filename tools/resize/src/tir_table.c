@@ -408,3 +408,27 @@ void tir__axis_fill(const tir__axis_params *p, const tir__axis_dims *dims,
         }
     }
 }
+
+/* Debug hook for the Lean differential gate: record the per-output
+ * fast/exception classification produced by window_weights + window_fold,
+ * alongside the dims computed by tir__axis_measure. The fill pass consumes
+ * exactly this classification, so the gate can check the Lean measure model
+ * against the C primitives without duplicating their libm arithmetic. */
+tir_result tir__axis_classify(const tir__axis_params *p, unsigned char *out,
+                              tir__axis_dims *dims) {
+    axis_geom g;
+    double *ws;
+    int i;
+    tir_result rc = tir__axis_measure(p, dims);
+    if (rc != TIR_SUCCESS) return rc;
+    axis_geom_init(p, &g);
+    ws = (double *)malloc((size_t)dims->win_max * sizeof(double));
+    if (!ws) return TIR_ERROR_OUT_OF_MEMORY;
+    for (i = 0; i < p->d; ++i) {
+        int lo = 0, n = 0, run_lo = 0, run_hi = 0;
+        n = window_weights(p, &g, i, &lo, ws, dims->win_max);
+        out[i] = (unsigned char)(window_fold(p, lo, n, &run_lo, &run_hi) ? 1 : 0);
+    }
+    free(ws);
+    return TIR_SUCCESS;
+}

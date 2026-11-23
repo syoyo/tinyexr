@@ -5,7 +5,7 @@ SPDX-License-Identifier: BSD-3-Clause
 
 # Lean formalization and verification status
 
-Updated: 2026-11-09. Toolchain: Lean 4.35.0 and the pinned mathlib dependency.
+Updated: 2026-11-23. Toolchain: Lean 4.35.0 and the pinned mathlib dependency.
 See [README.md](README.md) for the module inventory and format compatibility details.
 
 The Lean model has machine-checked proofs. TinyEXR v3 C is validated against
@@ -23,6 +23,20 @@ implementation, its compiler, or memory safety for every possible input.
 | RLE and ZIP wrapper | Interleave and predictor inverses, greedy RLE round trip and raw fallback; Adler-32 and ZIP wrapper structure/checksum. DEFLATE payload coding is outside the model. |
 | PIZ | Complete successful encoder/decoder round trip through bitmap framing, frequency-derived canonical Huffman coding, both wavelet modes, sampled channel/lane traversal, LUT restoration, reordering and raw fallback. |
 | Texcomp | Container headers/sizes and full DDS/KTX payload round trips; BC1/BC3/BC4/BC5 decoders and BC1/BC4/BC5 encoders; BC6H decoder modes plus every C block encoder (unsigned modes 0–13, signed modes 0–8/12/13) byte-exact against C; BC7 pack path, mode 6, seeds and the full default-option encoder; ETC2 individual/T-mode/EAC and ASTC LDR + HDR endpoint packers/colour quantizer. Each has a C-vs-Lean differential gate (`make texcomp-*-diff`) — see [Boundaries](#boundaries). |
+| tir (resize) | Axis geometry and edge-mapping invariants, in-bounds fast-run/anti-ringing footprints, window trim/normalisation laws, and a proved measure/fill classification agreement theorem; replayed against the C table builder by `make tir-diff` (3240 vectors, 0 mismatches). The scalar kernel and pixel-conversion models are bit-exact against C (`make tir-kernel-diff`, 4096 vectors, 0 mismatches). Filter coefficient values are gate-pinned, not re-derived. |
+| Shared helpers / checked arithmetic / TSan (S8-S10) | The reader/writer share `exr_internal.h` sampling + ceil-div inlines, `exr_deep.c` uses `exr_add_ovf`/`exr_mul_ovf` on all accumulation/allocation sites, and `make test-c-tsan` now runs both suites under ThreadSanitizer (both green). Added a unit regression for the shared helpers and overflow guards. |
+| Fuzz/API coverage (S6/S7) | The C fuzz harness already covers the full public reader API with a budgeted allocator, deep two-step decode and WOULD_BLOCK suspend/resume; S6/S7 are locked in by unit regressions for out-of-order `exr_reader_supply` and destination-size checking in `exr_block_extract_channel` (all green under ASan/UBSan/LSan). |
+| Tile geometry | `Exr.TileGeom` models the 64-bit ceil-division used by tile level math (positivity and coverage proved); C vs Lean byte-exact on 104 boundary vectors including `0x7fffffff` (`tile-geometry-diff`). The C regression rejects extreme tile sizes before level math. |
+| Image budget | `Exr.ImageBudget` mirrors `exr_flat_planes_size` (pointer array + aligned per-plane slots) and the `budgetReject` guard; C vs Lean byte-exact on 240 geometries (`image-budget-diff`). The C side already implements `max_image_bytes`; a negative-control regression sets a 1-byte limit and asserts `EXR_ERROR_LIMIT_EXCEEDED`. |
+| Reader / writer invariants | `Exr.ReaderState` specifies error latching, capacity-before-append and ownership preservation; `Exr.HeaderValidate` specifies the shared accepted-header set. Both are checked against C by `reader-state-diff` (6/6) and `header-validate-diff` (240/240). The C side already implements `parts_cap` + `parse_rc` and `exr_header_validate`; the added regression test exercises the double-call and zero-channel-header paths from `task.md` S1/S5. |
+| DEFLATE subset | Stored and fixed-Huffman block decoding with LZ77 overlap copy and zlib framing/Adler checks, validated against `exr_inflate_zlib` by `make deflate-diff` (6/6). Dynamic Huffman remains a boundary. |
+| tir streaming | `Tir.Streaming` models ring occupancy, the push eviction guard and pull progress with proved no-deadlock/occupancy invariants; C-vs-Lean replay of 188 push/pull trace lines plus serial-vs-interleaved output parity (`tir-streaming-diff`). |
+| JPH wrapper | Marker sequence, SIZ geometry/tile count and COD/QCD profile checks for OpenEXR HTJ2K chunks, checked against four real fixtures by `make jph-diff` (4/4). HT entropy coding is out of scope. |
+| Reader state (spec) | Abstract reader-state rules from `task.md` S1: error latching, capacity-before-append and ownership preservation are proved for the model. This is a specification of the required C behaviour, **not** a proof that the current C reader satisfies it. |
+| Tocio codegen semantics | `Tocio.CodegenSemantics` links emitted matrix, range, LUT1D and exponent statements to their op kernels (proved `eval_compile_matrix`, `eval_compile_range`, `eval_compile_lut1d`, `eval_compile_exponent`), with byte-identical emitter text covered by `tocio-codegen-diff`; `make tocio-codegen-semantics-diff` checks the AST evaluator against C on 480 vectors. |
+| Tocio loader guards | `Tocio.LoaderBoundsCsp` proves CSP/.cube `valuesFit` soundness plus cube size/count bounds; `Tocio.YamlFuelExact` pins the YAML depth boundary (127/128/129). `make tocio-bounds-diff` checks the C guard on 120 vectors (0 mismatches); existing `tocio-csp-diff`/`-lut-diff` cover the parsers. |
+| Tocio kernel algebra | `Tocio.MatrixModel` proves identity, associativity and inverse cancellation over `ℚ`; `Tocio.LutModel` proves interpolation endpoint/bounds and LUT node exactness. The Float32 kernels are pinned by `make tocio-model-diff` (240/240). |
+| Tocio loader bounds | SPI sample-count soundness plus CLF XML cursor bounds and `xfloats` budget/value-fit guards, proved for the parser models (no C claim). |
 | Tocio (scaffolding) | Op-kind + FixedFunction-style enums with inverse-pair invariants; Matrix/Range/Exponent/Log/CDL/LUT/YAML/Config/Resolve/Lower/Processor skeletons. Float semantics and YAML totality not yet proved — see [Boundaries](#boundaries). |
 
 ## PIZ proof chain and preconditions
@@ -69,7 +83,22 @@ The final implementation validation on 2026-11-09 produced:
 
 | Gate | Result |
 | --- | --- |
-| `make lean-tools lean-axiom-check` | Full build passed; 3479 first-party theorems (EXR + Texcomp + Tocio), 152 with bit-vector certificate dependencies, 98 with approved native checks; no unexpected axioms. |
+| `make texcomp-bc5-enc-img-diff` | 800 image-compressor vectors: BC5 rg8/rgba8 (unorm + snorm), BC3 rgba8, EAC R11/RG11, BC7 rgba8 (default options) and BC6H rgb32f (uf16/sf16), C vs Lean byte-exact, 0 mismatches. |
+| `make texcomp-astc-hdrenc-diff` / `-astc-hdrimg-diff` | 240 ASTC HDR block vectors + 24 full HDR images, C vs Lean byte-exact, 0 mismatches (already-gated coverage of `tc_astc_hdr_compress_rgbaf/rgbf`). |
+| `make texcomp-bc-img-diff` | 900 full-image vectors: 400 BC4/BC5 (widths/heights 1–17 incl. partial blocks) and 500 ETC2 RGB/RGBA, EAC R11/RG11 and BC7, C vs Lean byte-exact, 0 mismatches. Also re-runs `texcomp-bc135-diff` (1536 blocks, 0 mismatches) after the BC4 rounding fix. |
+| `make tir-kernel-diff` | 4096 bit-exact scalar-kernel/conversion vectors (16 per random seed), 0 mismatches. |
+| `make tocio-codegen-semantics-diff` | 480 vectors (matrix, range, LUT1D, exponent), emitted-statement AST evaluation vs C kernel output, 0 mismatches. |
+| `make tocio-bounds-diff` | 120 `toc_values_fit` vectors, C vs Lean, 0 mismatches. |
+| `make tocio-model-diff` | 240 matrix/LUT kernel vectors (120 matrix, 120 1D LUT incl. 1- and 3-channel tables), C vs Lean bit-exact, 0 mismatches. |
+| `make tile-geometry-diff` | 104 ceil-div vectors including INT_MAX-range tiles, C vs Lean, 0 mismatches. |
+| `make image-budget-diff` | 240 channel/window geometries, C `exr_flat_planes_size` vs Lean `flatPlanesSize`, 0 mismatches. |
+| `make header-validate-diff` | 240 randomized/mutated headers, C `exr_header_validate` vs Lean `headerValid`, 0 mismatches. |
+| `make reader-state-diff` | 6 malformed-file trials (parse + retry, read_part + retry), error latch and empty part state, 0 mismatches. |
+| `make deflate-diff` | 6 stored/fixed-Huffman streams (literal-only, high-byte 9-bit codes, LZ77 match, multi-block), C decoder vs Lean, 0 mismatches. |
+| `make tir-streaming-diff` | 6 resize geometries, 188 trace lines, C vs Lean, 0 mismatches; serial vs interleaved output byte-identical in all 6. |
+| `make jph-diff` | 4 real HTJ2K EXR fixtures (2 regression + 2 fuzz corpus), marker sequence + SIZ/COD/QCD geometry + profile verdict, C vs Lean, 0 mismatches. |
+| `make tir-diff` | 3240 C classification vectors (10 widths × 9 filters × 3 edge modes × 2 registrations × 3 scales × 2 sigmas), 0 mismatches; `make resize-c11-gate` and `make resize-test` green (777 tests). |
+| `make lean-tools lean-axiom-check` | Full build passed; 4648 first-party theorems (EXR + Texcomp + Tocio + Tir), 179 with bit-vector certificate dependencies, 74 with approved native checks; no unexpected axioms. |
 | `make texcomp-lean-check tocio-lean-check` | New-module builds passed. |
 | `make texcomp-bc6h-diff` | 1028 BC6H blocks (all 14 modes, signed + unsigned), C vs Lean byte-exact. |
 | `make texcomp-bc6h-*-diff` | BC6H encoder models byte-exact against C: shared kernels (4215 values), unsigned modes 0/1/2/3/4/5/6/7/8/9/10/12/13 (400 + 520 + 1040 + 780 + 900 blocks), signed modes 0–8/12/13 (1800 blocks), and the per-block mode-selection drivers `tc_encode_bc6h_block_uf16`/`_sf16` (480 blocks, both variants). |
@@ -298,9 +327,16 @@ validation checks, not library proofs.
   levels × 256 values plus the clamp edges) and exercised end to end
   through the 2-subset CEM 11 encoder in `make texcomp-astc-hdrenc-diff`
   (240 blocks, four HDR CEM kinds).
-  Remaining Texcomp work: none tracked — the payload-parity extension of the
-  container gate (ASTC `.astc` file container, KTX ETC2 RGBA cases, and
-  writer error-verdict parity) is complete.
+  Remaining Texcomp work is still tracked at the image-driver layer: the
+  per-block models are byte-exact, but `bc7DecodeImage2`, `etc2DecodeImage`, `eacDecodeImage` and
+  `astcDecodeImage` are still length-check placeholders, and several public
+  image encode/decompress drivers (`tc_bc3_compress_rgba8`,
+  `tc_bc5_compress_rg8/rgba8`, `tc_eac_compress_rgba8`,
+  `tc_bc6h_compress_rgb32f`, `tc_bc7_compress_rgba8/rgbaf`,
+  `tc_astc_hdr_compress_rgbaf/rgbf`, and the matching `*_decompress_*`
+  wrappers), plus full BC6H decode (documented boundary). The payload-parity
+  extension of the container gate (ASTC `.astc`, KTX ETC2 RGBA, writer
+  verdicts) is complete.
 - Tocio: Float64-vs-f32 note aside, the seven op kernels (matrix, range,
   exponent, exp-linear, log, log-camera, CDL) are bit-exact `Float32` ports
   with a C differential gate (3072 seeded groups). FixedFunction helpers

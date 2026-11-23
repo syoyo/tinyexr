@@ -23,7 +23,7 @@ MINIZ_SRC = ./deps/miniz/miniz.c
 # ---- legacy v1 single-header test (unchanged) -----------------------------
 TARGET = test_tinyexr
 
-.PHONY: all test clean help lib test-c test-c-threads test-c-tsan c11-gate lean-check lean-diff lean-gen lean-gen-update lean-gen-check codec-diff texcomp-web texcomp-bc6h-diff texcomp-bc7-diff texcomp-bc135-diff texcomp-etc2-diff texcomp-astc-diff texcomp-astc-ldr-diff texcomp-astc-uastc-diff texcomp-astc-hdrenc-diff texcomp-astc-quant-diff texcomp-astc-hdrimg-diff texcomp-astc-ldrimg-diff texcomp-astc-ldrdec-diff texcomp-uni-diff texcomp-uni-transcode-diff texcomp-etc2-enc-diff tocio-diff tocio-yaml-diff tocio-config-diff tocio-proc-diff tocio-codegen-diff tocio-glsl-diff fuzz fuzz-threads tocio-fuzz fuzz-jph fuzz-libdeflate fuzz-corpus fuzz-corpus-asan parse-test wasm freestanding-gate freestanding-zstd-gate examples-c bench bench-compare bench-htj2k arm-smoke host-smoke gpu-test vk-test jph-gpu-test bench-gpu-jph texcomp texcomp-arm texcomp-c11-gate texcomp-test texcomp-bench texcomp-astc-psnr texcomp-astc-arm-smoke texcomp-astc-arm-gate texcomp-astc-hdr-gate texcomp-uni-gate texcomp-bc6h-gate texcomp-wasm texcomp-wasm-simd wasm-texcomp wasm-texcomp-simd ptexatlas-c11-gate
+.PHONY: all test clean help lib test-c test-c-threads test-c-tsan c11-gate lean-check lean-diff lean-gen lean-gen-update lean-gen-check codec-diff jph-diff deflate-diff header-validate-diff reader-state-diff image-budget-diff tile-geometry-diff tocio-model-diff tocio-codegen-semantics-diff tocio-bounds-diff texcomp-web texcomp-bc6h-diff texcomp-bc7-diff texcomp-bc135-diff texcomp-etc2-diff texcomp-astc-diff texcomp-astc-ldr-diff texcomp-astc-uastc-diff texcomp-astc-hdrenc-diff texcomp-astc-quant-diff texcomp-astc-hdrimg-diff texcomp-astc-ldrimg-diff texcomp-astc-ldrdec-diff texcomp-uni-diff texcomp-uni-transcode-diff texcomp-etc2-enc-diff texcomp-bc-img-diff texcomp-bc5-enc-img-diff tocio-diff tocio-yaml-diff tocio-config-diff tocio-proc-diff tocio-codegen-diff tocio-glsl-diff fuzz fuzz-threads tocio-fuzz fuzz-jph fuzz-libdeflate fuzz-corpus fuzz-corpus-asan parse-test wasm freestanding-gate freestanding-zstd-gate examples-c bench bench-compare bench-htj2k arm-smoke host-smoke gpu-test vk-test jph-gpu-test bench-gpu-jph texcomp texcomp-arm texcomp-c11-gate texcomp-test texcomp-bench texcomp-astc-psnr texcomp-astc-arm-smoke texcomp-astc-arm-gate texcomp-astc-hdr-gate texcomp-uni-gate texcomp-bc6h-gate texcomp-wasm texcomp-wasm-simd wasm-texcomp wasm-texcomp-simd ptexatlas-c11-gate
 
 all: $(TARGET)
 
@@ -284,6 +284,134 @@ lean-check:
 texcomp-lean-check:
 	cd lean && $(LAKE) build Texcomp.Bc5Decode Texcomp.Bc3Decode Texcomp.Bc1Decode Texcomp.Bc4Decode Texcomp.Bc6hFull Texcomp.Bc7AllModes Texcomp.Bc1Bc3Bc5 Texcomp.Etc2AllModes Texcomp.AstcDecode
 	@echo "texcomp-lean-check: OK"
+
+.PHONY: tocio-bounds-diff
+tocio-bounds-diff: lean-tools
+	mkdir -p build/lean-gen
+	$(CC) -std=c11 -Wall -Wextra -Isandbox/tocio/include -Isandbox/tocio/src \
+	  test/v3/tocio_bounds_vectors.c sandbox/tocio/src/*.c -lm -ldl \
+	  -o build/tocio_bounds_vectors
+	./build/tocio_bounds_vectors > build/lean-gen/tocio_bounds_vectors.txt
+	cd lean && $(LAKE) build ExrSpec tocioboundscheck
+	./lean/.lake/build/bin/tocioboundscheck build/lean-gen/tocio_bounds_vectors.txt
+	@echo "tocio-bounds-diff: OK"
+
+.PHONY: tocio-codegen-semantics-diff
+tocio-codegen-semantics-diff: lean-tools
+	mkdir -p build/lean-gen
+	$(CC) -std=c11 -Wall -Wextra -Isandbox/tocio/include -Isandbox/tocio/src \
+	  -O1 -ffp-contract=off test/v3/tocio_model_vectors.c sandbox/tocio/src/*.c \
+	  -lm -ldl -o build/tocio_model_vectors
+	./build/tocio_model_vectors > build/lean-gen/tocio_model_vectors.txt
+	cd lean && $(LAKE) build ExrSpec tociocgsemcheck
+	./lean/.lake/build/bin/tociocgsemcheck build/lean-gen/tocio_model_vectors.txt
+	@echo "tocio-codegen-semantics-diff: OK"
+
+.PHONY: tocio-model-diff
+tocio-model-diff: lean-tools
+	mkdir -p build/lean-gen
+	$(CC) -std=c11 -Wall -Wextra -Isandbox/tocio/include -Isandbox/tocio/src \
+	  -O1 -ffp-contract=off test/v3/tocio_model_vectors.c sandbox/tocio/src/*.c \
+	  -lm -ldl -o build/tocio_model_vectors
+	./build/tocio_model_vectors > build/lean-gen/tocio_model_vectors.txt
+	cd lean && $(LAKE) build ExrSpec tociomodelcheck
+	./lean/.lake/build/bin/tociomodelcheck build/lean-gen/tocio_model_vectors.txt
+	@echo "tocio-model-diff: OK"
+
+.PHONY: tile-geometry-diff
+tile-geometry-diff: lean-tools
+	mkdir -p build/lean-gen
+	$(CC) $(V3_CSTD) $(V3_WARN) -Iinclude -Isrc test/v3/tile_geom_vectors.c \
+	  -o build/tile_geom_vectors
+	./build/tile_geom_vectors > build/lean-gen/tile_geom_vectors.txt
+	cd lean && $(LAKE) build ExrSpec tilegeomcheck
+	./lean/.lake/build/bin/tilegeomcheck build/lean-gen/tile_geom_vectors.txt
+	@echo "tile-geometry-diff: OK"
+
+.PHONY: image-budget-diff
+image-budget-diff: lib lean-tools
+	mkdir -p build/lean-gen
+	$(CC) $(V3_CSTD) $(V3_WARN) -Iinclude -Isrc test/v3/image_budget_vectors.c \
+	  build/libtinyexr3.a -lm -pthread -o build/image_budget_vectors
+	./build/image_budget_vectors > build/lean-gen/image_budget_vectors.txt
+	cd lean && $(LAKE) build ExrSpec imagebudgetcheck
+	./lean/.lake/build/bin/imagebudgetcheck build/lean-gen/image_budget_vectors.txt
+	@echo "image-budget-diff: OK"
+
+.PHONY: reader-state-diff
+reader-state-diff: lib lean-tools
+	mkdir -p build/lean-gen
+	$(CC) $(V3_CSTD) $(V3_WARN) -Iinclude -Isrc test/v3/reader_state_vectors.c \
+	  build/libtinyexr3.a -lm -pthread -o build/reader_state_vectors
+	./build/reader_state_vectors > build/lean-gen/reader_state_vectors.txt
+	cd lean && $(LAKE) build ExrSpec readerstatecheck
+	./lean/.lake/build/bin/readerstatecheck build/lean-gen/reader_state_vectors.txt
+	@echo "reader-state-diff: OK"
+
+.PHONY: header-validate-diff
+header-validate-diff: lib lean-tools
+	mkdir -p build/lean-gen
+	$(CC) $(V3_CSTD) $(V3_WARN) -Iinclude -Isrc test/v3/header_validate_vectors.c \
+	  build/libtinyexr3.a -lm -pthread -o build/header_validate_vectors
+	./build/header_validate_vectors > build/lean-gen/header_validate_vectors.txt
+	cd lean && $(LAKE) build ExrSpec headervalidatecheck
+	./lean/.lake/build/bin/headervalidatecheck build/lean-gen/header_validate_vectors.txt
+	@echo "header-validate-diff: OK"
+
+.PHONY: deflate-diff
+deflate-diff: lib lean-tools
+	mkdir -p build/lean-gen
+	$(CC) $(V3_CSTD) $(V3_WARN) -Iinclude -Isrc test/v3/deflate_vectors.c \
+	  build/libtinyexr3.a -lm -pthread -o build/deflate_vectors
+	./build/deflate_vectors > build/lean-gen/deflate_vectors.txt
+	cd lean && $(LAKE) build ExrSpec deflatecheck
+	./lean/.lake/build/bin/deflatecheck build/lean-gen/deflate_vectors.txt
+	@echo "deflate-diff: OK"
+
+.PHONY: jph-diff
+jph-diff: lean-tools
+	mkdir -p build/lean-gen
+	$(CC) -std=c11 -Wall -Wextra -Werror test/v3/jph_vectors.c -o build/jph_vectors
+	./build/jph_vectors \
+	  test/unit/regression/2by2_htj2k32.exr \
+	  test/unit/regression/tiled_htj2k256.exr \
+	  test/fuzzer/corpus_jph/2by2_htj2k32.exr \
+	  test/fuzzer/corpus_jph/tiled_htj2k256.exr > build/lean-gen/jph_vectors.txt
+	cd lean && $(LAKE) build ExrSpec jphcheck
+	./lean/.lake/build/bin/jphcheck build/lean-gen/jph_vectors.txt
+	@echo "jph-diff: OK"
+
+.PHONY: texcomp-bc5-enc-img-diff
+texcomp-bc5-enc-img-diff: texcomp lean-tools
+	mkdir -p build/lean-gen
+	$(CC) -std=c11 -Wall -Wextra -Itools/texcomp/include -Iinclude -Isrc \
+	  -Iexamples/common test/v3/tc_bc5_enc_img_vectors.c \
+	  build/libtexcomp.a build/libtinyexr3.a -lm -pthread -o build/tc_bc5_enc_img_vectors
+	./build/tc_bc5_enc_img_vectors > build/lean-gen/tc_bc5_enc_img_vectors.txt
+	$(CC) -std=c11 -Wall -Wextra -Itools/texcomp/include -Iinclude -Isrc \
+	  -Iexamples/common test/v3/tc_bc6h_enc_img_vectors.c \
+	  build/libtexcomp.a build/libtinyexr3.a -lm -pthread -o build/tc_bc6h_enc_img_vectors
+	./build/tc_bc6h_enc_img_vectors > build/lean-gen/tc_bc6h_enc_img_vectors.txt
+	cd lean && $(LAKE) build ExrSpec tcbc5encimgcheck
+	./lean/.lake/build/bin/tcbc5encimgcheck build/lean-gen/tc_bc5_enc_img_vectors.txt
+	./lean/.lake/build/bin/tcbc5encimgcheck build/lean-gen/tc_bc6h_enc_img_vectors.txt
+	@echo "texcomp-bc5-enc-img-diff: OK"
+
+.PHONY: texcomp-bc-img-diff
+texcomp-bc-img-diff: texcomp texcomp-bc135-diff lean-tools
+	mkdir -p build/lean-gen
+	$(CC) -std=c11 -Wall -Wextra -Itools/texcomp/include -Iinclude -Isrc \
+	  -Iexamples/common -Itools/texcomp/src test/v3/tc_bc_img_vectors.c \
+	  build/libtexcomp.a build/libtinyexr3.a -lm -pthread -o build/tc_bc_img_vectors
+	./build/tc_bc_img_vectors > build/lean-gen/tc_bc_img_vectors.txt
+	$(CC) -std=c11 -Wall -Wextra -Itools/texcomp/include -Iinclude -Isrc \
+	  -Iexamples/common test/v3/tc_etc2_img_vectors.c \
+	  build/libtexcomp.a build/libtinyexr3.a -lm -pthread -o build/tc_etc2_img_vectors
+	./build/tc_etc2_img_vectors > build/lean-gen/tc_etc2_img_vectors.txt
+	cd lean && $(LAKE) build ExrSpec tcbcimgcheck
+	./lean/.lake/build/bin/tcbcimgcheck build/lean-gen/tc_bc_img_vectors.txt
+	./lean/.lake/build/bin/tcbcimgcheck build/lean-gen/tc_etc2_img_vectors.txt
+	@echo "texcomp-bc-img-diff: OK"
 
 .PHONY: texcomp-bc6h-diff
 texcomp-bc6h-diff: texcomp lean-tools
@@ -1501,6 +1629,9 @@ fuzz-corpus: $(V3_TEST_OBJ) build/test-tinyexr_zstd.o $(LD_TEST_OBJ) test/fuzzer
 	$(CC) $(V3_CSTD) -Wall -Wextra $(V3_INC) -O1 -g $(SAN) -DEXR_FUZZ_STANDALONE \
 	  test/fuzzer/fuzz_v3.c $(V3_TEST_OBJ) build/test-tinyexr_zstd.o $(LD_TEST_OBJ) -lm \
 	  -o build/fuzz_replay
+	@for f in asakusa.exr data/deepscanline.exr; do \
+	  test -f "$$f" || { echo "FATAL: missing corpus entry $$f"; exit 1; }; \
+	done
 	./build/fuzz_replay test/unit/regression/* build/fuzz-corpus-v3/* asakusa.exr data/deepscanline.exr
 
 # Some local sandboxes/debug wrappers use ptrace. LeakSanitizer cannot run
@@ -1511,6 +1642,9 @@ fuzz-corpus-asan: $(V3_TEST_OBJ) build/test-tinyexr_zstd.o $(LD_TEST_OBJ) test/f
 	$(CC) $(V3_CSTD) -Wall -Wextra $(V3_INC) -O1 -g $(SAN) -DEXR_FUZZ_STANDALONE \
 	  test/fuzzer/fuzz_v3.c $(V3_TEST_OBJ) build/test-tinyexr_zstd.o $(LD_TEST_OBJ) -lm \
 	  -o build/fuzz_replay
+	@for f in asakusa.exr data/deepscanline.exr; do \
+	  test -f "$$f" || { echo "FATAL: missing corpus entry $$f"; exit 1; }; \
+	done
 	ASAN_OPTIONS=detect_leaks=0 ./build/fuzz_replay test/unit/regression/* build/fuzz-corpus-v3/* asakusa.exr data/deepscanline.exr
 
 # Parse/load every *.exr under $(EXR_IMAGES) and classify PASS/XFAIL/FAIL.
@@ -1811,7 +1945,7 @@ endif
 .PHONY: resize-lib resize-c11-gate resize-test resize-test-asan \
         resize-test-threads resize-test-tsan resize-test-f16 resize-bench \
         resize-cli resize-cli-asan resize-fuzz resize-fuzz-corpus \
-        resize-arm-test resize-sve-test
+        resize-arm-test resize-sve-test tir-diff tir-kernel-diff tir-streaming-diff
 
 build/tir-%.o: tools/resize/src/%.c $(TIR_HDRS) | build
 	$(CC) $(V3_CSTD) $(V3_WARN) $(TIR_INC) -O2 -g -c $< -o $@
@@ -1895,6 +2029,33 @@ TIR_BENCH_DEFS =
 ifeq ($(STB),1)
 TIR_BENCH_DEFS = -DTIR_BENCH_STB
 endif
+
+# ---- tir Lean differential gate ---------------------------------------------
+build/tir_vectors: test/v3/tir_vectors.c $(TIR_HDRS) resize-lib | build
+	$(CC) $(V3_CSTD) $(V3_WARN) $(TIR_INC) -O2 -g $< build/libtir.a -lm -o $@
+
+build/tir_kernel_vectors: test/v3/tir_kernel_vectors.c $(TIR_HDRS) resize-lib | build
+	$(CC) $(V3_CSTD) $(V3_WARN) $(TIR_INC) -O2 -g $< build/libtir.a -lm -o $@
+
+tir-kernel-diff: build/tir_kernel_vectors lean-tools
+	./build/tir_kernel_vectors > build/tir_kernel_vectors.txt
+	./lean/.lake/build/bin/tirkernelcheck build/tir_kernel_vectors.txt
+	@echo "tir-kernel-diff: OK"
+
+.PHONY: tir-streaming-diff
+tir-streaming-diff: resize-lib lean-tools
+	mkdir -p build/lean-gen
+	$(CC) $(V3_CSTD) $(V3_WARN) $(TIR_INC) test/v3/tir_streaming_vectors.c \
+	  build/libtir.a -lm -o build/tir_streaming_vectors
+	./build/tir_streaming_vectors > build/lean-gen/tir_streaming_vectors.txt
+	cd lean && $(LAKE) build ExrSpec tirstreamcheck
+	./lean/.lake/build/bin/tirstreamcheck build/lean-gen/tir_streaming_vectors.txt
+	@echo "tir-streaming-diff: OK"
+
+tir-diff: build/tir_vectors lean-tools
+	./build/tir_vectors > build/tir_vectors.txt
+	./lean/.lake/build/bin/tircheck build/tir_vectors.txt
+	@echo "tir-diff: OK"
 
 resize-bench: lib | build
 	$(CC) $(V3_CSTD) -Wall -Wextra $(TIR_INC) $(V3_INC) $(TIR_BENCH_DEFS) -O2 -g \

@@ -20,7 +20,67 @@ require mathlib from git
 
 @[default_target]
 lean_lib ExrSpec where
-  globs := #[`ExrSpec, `Exr.+, `Texcomp.+, `Tocio.+]
+  globs := #[`ExrSpec, `Exr.+, `Texcomp.+, `Tocio.+, `Tir.+]
+
+/-- BC5 image-compressor differential checker (C vs Lean). -/
+@[default_target]
+lean_exe tcbc5encimgcheck where
+  root := `TexcompBc5EncCheck
+
+/-- BC4/BC5 full-image differential checker (C vs Lean). -/
+@[default_target]
+lean_exe tcbcimgcheck where
+  root := `TexcompBcImgCheck
+
+/-- Tocio loader-bounds differential checker (C vs Lean). -/
+@[default_target]
+lean_exe tocioboundscheck where
+  root := `TocioBoundsCheck
+
+/-- Tir streaming state-machine differential checker (C vs Lean). -/
+@[default_target]
+lean_exe tirstreamcheck where
+  root := `TirStreamCheck
+
+/-- Tile-geometry ceil-div differential checker (C vs Lean). -/
+@[default_target]
+lean_exe tilegeomcheck where
+  root := `TileGeomCheck
+
+/-- Image-budget byte-size differential checker (C vs Lean). -/
+@[default_target]
+lean_exe imagebudgetcheck where
+  root := `ImageBudgetCheck
+
+/-- Tocio codegen-semantics differential checker (C vs Lean). -/
+@[default_target]
+lean_exe tociocgsemcheck where
+  root := `TocioCodegenSemCheck
+
+/-- Tocio matrix/LUT model differential checker (C vs Lean). -/
+@[default_target]
+lean_exe tociomodelcheck where
+  root := `TocioModelCheck
+
+/-- Reader-state latch/ownership differential checker (C vs Lean). -/
+@[default_target]
+lean_exe readerstatecheck where
+  root := `ReaderStateCheck
+
+/-- Shared header-validator differential checker (C vs Lean). -/
+@[default_target]
+lean_exe headervalidatecheck where
+  root := `HeaderValidateCheck
+
+/-- DEFLATE stored/fixed-Huffman differential checker (C vs Lean). -/
+@[default_target]
+lean_exe deflatecheck where
+  root := `DeflateCheck
+
+/-- JPH wrapper differential checker (C vectors vs Lean model). -/
+@[default_target]
+lean_exe jphcheck where
+  root := `JphCheck
 
 /-- Structural conformance checker (machine-readable report). -/
 @[default_target]
@@ -176,6 +236,16 @@ lean_exe bc6hkerncheck where
 @[default_target]
 lean_exe bc6hm0check where
   root := `Bc6hMode0Check
+
+/-- tir axis-measure differential checker (C vs Lean). -/
+@[default_target]
+lean_exe tircheck where
+  root := `TirCheck
+
+/-- tir scalar-kernel differential checker (C vs Lean). -/
+@[default_target]
+lean_exe tirkernelcheck where
+  root := `TirKernelCheck
 
 /-- Correctly-rounded sqrtf differential checker (C vs Lean). -/
 @[default_target]

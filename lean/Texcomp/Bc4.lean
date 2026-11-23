@@ -21,12 +21,12 @@ def bc4Palette (e0 e1 : UInt8) : Fin 8 → UInt8 :=
         let e0n := e0.toNat
         let e1n := e1.toNat
         let idx := i.val - 2
-        if idx = 0 then ((6 * e0n + 1 * e1n) / 7).toUInt8
-        else if idx = 1 then ((5 * e0n + 2 * e1n) / 7).toUInt8
-        else if idx = 2 then ((4 * e0n + 3 * e1n) / 7).toUInt8
-        else if idx = 3 then ((3 * e0n + 4 * e1n) / 7).toUInt8
-        else if idx = 4 then ((2 * e0n + 5 * e1n) / 7).toUInt8
-        else ((1 * e0n + 6 * e1n) / 7).toUInt8
+        if idx = 0 then ((6 * e0n + 1 * e1n + 3) / 7).toUInt8
+        else if idx = 1 then ((5 * e0n + 2 * e1n + 3) / 7).toUInt8
+        else if idx = 2 then ((4 * e0n + 3 * e1n + 3) / 7).toUInt8
+        else if idx = 3 then ((3 * e0n + 4 * e1n + 3) / 7).toUInt8
+        else if idx = 4 then ((2 * e0n + 5 * e1n + 3) / 7).toUInt8
+        else ((1 * e0n + 6 * e1n + 3) / 7).toUInt8
   else
     fun i =>
       if i.val = 0 then e0
@@ -37,10 +37,10 @@ def bc4Palette (e0 e1 : UInt8) : Fin 8 → UInt8 :=
         let e0n := e0.toNat
         let e1n := e1.toNat
         let idx := i.val - 2
-        if idx = 0 then ((4 * e0n + 1 * e1n) / 5).toUInt8
-        else if idx = 1 then ((3 * e0n + 2 * e1n) / 5).toUInt8
-        else if idx = 2 then ((2 * e0n + 3 * e1n) / 5).toUInt8
-        else ((1 * e0n + 4 * e1n) / 5).toUInt8
+        if idx = 0 then ((4 * e0n + 1 * e1n + 2) / 5).toUInt8
+        else if idx = 1 then ((3 * e0n + 2 * e1n + 2) / 5).toUInt8
+        else if idx = 2 then ((2 * e0n + 3 * e1n + 2) / 5).toUInt8
+        else ((1 * e0n + 4 * e1n + 2) / 5).toUInt8
 
 /-- Extract a 3-bit index from 6 index bytes at a given texel. -/
 def bc4Index (idxBytes : Fin 6 → UInt8) (texel : Fin 16) : Fin 8 :=

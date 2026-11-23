@@ -173,6 +173,9 @@ tir_result tir__axis_measure(const tir__axis_params *p, tir__axis_dims *out);
  * doubles. Must be called with the same params as the measure pass. */
 void tir__axis_fill(const tir__axis_params *p, const tir__axis_dims *dims,
                     tir__axis *ax, double *scratch);
+/* Differential-gate hook (see tir_table.c). */
+tir_result tir__axis_classify(const tir__axis_params *p, unsigned char *out,
+                              tir__axis_dims *dims);
 
 /* ===========================================================================
  * Sampler
