@@ -109,8 +109,8 @@ the status/tooling and proof-hardening update was revalidated on 2026-11-25.
 | `make jph-diff` | 4 real HTJ2K EXR fixtures (2 regression + 2 fuzz corpus), marker sequence + SIZ/COD/QCD geometry + profile verdict, C vs Lean, 0 mismatches. |
 | `make tir-diff` | 3240 C classification vectors (10 widths × 9 filters × 3 edge modes × 2 registrations × 3 scales × 2 sigmas), 0 mismatches; `make resize-c11-gate` and `make resize-test` green (777 tests). |
 | `make lean-diff-all` | All 80 discovered `*-diff` targets passed sequentially with zero mismatches. |
-| `make lean-status` | 328 Lean files, 57,115 lines and 1,559 source-level theorem/lemma declarations; axiom audit 4,874 first-party theorems; 80 differential targets discovered. |
-| `make lean-tools lean-axiom-check` | Full build passed; 4874 first-party theorems (EXR + ExrMath + Texcomp + Tocio + Tir + Math), 179 with bit-vector certificate dependencies, 81 with approved native checks; no unexpected axioms. |
+| `make lean-status` | 328 Lean files, 57,127 lines and 1,560 source-level theorem/lemma declarations; axiom audit 4,875 first-party theorems; 80 differential targets discovered. |
+| `make lean-tools lean-axiom-check` | Full build passed; 4875 first-party theorems (EXR + ExrMath + Texcomp + Tocio + Tir + Math), 179 with bit-vector certificate dependencies, 81 with approved native checks; no unexpected axioms. |
 | Focused proof-hardening gates | BC6H kernels 4215/0, BC6H block drivers 480/0, BC7 pack candidates 640/0, ASTC HDR pack 400/0, ASTC HDR decode 256/0, float-output wrappers 293/0 and YAML documents 48/0 mismatches. These revalidate the executable definitions behind the new structural theorems. |
 | `make texcomp-lean-check tocio-lean-check` | New-module builds passed. |
 | `make texcomp-bc6h-diff` | 1028 BC6H blocks (all 14 modes, signed + unsigned), C vs Lean byte-exact. |

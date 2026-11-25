@@ -139,4 +139,16 @@ theorem bc7FillPalette_entry_length (c : Bc7Candidate) (p : List (List Nat))
   obtain ⟨subset, _, rfl⟩ := hp
   simp
 
+/-- Every reconstructed channel of every palette entry is an 8-bit value. -/
+theorem bc7FillPalette_entry_channels_lt (c : Bc7Candidate) (p : List (List Nat))
+    (hp : p ∈ bc7FillPalette c) :
+    ∀ rgb ∈ p, ∀ x ∈ rgb, x < 256 := by
+  rw [bc7FillPalette, List.mem_map] at hp
+  obtain ⟨subset, _, rfl⟩ := hp
+  intro rgb hrgb x hx
+  rw [List.mem_map] at hrgb
+  obtain ⟨sel, _, heq⟩ := hrgb
+  rw [← heq] at hx
+  exact bc7ReconColor_lt c subset _ _ x hx
+
 end Texcomp
