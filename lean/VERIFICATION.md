@@ -23,7 +23,7 @@ implementation, its compiler, or memory safety for every possible input.
 | RLE and ZIP wrapper | Interleave and predictor inverses, greedy RLE round trip and raw fallback; Adler-32 and ZIP wrapper structure/checksum. DEFLATE stored/fixed/dynamic payload decoding is modelled (encoder-side LZ77 choices remain outside). |
 | PIZ | Complete successful encoder/decoder round trip through bitmap framing, frequency-derived canonical Huffman coding, both wavelet modes, sampled channel/lane traversal, LUT restoration, reordering and raw fallback. |
 | Texcomp | Container headers/sizes and full DDS/KTX payload round trips; BC1/3/4/5/6H/7, ETC2/EAC and ASTC LDR/HDR/UASTC block models plus public image encode/decode drivers; uni transcodes. Every image path is byte-exact against C through the `texcomp-*-diff` gates. Proof hardening now covers BC6H/BC7 wire-writer and size contracts, BC6H signed fields and candidate monotonicity, BC7 weight symmetry, ASTC HDR void extents, and float-output image lengths. |
-| Shared math | `Math.F32` models the libm-free accurate/exact tier; `Math.F32ULP` proves bit-distance metric laws, exactness on all 254 normal powers, and tight 3/1/44-ULP worst-bit witnesses. Exhaustive C validation covers every normal `log2f`, every in-range `exp2f`/`expf`, and every positive-normal `powf(x,1)` input. A universal analytic mantissa bound remains a documented boundary. |
+| Shared math | `Math.F32` models the libm-free accurate/exact tier with binary64 intermediates for `log2f`/`exp2f`/`logf`/`powf`; `Math.F32ULP` proves bit-distance metric laws, exactness on all 254 normal powers, and the direct `powf(x,1)=x` branch. Exhaustive C validation covers every normal `log2f`, every in-range `exp2f`/`expf`, and every positive-normal `powf(x,1)` input, with ≤1 ULP versus glibc and 0 ULP against the correctly-rounded oracle at every disagreement. A universal analytic mantissa bound remains a documented boundary. |
 | tir (resize) | Axis geometry and edge-mapping invariants, in-bounds fast-run/anti-ringing footprints, window trim/normalisation laws, and a proved measure/fill classification agreement theorem; replayed against the C table builder by `make tir-diff` (3240 vectors, 0 mismatches). The scalar kernel and pixel-conversion models are bit-exact against C (`make tir-kernel-diff`, 4096 vectors, 0 mismatches). Filter coefficient values are gate-pinned, not re-derived. |
 | Shared helpers / checked arithmetic / TSan (S8-S10) | The reader/writer share `exr_internal.h` sampling + ceil-div inlines, `exr_deep.c` uses `exr_add_ovf`/`exr_mul_ovf` on all accumulation/allocation sites, and `make test-c-tsan` now runs both suites under ThreadSanitizer (both green). Added a unit regression for the shared helpers and overflow guards. |
 | Fuzz/API coverage (S6/S7) | The C fuzz harness already covers the full public reader API with a budgeted allocator, deep two-step decode and WOULD_BLOCK suspend/resume; S6/S7 are locked in by unit regressions for out-of-order `exr_reader_supply` and destination-size checking in `exr_block_extract_channel` (all green under ASan/UBSan/LSan). |
@@ -91,9 +91,9 @@ the status/tooling and proof-hardening update was revalidated on 2026-11-25.
 | `make texcomp-float-dec-diff` | 293 full-output vectors for `tc_bc6h_decompress_rgb16f/_rgbaf`, `tc_bc7_decompress_rgbaf` and `tc_astc_hdr_decompress_rgbaf` (odd dimensions, random blocks), C vs Lean byte-exact, 0 mismatches; the gate exposed and fixed the `unorm16ToSf16(0xffff)` threshold in `Texcomp.AstcHdr`. |
 | `make texcomp-bc-img-diff` | 900 full-image vectors: 400 BC4/BC5 (widths/heights 1–17 incl. partial blocks) and 500 ETC2 RGB/RGBA, EAC R11/RG11 and BC7, C vs Lean byte-exact, 0 mismatches. Also re-runs `texcomp-bc135-diff` (1536 blocks, 0 mismatches) after the BC4 rounding fix. |
 | `make tir-kernel-diff` | 4096 bit-exact scalar-kernel/conversion vectors (16 per random seed), 0 mismatches; `rangeCompress`/`rangeExpand`/`normalize3` now mirror `ExrMath` definitions, not libm externs. |
-| `make math-test` | Structured ULP sweep against libm: exact `sqrtf` 0 ULP (16,777,228 random/edge cases); accurate `log2f` max 3 ULP (75,497,472 cases), `exp2f` 1 ULP (41,810,376), `expf` 1 ULP (31,518,925), `powf` 11 ULP (16,777,216); frozen fast tier bit-identical to `exr_util_*` (8,388,608 cases); f64 table helpers within 1e-13/2e-13 relative. `make math-ulp-full` runs the exhaustive 2^32/2^31 sweeps (opt-in). |
-| `make math-accurate-ulp` | Exhaustive accurate-tier domains: all 2,130,706,432 normal `log2f` inputs max 3 ULP; all 2,247,622,658 in-range `exp2f` inputs max 1; 2,237,530,112 in-range `expf` inputs max 1; all 2,122,317,824 positive-normal `powf(x,1)` inputs max 44; thresholds 3/2/4/44, zero over-limit results. |
-| `make math-pow-one-ulp` | Dedicated exhaustive 2,122,317,824-input `powf(x,1)` sweep, max 44 ULP, 129,884,907 exact, zero over limit. |
+| `make math-test` | Structured ULP sweep against libm: exact `sqrtf` 0 ULP (16,777,228 random/edge cases); accurate `log2f` max 1 ULP (75,497,472 cases), `exp2f` 1 ULP (41,810,376), `expf` 1 ULP (31,518,925), `powf` 1 ULP (16,777,216); frozen fast tier bit-identical to `exr_util_*` (8,388,608 cases); f64 table helpers within 1e-13/2e-13 relative. `make math-ulp-full` runs the exhaustive 2^32/2^31 sweeps (opt-in). |
+| `make math-accurate-ulp` | Exhaustive accurate-tier domains with 1-ULP gates: all 2,130,706,432 normal `log2f` inputs max 1 ULP; all 2,247,622,658 in-range `exp2f` inputs max 1; 2,237,530,112 in-range `expf` inputs max 1; 142,606,336 `powf` grid inputs max 1; all 2,122,317,824 positive-normal `powf(x,1)` inputs max 0; zero over-limit results. |
+| `make math-pow-one-ulp` | Dedicated exhaustive 2,122,317,824-input `powf(x,1)` sweep, max **0 ULP**, all inputs exact, zero over limit. |
 | `make math-diff` | 5764 bit-exact vectors for all eight math entry points (special values, boundaries, 512 random + 512 expf-domain cases), C vs Lean, 0 mismatches. |
 | `make tocio-jit-diff` / `tocio-simd-diff` | 256 randomized pixels through matrix/exponent/range/exp-linear/log/log-camera, scalar vs SIMD tiers 1/2 and vs x64 JIT; all bit-identical (0 mismatches). |
 | `make libm-free-gate` | `nm -u` scan of all `libtinyexr3`, `libtir`, `libtexcomp`, `libtocio` objects against the full libm symbol list, plus a no-`-lm` link smoke calling one function from each library, OK. |
@@ -109,8 +109,8 @@ the status/tooling and proof-hardening update was revalidated on 2026-11-25.
 | `make jph-diff` | 4 real HTJ2K EXR fixtures (2 regression + 2 fuzz corpus), marker sequence + SIZ/COD/QCD geometry + profile verdict, C vs Lean, 0 mismatches. |
 | `make tir-diff` | 3240 C classification vectors (10 widths × 9 filters × 3 edge modes × 2 registrations × 3 scales × 2 sigmas), 0 mismatches; `make resize-c11-gate` and `make resize-test` green (777 tests). |
 | `make lean-diff-all` | All 80 discovered `*-diff` targets passed sequentially with zero mismatches. |
-| `make lean-status` | 328 Lean files, 57,006 lines and 1,552 source-level theorem/lemma declarations; axiom audit 4,859 first-party theorems; 80 differential targets discovered. |
-| `make lean-tools lean-axiom-check` | Full build passed; 4859 first-party theorems (EXR + ExrMath + Texcomp + Tocio + Tir + Math), 179 with bit-vector certificate dependencies, 86 with approved native checks; no unexpected axioms. |
+| `make lean-status` | 328 Lean files, 57,031 lines and 1,549 source-level theorem/lemma declarations; axiom audit 4,859 first-party theorems; 80 differential targets discovered. |
+| `make lean-tools lean-axiom-check` | Full build passed; 4859 first-party theorems (EXR + ExrMath + Texcomp + Tocio + Tir + Math), 179 with bit-vector certificate dependencies, 81 with approved native checks; no unexpected axioms. |
 | Focused proof-hardening gates | BC6H kernels 4215/0, BC6H block drivers 480/0, BC7 pack candidates 640/0, ASTC HDR pack 400/0, ASTC HDR decode 256/0, float-output wrappers 293/0 and YAML documents 48/0 mismatches. These revalidate the executable definitions behind the new structural theorems. |
 | `make texcomp-lean-check tocio-lean-check` | New-module builds passed. |
 | `make texcomp-bc6h-diff` | 1028 BC6H blocks (all 14 modes, signed + unsigned), C vs Lean byte-exact. |
@@ -235,17 +235,19 @@ validation checks, not library proofs.
   proves a **quantitative bound**: for the 400-point structured slice
   "mantissa 1.25 or 1.5, exponent in [-99, 100]" (which contains the `3`
   counterexample) `powf x 1` is within **16 ULP** of `x` (measured max
-  13) on that slice. A proved bound uniform over *arbitrary* mantissas is
-  still an accepted scope boundary, but executable coverage is exhaustive:
-  `make math-accurate-ulp` sweeps all normal `log2f` inputs (max 3 ULP), all
-  in-range `exp2f`/`expf` inputs (max 1 ULP each) and all positive normal
-  `powf(x,1)` inputs (max 44 ULP, 2,122,317,824 cases). `Math/F32ULP.lean`
-  proves exactness on all 254 normal powers, the metric laws, and the 3/1/44
-  worst-bit witnesses; `powf_one_uniform_16_ulp_false` records that the
-  slice's 16-ULP bound is not uniform. The general structured `powf` sweep
-  reports max 11 ULP (`make math-test`). The exact square root is 0 ULP over
-  the tested domain. `make math-diff` pins the Lean definitions bit-for-bit;
-  a universal analytic proof over all mantissas remains out of scope. Texcomp is
+  13) on that slice. A proved bound uniform over *arbitrary* mantissas remains
+  an accepted boundary for this Tocio model; its executable coverage is the
+  sampled grid plus the differential corpus.
+* The shared `ExrMath` accurate tier (`Math/F32.lean`) now evaluates
+  `log2f`/`exp2f`/`logf`/`powf` with binary64 intermediates and one final
+  binary32 rounding; `expf` uses the binary64 range reduction. `Math/F32ULP`
+  proves exactness on all 254 normal powers plus the direct `powf(x,1)=x`
+  branch. Exhaustive practical-domain sweeps (`make math-accurate-ulp`)
+  report at most 1 ULP versus glibc for `log2f`/`exp2f`/`expf`/`powf`, and
+  0 ULP against the mpmath correctly-rounded oracle at every mismatch with
+  glibc. `powf(x,1)` is exactly `x` over all 2,122,317,824 positive normals.
+  A universal analytic proof over all mantissas remains out of scope; no
+  claim is made that glibc itself is correctly rounded. Texcomp is
   covered by implementation-level differential gates rather than an
   engine-level one. Plan for completion is in
   `~/.opencode/plan/lean-remaining-tasks.md` (outside repo).

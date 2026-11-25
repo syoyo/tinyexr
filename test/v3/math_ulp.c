@@ -97,7 +97,8 @@ static void check_special(void) {
     if (exr_math_powf(0.0f, 2.0f) != 0.0f) ok = 0;
     if (exr_math_powf(0.0f, -1.0f) != inf) ok = 0;
     if (exr_math_powf(2.0f, 0.0f) != 1.0f) ok = 0;
-    if (!isnan(exr_math_powf(-2.0f, 2.0f))) ok = 0;
+    if (exr_math_powf(-2.0f, 2.0f) != 4.0f) ok = 0;
+    if (!isnan(exr_math_powf(-2.0f, 0.5f))) ok = 0;
     if (!isnan(exr_math_sqrtf_exact(-1.0f))) ok = 0;
     if (exr_math_sqrtf_exact(0.0f) != 0.0f) ok = 0;
     if (exr_math_sqrtf_exact(4.0f) != 2.0f) ok = 0;
@@ -145,7 +146,7 @@ static void log2_sample(stat *s, float x) {
 }
 static void check_log2(void) {
     static const int exps[] = { 1, 64, 126, 127, 128, 191, 254 };
-    stat s = { "log2f", 0, 0, 0, 0, 3 };
+    stat s = { "log2f", 0, 0, 0, 0, 1 };
     uint64_t i;
     size_t k;
     if (g_full) {
@@ -173,8 +174,8 @@ static void exp2_sample(stat *s2, stat *se, float x) {
     if (x > -87.0f && x < 88.0f) add(se, exr_math_expf(x), expf(x));
 }
 static void check_exp2(void) {
-    stat s2 = { "exp2f", 0, 0, 0, 0, 2 };
-    stat se = { "expf", 0, 0, 0, 0, 4 };
+    stat s2 = { "exp2f", 0, 0, 0, 0, 1 };
+    stat se = { "expf", 0, 0, 0, 0, 1 };
     uint64_t i;
     if (g_full) {
         for (i = 0; i <= 0xffffffffULL; ++i)
@@ -201,7 +202,7 @@ static void pow_sample(stat *s, float x, float y) {
     add(s, exr_math_powf(x, y), ref);
 }
 static void check_pow(void) {
-    stat s = { "powf", 0, 0, 0, 0, 16 };
+    stat s = { "powf", 0, 0, 0, 0, 1 };
     uint64_t i;
     if (g_full) {
         uint32_t m;
@@ -224,7 +225,7 @@ static void check_pow(void) {
 /* Exhaustive `powf(x, 1)` sweep over every positive normal binary32 input.
  * This is the Lean `powf_pow2_one_exact` / `powf_one_44ulp_witness` domain. */
 static void check_pow_one(void) {
-    stat s = { "powf(x,1)", 0, 0, 0, 0, 44 };
+    stat s = { "powf(x,1)", 0, 0, 0, 0, 1 };
     uint32_t ef, m;
     if (!(g_full || g_pow_one)) return;
     for (ef = 1; ef <= 253; ++ef) {
@@ -287,6 +288,7 @@ int main(int argc, char **argv) {
         printf("math ULP check: accurate-tier exhaustive domains\n");
         check_log2();
         check_exp2();
+        check_pow();
         check_pow_one();
         printf("math ULP check: %s\n", g_failed ? "FAIL" : "OK");
         return g_failed ? 1 : 0;

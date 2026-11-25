@@ -51,10 +51,7 @@ run_cmd do
           "ExrGen.generate_deepscanline_parses", "ExrGen.generate_multipart_parses",
           "ExrGen.generate_scanline_valid", "ExrGen.generate_tiled_valid",
           "ExrGen.generate_multipart_valid", "ExrGen.generate_multipart_valid_openexr",
-          "ExrMath.log2f_pow2_exact", "ExrMath.exp2f_int_exact",
-          "ExrMath.powf_pow2_one_exact", "ExrMath.log2f_3ulp_witness",
-          "ExrMath.exp2f_1ulp_witness", "ExrMath.powf_one_44ulp_witness",
-          "ExrMath.powf_one_uniform_16_ulp_false"]
+          "ExrMath.log2f_pow2_exact", "ExrMath.exp2f_int_exact"]
         -- Tocio/Math concrete checks (Float arithmetic and exhaustive fixture
         -- witnesses) use native_decide locally, same pattern as the ExrGen
         -- fixture checks: the axiom must be owned by the theorem itself. These

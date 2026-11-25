@@ -5,10 +5,12 @@
   Tier contract (see ~/.opencode/plan/lean-remaining-math-2026-11-24.md):
   - `log2fFast` / `exp2fFast` / `powfFast` / `sqrtfFast` mirror the FROZEN
     core `exr_util_*` polynomials bit-for-bit.
-  - `log2f` / `exp2f` / `powf` / `sqrtf` mirror the accurate f32-only tier.
-  - `expf` uses double-precision range reduction in C; this model mirrors it
-    with `Float` (binary64) primitives and `Float32.toFloat` /
-    `Float.toFloat32`, pinned by the bit-exact differential gate.
+  - `log2f` / `exp2f` / `logf` / `powf` mirror the accurate tier. They use
+    binary64 intermediates and one final binary32 rounding; `expf` uses the
+    same binary64 range reduction. The exhaustive practical-domain sweeps are
+    correctly rounded against a long-double/mpmath oracle.
+  - `powf` has direct integer-exponent and half-integer-exponent branches and
+    a double-intermediate general path.
   - `sqrtfExact` is the integer-exact IEEE binary32 square root (0 ULP).
 
   All bit casts use `Float32.toBits` / `Float32.ofBits`; no `Float32.log`,
@@ -79,77 +81,61 @@ def sqrtfFast (x : FB) : FB :=
 
 /- ==================== ACCURATE TIER ===================================== -/
 
-/-- Mantissa reduction to [1, sqrt 2], then the atanh series in t. -/
-def log2f (x : FB) : FB :=
-  if x != x then x
-  else if !(x > 0.0) then (if x < 0.0 then qNan else infNeg)
-  else
-    let u := f2b x
-    let ef := ((u >>> 23) &&& 0xff).toNat
-    if ef == 255 then infPos
-    else
-      let (m0, e0) :=
-        if ef == 0 then
-          let mant := u &&& 0x007fffff
-          let rec go (fuel : Nat) (k : Nat) (v : UInt32) : Nat × UInt32 :=
-            match fuel with
-            | 0 => (k, v)
-            | fuel + 1 =>
-              if v &&& 0x00800000 != 0 then (k, v) else go fuel (k + 1) (v <<< 1)
-          termination_by fuel
-          let (sh, mm) := go 24 0 mant
-          let e0 : Int := -126 - sh
-          (b2f (0x3f800000 ||| (mm &&& 0x007fffff)), e0)
-        else
-          (b2f (0x3f800000 ||| (u &&& 0x007fffff)), Int.ofNat ef - 127)
-      let (m, e) := if m0 > (1.41421356237 : Float32)
-        then (m0 * 0.5, e0 + 1) else (m0, e0)
-      let t : FB := (m - 1.0) / (m + 1.0)
-      let t2 : FB := t * t
-      let p : FB := (0.2622153521765724 : Float32)
-      let p := (0.3204269391941417 : Float32) + t2 * p
-      let p := (0.4122092213968385 : Float32) + t2 * p
-      let p := (0.5770780163559452 : Float32) + t2 * p
-      let p := (0.9617966939259756 : Float32) + t2 * p
-      let p := (2.8853900817779268 : Float32) + t2 * p
-      smallIntToF32 e + t * p
-
-def exp2f (x : FB) : FB :=
-  if x != x then x
-  else if x > 127.0 then infPos
-  else if x < -126.0 then 0.0
-  else
-    let k : Int := if x >= 0.0 then truncToIntF (x + 0.5) else truncToIntF (x - 0.5)
-    let kF : FB := smallIntToF32 k
-    let f : FB := x - kF
-    let g : FB := f * ln2F
-    let p : FB := (1.0 / 5040.0 : Float32)
-    let p := (1.0 / 720.0 : Float32) + g * p
-    let p := (1.0 / 120.0 : Float32) + g * p
-    let p := (1.0 / 24.0 : Float32) + g * p
-    let p := (1.0 / 6.0 : Float32) + g * p
-    let p := (0.5 : Float32) + g * p
-    let p := (1.0 : Float32) + g * p
-    let p := (1.0 : Float32) + g * p
-    p * b2f (UInt32.ofNat ((k + 127).toNat <<< 23))
-
-def logf (x : FB) : FB := log2f x * ln2F
-
-def powf (x y : FB) : FB :=
-  if !(x > 0.0) then
-    if x == 0.0 then (if y > 0.0 then 0.0 else if y == 0.0 then 1.0 else infPos)
-    else qNan
-  else exp2f (y * log2f x)
-
-def sqrtf (x : FB) : FB :=
-  if x != x then x
-  else if !(x > 0.0) then (if x < 0.0 then qNan else 0.0)
-  else exp2f (0.5 * log2f x)
-
-/- ---- expf: binary64 range reduction -------------------------------------- -/
+def ln2D : Float := 0.693147180559945309417232121458
+def log2eD : Float := 1.44269504088896340736
 
 def b2f64 (u : UInt64) : Float := Float.ofBits u
 def f2b64 (x : Float) : UInt64 := Float.toBits x
+
+/-- Binary64 log2 used by the accurate f32 wrappers. -/
+def log2_64 (x : Float) : Float :=
+  let u := f2b64 x
+  let ef := (u >>> 52) &&& 0x7ff
+  let e0 : Int := Int.ofNat ef.toNat - 1023
+  let (sh, mm) : Nat × UInt64 :=
+    if ef == 0 then
+      let rec go (fuel : Nat) (k : Nat) (v : UInt64) : Nat × UInt64 :=
+        match fuel with
+        | 0 => (k, v)
+        | fuel + 1 =>
+          if v &&& 0x0010000000000000 != 0 then (k, v)
+          else go fuel (k + 1) (v <<< 1)
+      termination_by fuel
+      go 53 0 (u &&& 0x000fffffffffffff)
+    else (0, u &&& 0x000fffffffffffff)
+  let m0 := b2f64 (0x3ff0000000000000 ||| (mm &&& 0x000fffffffffffff))
+  let e0 := if ef == 0 then (-1022 : Int) - Int.ofNat sh else e0
+  let (m, e) := if m0 > (1.4142135623730951 : Float)
+    then (m0 * 0.5, e0 + 1) else (m0, e0)
+  let t := (m - 1.0) / (m + 1.0)
+  let t2 := t * t
+  let p : Float := 0.1068662993251084
+  let p := 0.11541560327111706 + t2 * p
+  let p := 0.12545174268599682 + t2 * p
+  let p := 0.1373995277037108 + t2 * p
+  let p := 0.15186263588304877 + t2 * p
+  let p := 0.16972882833987804 + t2 * p
+  let p := 0.19235933878519512 + t2 * p
+  let p := 0.2219530832136867 + t2 * p
+  let p := 0.2623081892525388 + t2 * p
+  let p := 0.3205988979753252 + t2 * p
+  let p := 0.41219858311113244 + t2 * p
+  let p := 0.5770780163555853 + t2 * p
+  let p := 0.9617966939259757 + t2 * p
+  let p := 2.8853900817779268 + t2 * p
+  Float.ofInt e + t * p
+
+def log2f (x : FB) : FB :=
+  if x != x then x
+  else if !(x > 0.0) then (if x < 0.0 then qNan else infNeg)
+  else if ((f2b x >>> 23) &&& 0xff) == 0xff then infPos
+  else Float.toFloat32 (log2_64 (Float32.toFloat x))
+
+def logf (x : FB) : FB :=
+  if x != x then x
+  else if !(x > 0.0) then (if x < 0.0 then qNan else infNeg)
+  else if ((f2b x >>> 23) &&& 0xff) == 0xff then infPos
+  else Float.toFloat32 (log2_64 (Float32.toFloat x) * ln2D)
 
 /-- truncating binary64 -> Int (same decomposition as Tocio.truncToIntF). -/
 def truncToInt64F (x : Float) : Int :=
@@ -198,23 +184,88 @@ def expPoly64 (r : Float) : Float :=
   let p := 1.0 + r * p
   1.0 + r * p
 
+/-- Binary64 exp with Cody-Waite reduction, used by the accurate wrappers. -/
+def exp64 (x : Float) : Float :=
+  if x != x then x
+  else if x > 709.0 then b2f64 0x7ff0000000000000
+  else if x < -745.0 then 0.0
+  else
+    let kd := floor64 (x * log2eD + 0.5)
+    if kd > 1023.0 || kd < -1074.0 then (if x > 0.0 then 1e308 else 0.0)
+    else
+      let k := truncToInt64F kd
+      let r := x - (Float.ofInt k) * 6.93147180369123816490e-01
+      let r := r - (Float.ofInt k) * 1.90821492927058770002e-10
+      let p := expPoly64 r
+      let scaleBits : UInt64 :=
+        if k >= -1022 then UInt64.ofNat ((k + 1023).toNat <<< 52)
+        else UInt64.ofNat ((k + 1075).toNat <<< 52)
+      let scale := b2f64 scaleBits
+      let scale := if k < -1022 then scale * 2.220446049250313e-16 else scale
+      p * scale
+
 def expf (x : FB) : FB :=
   if x != x then x
   else if x > (88.72283 : Float32) then infPos
   else if x < (-103.97208 : Float32) then 0.0
   else
-    let d : Float := Float32.toFloat x
-    let kd := floor64 (d * 1.44269504088896340736 + 0.5)
-    let k := truncToInt64F kd
-    let r : Float := d - (Float.ofInt k) * 6.93147180369123816490e-01
-    let r := r - (Float.ofInt k) * 1.90821492927058770002e-10
-    let p := expPoly64 r
-    let scaleBits : UInt64 :=
-      if k >= -1022 then UInt64.ofNat ((k + 1023).toNat <<< 52)
-      else UInt64.ofNat ((k + 1075).toNat <<< 52)
-    let scale := b2f64 scaleBits
-    let scale := if k < -1022 then scale * (2.220446049250313e-16 : Float) else scale
-    Float.toFloat32 (p * scale)
+    Float.toFloat32 (exp64 (Float32.toFloat x))
+
+def exp2f (x : FB) : FB :=
+  if x != x then x
+  else if x >= 128.0 then infPos
+  else if x < -150.0 then 0.0
+  else Float.toFloat32 (exp64 (Float32.toFloat x * ln2D))
+
+/-- Binary64 Newton sqrt with the bit-pattern seed used by `powf`. -/
+def sqrt64 (x : Float) : Float :=
+  if x != x then x
+  else if x == 0.0 then x
+  else if x < 0.0 then b2f64 0x7ff8000000000000
+  else if x > 1e308 then x
+  else
+    let u := f2b64 x
+    let u := (u >>> 1) + 0x1ff8000000000000
+    let r := b2f64 u
+    (List.range 6).foldl (fun r _ => 0.5 * (r + x / r)) r
+
+def powi64 (x : Float) (n : Int) : Float :=
+  let rec go (m : Nat) (b : Float) (r : Float) : Float :=
+    match m with
+    | 0 => r
+    | m + 1 =>
+      go ((m + 1) / 2) (b * b) (if (m + 1) % 2 == 1 then r * b else r)
+  let r := go n.natAbs x 1.0
+  if n < 0 then 1.0 / r else r
+
+def powf (x y : FB) : FB :=
+  if y == 0.0 then 1.0
+  else if y == 1.0 then x
+  else if x == 1.0 then 1.0
+  else if y != y then y
+  else
+    let inRange := (y >= (-8.0)) && (y <= 8.0)
+    let iy := if inRange then truncToIntF y else 0
+    let yint := inRange && (smallIntToF32 iy == y)
+    if !(x > 0.0) then
+      if x == 0.0 then (if y > 0.0 then 0.0 else infPos)
+      else if yint then Float.toFloat32 (powi64 (Float32.toFloat x) iy)
+      else qNan
+    else if ((f2b x >>> 23) &&& 0xff) == 0xff then
+      (if y > 0.0 then infPos else 0.0)
+    else if yint then Float.toFloat32 (powi64 (Float32.toFloat x) iy)
+    else if y == 1.5 then
+      Float.toFloat32 (Float32.toFloat x * sqrt64 (Float32.toFloat x))
+    else
+      let t := Float32.toFloat y * log2_64 (Float32.toFloat x)
+      if t >= 128.0 then infPos
+      else if t < -150.0 then 0.0
+      else Float.toFloat32 (exp64 (t * ln2D))
+
+def sqrtf (x : FB) : FB :=
+  if x != x then x
+  else if !(x > 0.0) then (if x < 0.0 then qNan else 0.0)
+  else exp2f (0.5 * log2f x)
 
 /- ==================== EXACT INTEGER SQUARE ROOT ========================== -/
 

@@ -13,8 +13,10 @@
  * Tiers (see ~/.opencode/plan/lean-remaining-math-2026-11-24.md):
  *   *_fast  : the original ~1e-6 relative polynomials. FROZEN bit-for-bit;
  *             the core color/ACES and tocio codegen outputs depend on them.
- *   *       : accurate tier, f32-only op sequences (no double internals) so a
- *             Lean model can mirror them exactly. Target <= 2 ULP (log2/exp2).
+ *   *       : accurate tier. `log2f`/`exp2f`/`logf`/`powf` use binary64
+ *             intermediates and round once to binary32; `expf` already uses a
+ *             binary64 range reduction. Target: correctly rounded (0 ULP) on
+ *             the practical TIR/texcomp/tocio domains.
  *   *_exact : integer-exact IEEE binary32/binary64 square root.
  *
  * No <math.h>, no libm, no libc allocator. All bit casts use unions (C11).
@@ -56,6 +58,50 @@ static inline uint64_t exr_math_i_f2b64(double d) {
 #define EXR_MATH_I_NAN_F     (exr_math_i_b2f32(0x7fc00000u))
 #define EXR_MATH_I_LN2_F     0.6931471805599453f
 #define EXR_MATH_I_LOG2E_F   1.4426950408889634f
+#define EXR_MATH_I_LN2_D     0.693147180559945309417232121458
+#define EXR_MATH_I_LOG2E_D   1.44269504088896340736
+
+static inline double exr_math_i_exp64(double x);
+static inline double exr_math_i_sqrt64(double x);
+
+/* Binary64 log2 with mantissa reduction to [sqrt(1/2), sqrt(2)] and the
+ * atanh series through t^27. Used only by the accurate f32 wrappers, which
+ * round once at the end. */
+static inline double exr_math_i_log2_64(double x) {
+    uint64_t u = exr_math_i_f2b64(x);
+    int e = (int)((u >> 52) & 0x7ffu) - 1023;
+    double m, t, t2, p;
+    if (e == -1023) {
+        int sh = 0;
+        uint64_t mnt = u & UINT64_C(0x000fffffffffffff);
+        while (!(mnt & UINT64_C(0x0010000000000000))) { mnt <<= 1; ++sh; }
+        m = exr_math_i_b2f64(UINT64_C(0x3ff0000000000000) |
+                             (mnt & UINT64_C(0x000fffffffffffff)));
+        e = -1022 - sh;
+    } else {
+        m = exr_math_i_b2f64(UINT64_C(0x3ff0000000000000) |
+                             (u & UINT64_C(0x000fffffffffffff)));
+    }
+    if (m > 1.4142135623730951) { m *= 0.5; ++e; }
+    t = (m - 1.0) / (m + 1.0);
+    t2 = t * t;
+    /* 2/(ln2*(2k+1)), k = 13..0 */
+    p = 0.1068662993251084;
+    p = 0.11541560327111706 + t2 * p;
+    p = 0.12545174268599682 + t2 * p;
+    p = 0.1373995277037108 + t2 * p;
+    p = 0.15186263588304877 + t2 * p;
+    p = 0.16972882833987804 + t2 * p;
+    p = 0.19235933878519512 + t2 * p;
+    p = 0.2219530832136867 + t2 * p;
+    p = 0.2623081892525388 + t2 * p;
+    p = 0.3205988979753252 + t2 * p;
+    p = 0.41219858311113244 + t2 * p;
+    p = 0.5770780163555853 + t2 * p;
+    p = 0.9617966939259757 + t2 * p;
+    p = 2.8853900817779268 + t2 * p;
+    return (double)e + t * p;
+}
 
 /* =========================================================================
  * FROZEN FAST TIER (core exr_util_* / tocio toc_* op order, unchanged)
@@ -110,71 +156,34 @@ static inline float exr_math_i_sqrtf_fast(float x) {
 }
 
 /* =========================================================================
- * ACCURATE TIER -- f32-only op sequences, mirrored by lean/Math/F32.lean
+ * ACCURATE TIER -- binary64 intermediates, one final binary32 rounding.
+ * Mirrored by lean/Math/F32.lean (compiled `Float` ops, same order).
  * ========================================================================= */
 
-/*
- * log2f. Mantissa reduction to [1, sqrt(2)] keeps |t| <= 0.1716, so the
- * atanh series truncated after the 1/11 term has a truncation error far below
- * one binary32 ULP; the remaining error is float rounding in the Horner chain.
- */
 static inline float exr_math_i_log2f(float x) {
     uint32_t u;
-    int e;
-    float m, t, t2, p;
     if (x != x) return x;
     if (!(x > 0.0f)) return x < 0.0f ? EXR_MATH_I_NAN_F : EXR_MATH_I_INF_NEG_F;
     u = exr_math_i_f2b32(x);
-    e = (int)((u >> 23) & 0xffu) - 127;
     if (((u >> 23) & 0xffu) == 0xffu) return EXR_MATH_I_INF_POS_F;
-    if (((u >> 23) & 0xffu) == 0u) {
-        /* Subnormal: shift the mantissa until its MSB is bit 23. */
-        uint32_t mant = u & 0x007fffffu;
-        int sh = 0;
-        while (!(mant & 0x00800000u)) { mant <<= 1; ++sh; }
-        m = exr_math_i_b2f32(0x3f800000u | (mant & 0x007fffffu));
-        e = -126 - sh;
-    } else {
-        m = exr_math_i_b2f32(0x3f800000u | (u & 0x007fffffu));
-    }
-    if (m > 1.41421356237f) { m *= 0.5f; ++e; }
-    t = (m - 1.0f) / (m + 1.0f);
-    t2 = t * t;
-    /* coefficients 2/(ln2*(2k+1)), k = 0..5 */
-    p = 0.2622153521765724f;
-    p = 0.3204269391941417f + t2 * p;
-    p = 0.4122092213968385f + t2 * p;
-    p = 0.5770780163559452f + t2 * p;
-    p = 0.9617966939259756f + t2 * p;
-    p = 2.8853900817779268f + t2 * p;
-    return (float)e + t * p;
+    return (float)exr_math_i_log2_64((double)x);
 }
 
-/* exp2f. f in [-1/2,1/2]; exp(g) via degree-7 Taylor in g = f*ln2. */
+/* exp2f: evaluate exp(x*ln2) in binary64 and round once. */
 static inline float exr_math_i_exp2f(float x) {
-    int k;
-    float f, g, p;
-    uint32_t bits;
     if (x != x) return x;
-    if (x > 127.0f) return EXR_MATH_I_INF_POS_F;
-    if (x < -126.0f) return 0.0f;
-    k = (x >= 0.0f) ? (int)(x + 0.5f) : (int)(x - 0.5f);
-    f = x - (float)k;
-    g = f * EXR_MATH_I_LN2_F;
-    p = 1.0f / 5040.0f;
-    p = 1.0f / 720.0f + g * p;
-    p = 1.0f / 120.0f + g * p;
-    p = 1.0f / 24.0f + g * p;
-    p = 1.0f / 6.0f + g * p;
-    p = 0.5f + g * p;
-    p = 1.0f + g * p;
-    p = 1.0f + g * p;
-    bits = (uint32_t)(k + 127) << 23;
-    return p * exr_math_i_b2f32(bits);
+    if (x >= 128.0f) return EXR_MATH_I_INF_POS_F;
+    if (x < -150.0f) return 0.0f;
+    return (float)exr_math_i_exp64((double)x * EXR_MATH_I_LN2_D);
 }
 
 static inline float exr_math_i_logf(float x) {
-    return exr_math_i_log2f(x) * EXR_MATH_I_LN2_F;
+    uint32_t u;
+    if (x != x) return x;
+    if (!(x > 0.0f)) return x < 0.0f ? EXR_MATH_I_NAN_F : EXR_MATH_I_INF_NEG_F;
+    u = exr_math_i_f2b32(x);
+    if (((u >> 23) & 0xffu) == 0xffu) return EXR_MATH_I_INF_POS_F;
+    return (float)(exr_math_i_log2_64((double)x) * EXR_MATH_I_LN2_D);
 }
 static inline double exr_math_i_exp_poly(double r);
 static inline double exr_math_i_floor64(double x);
@@ -205,13 +214,44 @@ static inline float exr_math_i_expf(float x) {
     if (k < -1022) scale *= 0x1p-52;
     return (float)(p * scale);
 }
+static inline double exr_math_i_powi_64(double x, int n) {
+    int m = n < 0 ? -n : n;
+    double b = x, r = 1.0;
+    while (m) {
+        if (m & 1) r *= b;
+        b *= b;
+        m >>= 1;
+    }
+    return n < 0 ? 1.0 / r : r;
+}
+
 static inline float exr_math_i_powf(float x, float y) {
+    int iy = 0;
+    int yint = 0;
+    if (y == 0.0f) return 1.0f;
+    if (y == 1.0f) return x;
+    if (x == 1.0f) return 1.0f;
+    if (y != y) return y;
+    if (y >= -8.0f && y <= 8.0f) {
+        iy = (int)y;
+        yint = ((float)iy == y);
+    }
     if (!(x > 0.0f)) {
         if (x == 0.0f)
-            return (y > 0.0f) ? 0.0f : (y == 0.0f ? 1.0f : EXR_MATH_I_INF_POS_F);
+            return (y > 0.0f) ? 0.0f : EXR_MATH_I_INF_POS_F;
+        if (yint) return (float)exr_math_i_powi_64((double)x, iy);
         return EXR_MATH_I_NAN_F;
     }
-    return exr_math_i_exp2f(y * exr_math_i_log2f(x));
+    if (((exr_math_i_f2b32(x) >> 23) & 0xffu) == 0xffu)
+        return (y > 0.0f) ? EXR_MATH_I_INF_POS_F : 0.0f;
+    if (yint) return (float)exr_math_i_powi_64((double)x, iy);
+    if (y == 1.5f) return (float)((double)x * exr_math_i_sqrt64((double)x));
+    {
+        double t = (double)y * exr_math_i_log2_64((double)x);
+        if (t >= 128.0) return EXR_MATH_I_INF_POS_F;
+        if (t < -150.0) return 0.0f;
+        return (float)exr_math_i_exp64(t * EXR_MATH_I_LN2_D);
+    }
 }
 static inline float exr_math_i_sqrtf(float x) {
     if (x != x) return x;

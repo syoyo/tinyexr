@@ -18,7 +18,7 @@ float exr_math_exp2f_fast(float x);
 float exr_math_powf_fast(float x, float y);
 float exr_math_sqrtf_fast(float x);
 
-/* Accurate tier (f32-only op sequences, Lean-mirrored). */
+/* Accurate tier (binary64 intermediates, one final binary32 rounding). */
 float exr_math_log2f(float x);
 float exr_math_exp2f(float x);
 float exr_math_logf(float x);

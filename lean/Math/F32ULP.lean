@@ -6,8 +6,8 @@
    `make math-ulp-full` checks all normal `log2f` inputs and all in-range
    `exp2f` inputs; `make math-pow-one-ulp` checks all positive normal inputs
    for `powf(x, 1)`.  This module pins the model's dyadic exactness and the
-   worst-bit witnesses used to show why a uniform 16-ULP `powf(x,1)` bound is
-   false.  The witnesses are native compilation checks, not universal bounds.
+   direct `powf(x,1)=x` branch.  Executable exhaustive sweeps, not a universal
+   analytic proof, provide the remaining correctly-rounded evidence.
 
    Copyright (c) 2026 Syoyo Fujita and TinyEXR authors
    SPDX-License-Identifier: BSD-3-Clause
@@ -61,43 +61,16 @@ theorem exp2f_int_exact :
   native_decide
 
 set_option maxHeartbeats 0 in
-/-- `powf (2^n) 1` is exact on the full normal dyadic skeleton. -/
+/-- The new accurate `powf` has a direct branch for exponent one. -/
+theorem powf_one_eq (x : FB) : powf x 1.0 = x := by
+  have h0 : ((1.0 : FB) == 0.0) = false := by decide
+  have h1 : ((1.0 : FB) == 1.0) = true := by decide
+  simp [powf, h0, h1]
+
+/-- Consequently `powf (2^n) 1 = 2^n` on the full normal dyadic skeleton. -/
 theorem powf_pow2_one_exact :
     (List.range 254).all (fun k =>
       bitDist (powf (b2f (pow2Bits k)) 1.0) (b2f (pow2Bits k)) = 0) = true := by
-  native_decide
-
-set_option maxHeartbeats 0 in
-/-- Exact worst-bit witness from the exhaustive normal-domain sweep: `log2f`
-is 3 ULP from the libm reference at `0x3f351233`. -/
-theorem log2f_3ulp_witness :
-    bitDist (log2f (b2f 0x3f351233)) (b2f 0xbeffc9f2) = 3 := by
-  native_decide
-
-set_option maxHeartbeats 0 in
-/-- Exact worst-bit witness from the exhaustive in-range sweep: `exp2f` is
-1 ULP from the libm reference at `0x33b8aa3b`. -/
-theorem exp2f_1ulp_witness :
-    bitDist (exp2f (b2f 0x33b8aa3b)) (b2f 0x3f800001) = 1 := by
-  native_decide
-
-set_option maxHeartbeats 0 in
-/-- Exact worst-bit witness from the exhaustive normal-domain sweep:
-`powf x 1` is 44 ULP from `x` at the smallest normal binade. -/
-theorem powf_one_44ulp_witness :
-    bitDist (powf (b2f 0x00fafc0a) 1.0) (b2f 0x00fafc0a) = 44 := by
-  native_decide
-
-/-- A uniform 16-ULP bound for `powf x 1` over positive normals is false. -/
-theorem powf_one_uniform_16_ulp_false :
-    ¬ (∀ bits : UInt32,
-        ((bits >>> 23) &&& 0xFF) ≠ 0 →
-        bitDist (powf (b2f bits) 1.0) (b2f bits) ≤ 16) := by
-  have h0 : bitDist (powf (b2f 0x00fafc0a) 1.0) (b2f 0x00fafc0a) = 44 := by
-    native_decide
-  intro h
-  have hle := h 0x00fafc0a (by decide)
-  rw [h0] at hle
-  omega
+  simp [powf_one_eq, bitDist_self]
 
 end ExrMath

@@ -70,11 +70,14 @@ Completed initial slices:
 3. **Tocio codegen semantics:** the audit found no additional emitted op path
    outside the proved matrix/range/LUT/exponent/log/CDL/fixed-function set;
    byte-identical text gates remain the C link.
-4. **Accurate math ULP boundary:** `Math/F32ULP.lean` proves metric laws,
-   exactness on all 254 normal powers and tight worst-bit witnesses; exhaustive
-   C sweeps cover every normal `log2f`, every in-range `exp2f`/`expf`, and every
-   positive-normal `powf(x,1)` input (maxima 3/1/1/44 ULP). A universal analytic
-   arbitrary-mantissa ULP theorem remains the open proof boundary.
+4. **Accurate math correctly-rounded tier:** `log2f`/`exp2f`/`logf`/`powf`
+   now use binary64 intermediates and one final binary32 rounding; `expf`
+   keeps the binary64 range reduction. `Math/F32ULP.lean` proves metric laws,
+   exactness on all 254 normal powers, and `powf(x,1)=x`. Exhaustive practical
+   sweeps report at most 1 ULP versus glibc and 0 ULP against the correctly
+   rounded oracle at every disagreement; `powf(x,1)` is exact on all positive
+   normals. A universal analytic arbitrary-mantissa ULP theorem remains the
+   open proof boundary.
 
 Optional deeper follow-ups: endpoint-swap reconstruction invariance, LSQ and
 quantizer range algebra, a cost-returning YAML engine variant, and a universal
@@ -87,10 +90,10 @@ analytic ULP proof for the accurate math tier.
 - DEFLATE encoder-side LZ77 match selection is not modelled.
 - B44 perceptual table interior derivation is not modelled.
 - Universal analytic arbitrary-mantissa ULP bounds for the accurate math tier
-  are not formally proved. The entire positive-normal `powf(x,1)` domain, all
-  normal `log2f` inputs and all in-range `exp2f` inputs are exhaustively swept
-  by the C gate; formal dyadic exactness and tight worst-bit witnesses are
-  proved.
+  are not formally proved. The complete practical domains are exhaustively
+  swept by C gates (all normal `log2f`, all in-range `exp2f`/`expf`, all
+  positive-normal `powf(x,1)` and a structured/general `powf` grid); formal
+  dyadic exactness and `powf(x,1)=x` are proved.
 - The C-faithful YAML engine has no exact total-call metric; its work fuel is
   an input-size over-approximation. The total parser's remaining-fuel bound is
   proved.
