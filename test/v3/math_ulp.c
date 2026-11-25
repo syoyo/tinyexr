@@ -25,6 +25,8 @@ float exr_util_log2f(float x);
 float exr_util_exp2f(float x);
 
 static int g_full = 0;
+static int g_pow_one = 0;
+static int g_accurate = 0;
 static int g_failed = 0;
 
 static uint32_t f2b(float f) { return exr_math_i_f2b32(f); }
@@ -219,6 +221,21 @@ static void check_pow(void) {
     report(&s);
 }
 
+/* Exhaustive `powf(x, 1)` sweep over every positive normal binary32 input.
+ * This is the Lean `powf_pow2_one_exact` / `powf_one_44ulp_witness` domain. */
+static void check_pow_one(void) {
+    stat s = { "powf(x,1)", 0, 0, 0, 0, 44 };
+    uint32_t ef, m;
+    if (!(g_full || g_pow_one)) return;
+    for (ef = 1; ef <= 253; ++ef) {
+        for (m = 0; m < (1u << 23); ++m) {
+            float x = b2f((ef << 23) | m);
+            add(&s, exr_math_powf(x, 1.0f), x);
+        }
+    }
+    report(&s);
+}
+
 /* ---- tier independence: fast tier must still equal the original core ------ */
 
 static void check_fast_frozen(void) {
@@ -263,12 +280,30 @@ static void check_f64(void) {
 
 int main(int argc, char **argv) {
     if (argc > 1 && strcmp(argv[1], "--full") == 0) g_full = 1;
+    if (argc > 1 && strcmp(argv[1], "--pow-one") == 0) g_pow_one = 1;
+    if (argc > 1 && strcmp(argv[1], "--accurate") == 0) g_accurate = 1;
+    if (g_accurate) {
+        g_full = 1;
+        printf("math ULP check: accurate-tier exhaustive domains\n");
+        check_log2();
+        check_exp2();
+        check_pow_one();
+        printf("math ULP check: %s\n", g_failed ? "FAIL" : "OK");
+        return g_failed ? 1 : 0;
+    }
+    if (g_pow_one) {
+        printf("math ULP check: powf(x,1) exhaustive normal domain\n");
+        check_pow_one();
+        printf("math ULP check: %s\n", g_failed ? "FAIL" : "OK");
+        return g_failed ? 1 : 0;
+    }
     printf("math ULP check: %s\n", g_full ? "exhaustive" : "structured");
     check_special();
     check_sqrt_exact();
     check_log2();
     check_exp2();
     check_pow();
+    check_pow_one();
     check_fast_frozen();
     check_f64();
     printf("math ULP check: %s\n", g_failed ? "FAIL" : "OK");

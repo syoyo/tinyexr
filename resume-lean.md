@@ -23,14 +23,16 @@ Repository: `/mnt/disk01/work/tinyexr`, branch `release`. Read `AGENTS.md`,
   the user explicitly permits a push.
 - Run `make lean-status` for current file/line/theorem counts and
   `make lean-axiom-check` for the transitive axiom census.
-- Latest close-out: 327 Lean files, 56,887 lines and 1,539 source-level
-  theorem/lemma declarations; axiom audit 4,815 first-party theorems;
+- Latest close-out: 328 Lean files, 57,006 lines and 1,552 source-level
+  theorem/lemma declarations; axiom audit 4,859 first-party theorems;
   80/80 differential targets green.
 - EXR core/codecs, DEFLATE decode, JPH wrapper, Tir, texcomp image drivers,
   Tocio engine/codegen and shared scalar math are all modelled and gated.
-- BC6H/BC7 wire and output contracts, ASTC HDR void extents and the total YAML
-  parser's remaining-fuel bound are now proved. See `plan.md` for the remaining
-  optional proof-depth work and accepted boundaries.
+- BC6H/BC7 wire and output contracts, ASTC HDR void extents, the total YAML
+  parser's remaining-fuel bound, and accurate-math dyadic/ULP witnesses are
+  proved. Exhaustive math sweeps are exposed as `math-accurate-ulp` and
+  `math-pow-one-ulp`. See `plan.md` for the remaining optional proof-depth
+  work and accepted boundaries.
 
 ## Core gates
 

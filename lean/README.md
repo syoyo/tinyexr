@@ -37,6 +37,8 @@ make tir-diff       # tir axis-measure classification: C vs Lean (3240 vectors)
 make tir-kernel-diff # tir scalar kernels + conversions: C vs Lean (4096 vectors)
 make tir-streaming-diff # tir ring push/pull trace + serial/band parity: C vs Lean (188 trace lines)
 make math-test         # structured libm ULP sweep of both math tiers (fast frozen, accurate/exact)
+make math-accurate-ulp # exhaustive accurate log2f/exp2f/expf domains + powf(x,1) (~5 minutes)
+make math-pow-one-ulp  # exhaustive positive-normal powf(x,1) sweep (~1 minute)
 make math-diff         # shared math model: C vs Lean (5764 bit-exact vectors)
 make libm-free-gate    # nm-scan + no--lm link smoke for the four shipped libraries
 make texcomp-bc-img-diff # BC4/BC5/ETC2/EAC/BC7 image decoders: C vs Lean (900 vectors)
@@ -124,7 +126,7 @@ make lean-validation-sanitize # sanitized codec vectors and malformed-vector reg
 | `Tir/Geometry.lean` | tir filter/edge/registration enums and `axis_geom_init` / `axis_center` geometry, with the grid-vertex precondition and scale-floor lemmas. |
 | `Tir/Edge.lean` | `edge_map` (clamp/reflect/wrap, including C period identities), floor division, `window_fold` fast-run bounds, mapped min/max scans and anti-ringing footprint bounds. |
 | `Tir/Kernels.lean` | Bit-exact Float32 models of the scalar horizontal/vertical kernels, anti-ring/clamp/normal/premult/range-compress kernels and all pixel-type converters; rational idealisations prove weight normalisation, clamp/anti-ring bounds. Range compression/expansion and normalisation now use the closed `ExrMath` definitions (no `Float32.log`/`exp`/`sqrt` externs). Checked by `make tir-kernel-diff`. |
-| `Math/F32.lean` | First-party, libm-free scalar math: frozen `exr_util_*` fast tier (bit-compatible), accurate f32-only `log2f`/`exp2f`/`powf`/`sqrtf`, `Float`-mirrored `expf` (double range reduction), integer-exact `sqrtfExact`, with dyadic-exactness theorems and `Tocio.FloatBridge` transfer. Checked by `make math-diff`; accuracy measured by `make math-test`. |
+| `Math/F32.lean`, `Math/F32ULP.lean` | First-party, libm-free scalar math: frozen `exr_util_*` fast tier (bit-compatible), accurate f32-only `log2f`/`exp2f`/`powf`/`sqrtf`, `Float`-mirrored `expf` (double range reduction), integer-exact `sqrtfExact`, with dyadic-exactness theorems and `Tocio.FloatBridge` transfer. `F32ULP` adds the bit-distance metric, exactness on all 254 normal powers, and worst-bit witnesses (3/1/44 ULP) from exhaustive normal-domain C sweeps. Checked by `make math-diff`; accuracy measured by `make math-test`/`math-accurate-ulp`/`math-pow-one-ulp`. |
 | `Tir/Table.lean` | Window truncation length bounds, zero-tap trim/normalisation laws (`ℚ` sum = 1, zero-sum fallback) and the `tir__axis_measure` scan with the proved measure/fill agreement theorem (`measureScan_spec`): a successful measure records exactly the classification the fill pass consumes. |
 
 ## Accepted proof boundaries
@@ -157,6 +159,7 @@ full Lean model and differential gates. No duplicate resizer model is planned.
 | tir ring occupancy and pull progress | `Tir/Streaming.lean` | `resident_length_le`, `push_preserves_occupancy`, `pull_no_deadlock`, `pull_progress` | `tir-streaming-diff` |
 | tir measure/fill classification agreement | `Tir/Table.lean` | `measureScan_spec`, window trim/normalisation laws | `tir-diff` |
 | tir scalar kernel invariants | `Tir/Kernels.lean` | `hDotQ_identity`, `antiring_within`, `clamp_nonneg`, `normal_degenerate_fallback` | `tir-kernel-diff` |
+| accurate math dyadic exactness and ULP witnesses | `Math/F32ULP.lean` | `log2f_pow2_exact`, `exp2f_int_exact`, `powf_pow2_one_exact`, `log2f_3ulp_witness`, `exp2f_1ulp_witness`, `powf_one_44ulp_witness`, `powf_one_uniform_16_ulp_false` | `math-diff`, `math-accurate-ulp` |
 | texcomp encoder wire/output contracts | `Texcomp/Bc6hEncodeProps.lean`, `Bc7EncodeProps.lean`, `AstcHdrVoidProps.lean`, `FloatOutputProps.lean` | `bc6hEncPut_lt`, `bc6hEncTail_pos`, `bc6hPackSignedN_lt`, `bc7PackCandidate_length`, `bc7Weights4_sym`, `astcDecodeBlockHdr_void`, `bc6hDecodeRgbaf_length` | `texcomp-bc6h-*-diff`, `texcomp-bc7-pack-diff`, `texcomp-astc-{pack,hdr}-diff`, `texcomp-float-dec-diff` |
 | tocio CSP/.cube allocation guards | `Tocio/LoaderBoundsCsp.lean` | `valuesFitC_sound`, `cube_valuesFit_sound`, `cube1d_count_bound`, `cube3d_count_bound` | `tocio-bounds-diff`, `tocio-csp-diff`, `tocio-lut-diff` |
 | tocio YAML depth boundary and remaining fuel | `Tocio/YamlFuelExact.lean`, `Tocio/YamlTotalBounds.lean` | `yamlEntryFuel_eq`, `parseYamlTotalV_deep128`, `parseYamlTotalV_deep130`, `parseTotal_used_le` | `tocio-yaml-diff` |
@@ -731,7 +734,9 @@ imported by their own `*Check` executable are still unaudited. A later sweep
 added `AstcHdrEnc`, `Bc1Props`, `Bc6hDecode` and `Tocio.LowerRecon` (census 3885 -> 3919).
 The status/proof-hardening sweep also imports `Bc6hEncodeProps`,
 `Bc7EncodeProps`, `AstcHdrVoidProps`, `FloatOutputProps` and
-`YamlTotalBounds` (census 4705 -> 4815, still no unexpected axioms).
+`YamlTotalBounds` (census 4705 -> 4815, still no unexpected axioms). The
+2026-11-26 math sweep adds `Math/F32ULP` and audits the existing `ExrMath`
+namespace (census 4815 -> 4859; 86 approved native fixture checks).
 Deliberately left out: `Tocio.FloatSemantics` (its `native_decide` fixtures are not on
 the approved list), the `*Dbg` modules, and `Bc7Mode0` / `Etc2TModeDecode3`, which are
 superseded by `Bc7Mode0Full` / `Etc2TModeDecode` and redefine the same names.
@@ -782,6 +787,18 @@ superseded by `Bc7Mode0Full` / `Etc2TModeDecode` and redefine the same names.
   most 16 ULP (measured 13). Exactness is false off the skeleton; a
   bound uniform over arbitrary mantissas is an accepted scope boundary
   (covered by the differential corpus and tolerance fixtures).
+* `Math/F32ULP.lean` covers the accurate libm-free tier directly over the
+  compiled `Float32` definitions. `log2f_pow2_exact`, `exp2f_int_exact` and
+  `powf_pow2_one_exact` prove 0-ULP exactness on all 254 normal powers.
+  `log2f_3ulp_witness`, `exp2f_1ulp_witness` and
+  `powf_one_44ulp_witness` pin the worst bit patterns found by exhaustive C
+  sweeps, and `powf_one_uniform_16_ulp_false` records that the old 16-ULP
+  slice cannot be promoted to a uniform 16-ULP claim. The C sweeps cover
+  2,130,706,432 normal `log2f` inputs (max 3 ULP), 2,247,622,658 in-range
+  `exp2f` inputs (max 1 ULP) and 2,122,317,824 positive normal `powf(x,1)`
+  inputs (max 44 ULP). A formal analytic bound over all mantissas is still
+  the open proof boundary; these are exhaustive executable validations plus
+  formal exactness and tight witnesses.
 * `ConfigQuery.lean` models the `toc_config.c` query surface over the
   parsed tree and is pinned by `make tocio-config-diff` (16 configs; the
   transcript covers lookups, roles, displays/views/looks, view

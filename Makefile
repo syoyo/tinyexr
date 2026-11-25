@@ -23,7 +23,7 @@ MINIZ_SRC = ./deps/miniz/miniz.c
 # ---- legacy v1 single-header test (unchanged) -----------------------------
 TARGET = test_tinyexr
 
-.PHONY: all test clean help lib test-c test-c-threads test-c-tsan math-test math-ulp-full math-diff libm-free-gate c11-gate lean-check lean-diff lean-gen lean-gen-update lean-gen-check codec-diff jph-diff deflate-diff header-validate-diff reader-state-diff image-budget-diff tile-geometry-diff tocio-model-diff tocio-codegen-semantics-diff tocio-bounds-diff texcomp-web texcomp-bc6h-diff texcomp-bc7-diff texcomp-bc135-diff texcomp-etc2-diff texcomp-astc-diff texcomp-astc-ldr-diff texcomp-astc-uastc-diff texcomp-astc-hdrenc-diff texcomp-astc-quant-diff texcomp-astc-hdrimg-diff texcomp-astc-ldrimg-diff texcomp-astc-ldrdec-diff texcomp-uni-diff texcomp-uni-transcode-diff texcomp-etc2-enc-diff texcomp-bc-img-diff texcomp-bc5-enc-img-diff texcomp-float-dec-diff b44-table-diff tocio-diff tocio-yaml-diff tocio-config-diff tocio-proc-diff tocio-codegen-diff tocio-glsl-diff fuzz fuzz-threads tocio-fuzz fuzz-jph fuzz-libdeflate fuzz-corpus fuzz-corpus-asan parse-test wasm freestanding-gate freestanding-zstd-gate examples-c bench bench-compare bench-htj2k arm-smoke host-smoke gpu-test vk-test jph-gpu-test bench-gpu-jph texcomp texcomp-arm texcomp-c11-gate texcomp-test texcomp-bench texcomp-astc-psnr texcomp-astc-arm-smoke texcomp-astc-arm-gate texcomp-astc-hdr-gate texcomp-uni-gate texcomp-bc6h-gate texcomp-wasm texcomp-wasm-simd wasm-texcomp wasm-texcomp-simd ptexatlas-c11-gate
+.PHONY: all test clean help lib test-c test-c-threads test-c-tsan math-test math-ulp-full math-accurate-ulp math-pow-one-ulp math-diff libm-free-gate c11-gate lean-check lean-diff lean-gen lean-gen-update lean-gen-check codec-diff jph-diff deflate-diff header-validate-diff reader-state-diff image-budget-diff tile-geometry-diff tocio-model-diff tocio-codegen-semantics-diff tocio-bounds-diff texcomp-web texcomp-bc6h-diff texcomp-bc7-diff texcomp-bc135-diff texcomp-etc2-diff texcomp-astc-diff texcomp-astc-ldr-diff texcomp-astc-uastc-diff texcomp-astc-hdrenc-diff texcomp-astc-quant-diff texcomp-astc-hdrimg-diff texcomp-astc-ldrimg-diff texcomp-astc-ldrdec-diff texcomp-uni-diff texcomp-uni-transcode-diff texcomp-etc2-enc-diff texcomp-bc-img-diff texcomp-bc5-enc-img-diff texcomp-float-dec-diff b44-table-diff tocio-diff tocio-yaml-diff tocio-config-diff tocio-proc-diff tocio-codegen-diff tocio-glsl-diff fuzz fuzz-threads tocio-fuzz fuzz-jph fuzz-libdeflate fuzz-corpus fuzz-corpus-asan parse-test wasm freestanding-gate freestanding-zstd-gate examples-c bench bench-compare bench-htj2k arm-smoke host-smoke gpu-test vk-test jph-gpu-test bench-gpu-jph texcomp texcomp-arm texcomp-c11-gate texcomp-test texcomp-bench texcomp-astc-psnr texcomp-astc-arm-smoke texcomp-astc-arm-gate texcomp-astc-hdr-gate texcomp-uni-gate texcomp-bc6h-gate texcomp-wasm texcomp-wasm-simd wasm-texcomp wasm-texcomp-simd ptexatlas-c11-gate
 
 all: $(TARGET)
 
@@ -280,7 +280,9 @@ c11-gate: | build
 # ---- libm-free math validation ---------------------------------------------
 # Hosted-only ULP harness: the implementation under test is libm-free, libm is
 # only the oracle. `make math-test` is the structured CI slice; `math-ulp-full`
-# runs the exhaustive sweeps (several minutes, opt-in).
+# runs the exhaustive sweeps (several minutes, opt-in). `math-accurate-ulp`
+# exhausts the accurate `log2f`/`exp2f` domains plus `powf(x,1)` (~5 minutes);
+# `math-pow-one-ulp` exhausts only positive-normal `powf(x,1)` (~1 minute).
 math-test: build/exr_math.o test/v3/math_ulp.c | build
 	$(CC) $(V3_CSTD) -Wall -Wextra $(V3_INC) -O2 -ffp-contract=off \
 	  test/v3/math_ulp.c build/exr_math.o -lm -o build/math_ulp
@@ -290,6 +292,16 @@ math-ulp-full: build/exr_math.o test/v3/math_ulp.c | build
 	$(CC) $(V3_CSTD) -Wall -Wextra $(V3_INC) -O2 -ffp-contract=off \
 	  test/v3/math_ulp.c build/exr_math.o -lm -o build/math_ulp
 	./build/math_ulp --full
+
+math-accurate-ulp: build/exr_math.o test/v3/math_ulp.c | build
+	$(CC) $(V3_CSTD) -Wall -Wextra $(V3_INC) -O2 -ffp-contract=off \
+	  test/v3/math_ulp.c build/exr_math.o -lm -o build/math_ulp
+	./build/math_ulp --accurate
+
+math-pow-one-ulp: build/exr_math.o test/v3/math_ulp.c | build
+	$(CC) $(V3_CSTD) -Wall -Wextra $(V3_INC) -O2 -ffp-contract=off \
+	  test/v3/math_ulp.c build/exr_math.o -lm -o build/math_ulp
+	./build/math_ulp --pow-one
 
 build/math_vectors: test/v3/math_vectors.c build/exr_math.o deps/math/exr_math.h | build
 	$(CC) $(V3_CSTD) -Wall -Wextra $(V3_INC) -O2 -ffp-contract=off \

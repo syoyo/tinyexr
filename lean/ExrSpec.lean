@@ -10,6 +10,7 @@
 -/
 
 import Math.F32
+import Math.F32ULP
 import Exr.DeflateDynamic
 import Exr.B44Tables
 import Exr.Bytes

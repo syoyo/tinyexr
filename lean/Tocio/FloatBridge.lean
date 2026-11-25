@@ -71,13 +71,22 @@ model semantics, which is what transfer proofs consume. -/
 theorem FloatBridge.add_eq (h : FloatBridge) (a b : Float32) :
     a + b = f32AddM a b := h.1 a b
 
+theorem FloatBridge.sub_eq (h : FloatBridge) (a b : Float32) :
+    a - b = f32SubM a b := h.2.1 a b
+
 theorem FloatBridge.mul_eq (h : FloatBridge) (a b : Float32) :
     a * b = f32MulM a b := h.2.2.1 a b
 
 theorem FloatBridge.div_eq (h : FloatBridge) (a b : Float32) :
     a / b = f32DivM a b := h.2.2.2.1 a b
 
+theorem FloatBridge.neg_eq (h : FloatBridge) (a : Float32) :
+    -a = f32NegM a := h.2.2.2.2.1 a
+
 theorem FloatBridge.lt_eq (h : FloatBridge) (a b : Float32) :
     (a < b) = f32LtM a b := h.2.2.2.2.2.1 a b
+
+theorem FloatBridge.le_eq (h : FloatBridge) (a b : Float32) :
+    (a ≤ b) = f32LeM a b := h.2.2.2.2.2.2 a b
 
 end Tocio
