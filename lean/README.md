@@ -116,7 +116,7 @@ make lean-validation-sanitize # sanitized codec vectors and malformed-vector reg
 | `Exr/Zip.lean` | ZIP predictor/interleave composition with inverse, validated reconstruction after external inflate, bad header/checksum rejection; container layer: ADLER32 checksum (pure fold, with the block-boundary deferred-mod equivalence), zlib header validation (CM/CINFO/FDICT/check digits), the big-endian trailer, block validation, 16-line ZIP geometry. |
 | `CodecGen.lean` | `codecgen <out.bin> <seed>`: PXR24 (uint/half/float, mixed sampled blocks), B44/B44A, RLE, ZIP, ADLER32 and PIZ kernel/Huffman vectors for `test/v3/codec_diff.c`. |
 | `Texcomp/*` | `Container` (DDS/KTX/ASTC-file headers + payloads + writer verdicts), BC1/BC3/BC4/BC5 decoders and BC1/BC4/BC5 encoders, BC6H block decoders and every BC6H block encoder (unsigned 0–13, signed 0–8/12/13), BC7 pack path/mode 6/seeds/full default-option encoder/decoder-driven RDO pass, ETC2 individual/T-mode/EAC, the ASTC LDR top-level block encoder (`AstcLdr`), ASTC LDR + HDR endpoint packers, colour quantizer, weight decimation, weight infill, the encoder block-mode filter, the partition cache, the block-mode candidate ranking, the endpoint/colour-quant plumbing and the projection/least-squares/SSE fit kernels, the partition search, the partition-RGB and dual-RGBA encoders, and the ISE bit packer. Every model has a C-vs-Lean differential gate (`make texcomp-*-diff`). |
-| `Texcomp/Bc6hEncodeProps.lean` | BC6H wire-writer cursor/range laws, exact 51-bit two-region tail budget for valid anchors, one-region byte layout, signed-field range/two's-complement identities, and candidate-error monotonicity. |
+| `Texcomp/Bc6hEncodeProps.lean` | BC6H wire-writer cursor/range laws, exact 51-bit two-region tail budget for valid anchors, one-region byte layout, signed-field range/two's-complement identities, candidate-error monotonicity, 4x4 gather length, and image-output length under a per-block 16-byte contract. |
 | `Texcomp/Bc7EncodeProps.lean` | BC7 bit-writer bounds, 16-byte candidate packing, byte range, finite weight-table reversal symmetry, endpoint/p-bit/weight-swapped channel reconstruction, reconstructed-colour length and byte bounds, and palette shape/count/channel-bound contracts. |
 | `Texcomp/AstcHdrVoidProps.lean` | ASTC HDR void-extent length/mode fields, little-endian channel reconstruction, and constant-RGBA decode for 16-bit inputs. |
 | `Texcomp/FloatOutputProps.lean` | Exact output lengths for BC6H half/float, BC7 float and ASTC HDR float image decompression, including zero dimensions and rejection paths. |
@@ -160,7 +160,7 @@ full Lean model and differential gates. No duplicate resizer model is planned.
 | tir measure/fill classification agreement | `Tir/Table.lean` | `measureScan_spec`, window trim/normalisation laws | `tir-diff` |
 | tir scalar kernel invariants | `Tir/Kernels.lean` | `hDotQ_identity`, `antiring_within`, `clamp_nonneg`, `normal_degenerate_fallback` | `tir-kernel-diff` |
 | accurate math dyadic exactness and ULP boundary | `Math/F32ULP.lean` | `log2f_pow2_exact`, `exp2f_int_exact`, `powf_pow2_one_exact`, `powf_one_eq` | `math-diff`, `math-accurate-ulp`, `math-pow-one-ulp` |
-| texcomp encoder wire/output contracts | `Texcomp/Bc6hEncodeProps.lean`, `Bc7EncodeProps.lean`, `AstcHdrVoidProps.lean`, `FloatOutputProps.lean` | `bc6hEncPut_lt`, `bc6hEncTail_pos`, `bc6hPackSignedN_lt`, `bc7PackCandidate_length`, `bc7Weights4_sym`, `bc7ReconLerp_swap`, `bc7FillPalette_entry_length`, `astcDecodeBlockHdr_void`, `bc6hDecodeRgbaf_length` | `texcomp-bc6h-*-diff`, `texcomp-bc7-pack-diff`, `texcomp-astc-{pack,hdr}-diff`, `texcomp-float-dec-diff` |
+| texcomp encoder wire/output contracts | `Texcomp/Bc6hEncodeProps.lean`, `Bc7EncodeProps.lean`, `AstcHdrVoidProps.lean`, `FloatOutputProps.lean` | `bc6hEncPut_lt`, `bc6hEncTail_pos`, `bc6hPackSignedN_lt`, `bc6hCompressImage_length`, `bc7PackCandidate_length`, `bc7Weights4_sym`, `bc7ReconLerp_swap`, `bc7FillPalette_entry_length`, `astcDecodeBlockHdr_void`, `bc6hDecodeRgbaf_length` | `texcomp-bc6h-*-diff`, `texcomp-bc5-enc-img-diff`, `texcomp-bc7-pack-diff`, `texcomp-astc-{pack,hdr}-diff`, `texcomp-float-dec-diff` |
 | tocio CSP/.cube allocation guards | `Tocio/LoaderBoundsCsp.lean` | `valuesFitC_sound`, `cube_valuesFit_sound`, `cube1d_count_bound`, `cube3d_count_bound` | `tocio-bounds-diff`, `tocio-csp-diff`, `tocio-lut-diff` |
 | tocio YAML depth boundary and remaining fuel | `Tocio/YamlFuelExact.lean`, `Tocio/YamlTotalBounds.lean` | `yamlEntryFuel_eq`, `parseYamlTotalV_deep128`, `parseYamlTotalV_deep130`, `parseTotal_used_le` | `tocio-yaml-diff` |
 | tocio emitted-statement semantics | `Tocio/CodegenSemantics.lean` | `eval_compile_matrix`, `eval_compile_range`, `eval_compile_lut1d`, `eval_compile_exponent`, `eval_compile_explin`, `eval_compile_log`, `eval_compile_cdl`, `eval_compile_fixedfunc` | `tocio-codegen-semantics-diff` |
@@ -593,7 +593,9 @@ width and preserves the accumulated-word bound. For a valid region-1 anchor
 one-region seed always packs to sixteen bytes below 256. Signed N-bit fields
 are proved equal to the clamped value's Euclidean residue, with the usual
 non-negative and two's-complement identities, and candidate selection is
-proved never to increase reconstruction error.
+proved never to increase reconstruction error. The 4x4 gather is always
+sixteen texels, and a successful image compression has exactly the advertised
+block-grid byte count once each selected block encoder supplies 16 bytes.
 
 `Bc7EncodeProps.lean` proves the analogous bit-writer bound, unconditional
 16-byte BC7 candidate packing, byte range, the 2/3/4-bit weight tables'
@@ -742,7 +744,7 @@ The status/proof-hardening sweep also imports `Bc6hEncodeProps`,
 `YamlTotalBounds` (census 4705 -> 4815, still no unexpected axioms). The
 2026-11-26 math sweep adds `Math/F32ULP` and audits the existing `ExrMath`
 namespace (census 4815 -> 4859; 81 approved native fixture checks). The BC7
-proof slices raise the census to 4875.
+and BC6H proof slices raise the census to 4882.
 Deliberately left out: `Tocio.FloatSemantics` (its `native_decide` fixtures are not on
 the approved list), the `*Dbg` modules, and `Bc7Mode0` / `Etc2TModeDecode3`, which are
 superseded by `Bc7Mode0Full` / `Etc2TModeDecode` and redefine the same names.

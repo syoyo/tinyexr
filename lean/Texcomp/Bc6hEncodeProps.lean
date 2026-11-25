@@ -252,4 +252,54 @@ theorem foldl_bc6hTryGuarded_error_le (cs : List (Option (List Nat × Nat)))
   | cons c cs ih =>
       exact Nat.le_trans (ih (bc6hTryGuarded st c)) (bc6hTryGuarded_error_le st c)
 
+/-- Generic foldr-append length for a fixed block size. -/
+theorem bc6h_map_foldr_append_length {α : Type} (l : List α) (f : α → List Nat) (c : Nat)
+    (hf : ∀ x ∈ l, (f x).length = c) :
+    ((l.map f).foldr (· ++ ·) []).length = l.length * c := by
+  induction l with
+  | nil => simp
+  | cons x xs ih =>
+      have hx := hf x (by simp)
+      have hxs := ih (fun y hy => hf y (by simp [hy]))
+      simp only [List.map_cons, List.foldr_cons, List.length_append, hx, hxs,
+        List.length_cons]
+      rw [Nat.succ_mul]
+      omega
+
+theorem bc6h_range_foldr_append_length (n c : Nat) (f : Nat → List Nat)
+    (hf : ∀ k, (f k).length = c) :
+    ((List.range n).foldr (fun k acc => f k ++ acc) []).length = n * c := by
+  rw [← List.foldr_map]
+  change (((List.range n).map f).foldr (fun a acc => a ++ acc) []).length = n * c
+  rw [bc6h_map_foldr_append_length (List.range n) f c (fun k _ => hf k),
+    List.length_range]
+
+/-- Every 4x4 gather produces exactly sixteen RGB texels. -/
+theorem bc6hGather_length (src : List UInt32) (w h bx bi : Nat) :
+    (bc6hGather src w h bx bi).length = 16 := by
+  simp [bc6hGather]
+
+/-- Successful image compression emits exactly the advertised block-grid byte
+count, assuming each selected block encoder returns sixteen bytes. -/
+theorem bc6hCompressImage_length (src : List UInt32) (w h : Nat) (sf : Bool)
+    (out : List Nat)
+    (hblk : ∀ pix : List (List UInt32),
+      (if sf then bc6hEncodeBlockSf16 pix else bc6hEncodeBlockUf16 pix).length = 16)
+    (hout : bc6hCompressImage src w h sf = some out) :
+    out.length = bc6hCompressedSize2 w h := by
+  unfold bc6hCompressImage at hout
+  by_cases hz : w == 0 || h == 0
+  · simp [hz] at hout
+  · by_cases hs : src.length < w * h * 3
+    · simp [hz, hs] at hout
+    · simp [hz, hs, Option.some.injEq] at hout
+      subst out
+      let bx := (w + 3) / 4
+      have hlen := bc6h_range_foldr_append_length
+        (((w + 3) / 4) * ((h + 3) / 4)) 16
+        (fun bi => (if sf then bc6hEncodeBlockSf16 (bc6hGather src w h bx bi)
+                    else bc6hEncodeBlockUf16 (bc6hGather src w h bx bi)))
+        (fun bi => hblk (bc6hGather src w h bx bi))
+      simpa [bc6hCompressedSize2, bx, Nat.mul_assoc] using hlen
+
 end Texcomp
