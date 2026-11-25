@@ -18,6 +18,7 @@ import Texcomp.Bc1Encode
 import Texcomp.Bc4Encode
 import Texcomp.AstcColorQuant
 import Texcomp.Bc7Encode
+import Texcomp.Bc7EncodeProps
 import Texcomp.Bc7Mode6
 import Texcomp.Bc7Seed
 import Texcomp.Bc7EncodeAll
@@ -32,6 +33,7 @@ import Texcomp.Bc6hEncMode9
 import Texcomp.Bc6hEncSf16
 import Texcomp.Bc6hEncodeBlock
 import Texcomp.Bc6hEncodeImage
+import Texcomp.Bc6hEncodeProps
 import Texcomp.Bc7Rdo
 import Texcomp.AstcDecim
 import Texcomp.AstcWeightInfill
@@ -76,6 +78,7 @@ import Texcomp.Etc2AllModes
 import Texcomp.AstcDecode
 import Texcomp.AstcHdr
 import Texcomp.AstcHdrPack
+import Texcomp.AstcHdrVoidProps
 import Tocio.Math
 import Tocio.FloatBridge
 import Tocio.FloatModel
@@ -152,6 +155,7 @@ import Tocio.YamlParse
 import Tocio.YamlIndent
 import Tocio.YamlSeq
 import Tocio.YamlTotal
+import Tocio.YamlTotalBounds
 import Tocio.YamlDoc
 import Tocio.FfProps
 import Tocio.FfInversePairs
@@ -220,6 +224,7 @@ import Exr.PizCodebookTotal
 import Exr.PizCanonicalMass
 import Exr.PizCanonicalWords
 import Texcomp.AstcLdrImgDec
+import Texcomp.FloatOutputProps
 import Texcomp.Uni
 import Texcomp.UniTranscode
 import Texcomp.AstcHdrEnc

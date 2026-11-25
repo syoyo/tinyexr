@@ -38,17 +38,18 @@ def bc6hDecodeRgb16f (data : List UInt8) (w h : Nat) (isSigned : Bool) :
       let c := bc6hDecodeBlock (blockBytes data bi 16) isSigned ⟨t, by omega⟩
       [c.1, c.2.1, c.2.2] ++ acc) [])
 
+/-- Convert packed half triples to RGBA float tuples with opaque alpha. -/
+def halfTriplesToRgbaF : List UInt16 → List Float32
+  | [] => []
+  | r :: g :: b :: rest =>
+      halfToFloat r.toNat :: halfToFloat g.toNat :: halfToFloat b.toNat ::
+        (1.0 : Float32) :: halfTriplesToRgbaF rest
+  | _ => []
+
 /-- BC6H -> RGBA float: half channels plus alpha = 1.0f. -/
 def bc6hDecodeRgbaf (data : List UInt8) (w h : Nat) (isSigned : Bool) :
     Option (List Float32) :=
-  (bc6hDecodeRgb16f data w h isSigned).map (fun hs =>
-    let rec go : List UInt16 → List Float32
-      | [] => []
-      | r :: g :: b :: rest =>
-          halfToFloat r.toNat :: halfToFloat g.toNat :: halfToFloat b.toNat ::
-            (1.0 : Float32) :: go rest
-      | _ => []
-    go hs)
+  (bc6hDecodeRgb16f data w h isSigned).map halfTriplesToRgbaF
 
 /-- BC7 RGBA8 -> RGBA float, dividing each channel by 255. -/
 def bc7DecodeRgbaf (data : List UInt8) (w h : Nat) : Option (List Float32) :=

@@ -1052,6 +1052,22 @@ tocio-lean-diff: tocio-test tocio-diff tocio-lut-diff tocio-spi-diff tocio-clf-d
 PARSE_HARNESS = test/v3/parse_harness
 CODEC_DIFF = build/codec_diff
 
+# Every differential target in this Makefile, discovered from its rules.  Keep
+# the aggregate sequential: many generators reuse build/lean-gen and object
+# files, so parallel prerequisite execution would race.
+LEAN_DIFF_TARGETS = $(sort $(shell sed -n 's/^\([A-Za-z0-9_-]*-diff\):.*/\1/p' $(firstword $(MAKEFILE_LIST))))
+
+.PHONY: $(LEAN_DIFF_TARGETS) lean-status lean-diff-all
+lean-status: lean-axiom-check
+	@python3 lean/status.py
+
+lean-diff-all:
+	@set -e; for target in $(LEAN_DIFF_TARGETS); do \
+	  echo "== $$target =="; \
+	  $(MAKE) --no-print-directory $$target; \
+	done
+	@echo "lean-diff-all: $$(echo '$(LEAN_DIFF_TARGETS)' | wc -w) differential targets passed"
+
 .PHONY: lean-tools lean-validation-test lean-axiom-check
 lean-tools:
 	cd lean && $(LAKE) build

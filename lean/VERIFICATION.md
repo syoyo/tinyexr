@@ -5,7 +5,7 @@ SPDX-License-Identifier: BSD-3-Clause
 
 # Lean formalization and verification status
 
-Updated: 2026-11-23. Toolchain: Lean 4.35.0 and the pinned mathlib dependency.
+Updated: 2026-11-25. Toolchain: Lean 4.35.0 and the pinned mathlib dependency.
 See [README.md](README.md) for the module inventory and format compatibility details.
 
 The Lean model has machine-checked proofs. TinyEXR v3 C is validated against
@@ -22,7 +22,7 @@ implementation, its compiler, or memory safety for every possible input.
 | B44/B44A | Quantization, block packing and reconstruction, including flat blocks and bit-field bounds. Perceptual lookup tables are tested separately rather than re-proved. |
 | RLE and ZIP wrapper | Interleave and predictor inverses, greedy RLE round trip and raw fallback; Adler-32 and ZIP wrapper structure/checksum. DEFLATE stored/fixed/dynamic payload decoding is modelled (encoder-side LZ77 choices remain outside). |
 | PIZ | Complete successful encoder/decoder round trip through bitmap framing, frequency-derived canonical Huffman coding, both wavelet modes, sampled channel/lane traversal, LUT restoration, reordering and raw fallback. |
-| Texcomp | Container headers/sizes and full DDS/KTX payload round trips; BC1/BC3/BC4/BC5 decoders and BC1/BC4/BC5 encoders; BC6H decoder modes plus every C block encoder (unsigned modes 0–13, signed modes 0–8/12/13) byte-exact against C; BC7 pack path, mode 6, seeds and the full default-option encoder; ETC2 individual/T-mode/EAC and ASTC LDR + HDR endpoint packers/colour quantizer. Each has a C-vs-Lean differential gate (`make texcomp-*-diff`) — see [Boundaries](#boundaries). |
+| Texcomp | Container headers/sizes and full DDS/KTX payload round trips; BC1/3/4/5/6H/7, ETC2/EAC and ASTC LDR/HDR/UASTC block models plus public image encode/decode drivers; uni transcodes. Every image path is byte-exact against C through the `texcomp-*-diff` gates. Proof hardening now covers BC6H/BC7 wire-writer and size contracts, BC6H signed fields and candidate monotonicity, BC7 weight symmetry, ASTC HDR void extents, and float-output image lengths. |
 | tir (resize) | Axis geometry and edge-mapping invariants, in-bounds fast-run/anti-ringing footprints, window trim/normalisation laws, and a proved measure/fill classification agreement theorem; replayed against the C table builder by `make tir-diff` (3240 vectors, 0 mismatches). The scalar kernel and pixel-conversion models are bit-exact against C (`make tir-kernel-diff`, 4096 vectors, 0 mismatches). Filter coefficient values are gate-pinned, not re-derived. |
 | Shared helpers / checked arithmetic / TSan (S8-S10) | The reader/writer share `exr_internal.h` sampling + ceil-div inlines, `exr_deep.c` uses `exr_add_ovf`/`exr_mul_ovf` on all accumulation/allocation sites, and `make test-c-tsan` now runs both suites under ThreadSanitizer (both green). Added a unit regression for the shared helpers and overflow guards. |
 | Fuzz/API coverage (S6/S7) | The C fuzz harness already covers the full public reader API with a budgeted allocator, deep two-step decode and WOULD_BLOCK suspend/resume; S6/S7 are locked in by unit regressions for out-of-order `exr_reader_supply` and destination-size checking in `exr_block_extract_channel` (all green under ASan/UBSan/LSan). |
@@ -34,10 +34,10 @@ implementation, its compiler, or memory safety for every possible input.
 | JPH wrapper | Marker sequence, SIZ geometry/tile count and COD/QCD profile checks for OpenEXR HTJ2K chunks, checked against four real fixtures by `make jph-diff` (4/4). HT entropy coding is out of scope. |
 | Reader state (spec) | Abstract reader-state rules from `task.md` S1: error latching, capacity-before-append and ownership preservation are proved for the model. This is a specification of the required C behaviour, **not** a proof that the current C reader satisfies it. |
 | Tocio codegen semantics | `Tocio.CodegenSemantics` links emitted matrix, range, LUT1D and exponent statements to their op kernels (proved `eval_compile_matrix`, `eval_compile_range`, `eval_compile_lut1d`, `eval_compile_exponent`), with byte-identical emitter text covered by `tocio-codegen-diff`; `make tocio-codegen-semantics-diff` checks the AST evaluator against C on 480 vectors. |
-| Tocio loader guards | `Tocio.LoaderBoundsCsp` proves CSP/.cube `valuesFit` soundness plus cube size/count bounds; `Tocio.YamlFuelExact` pins the YAML depth boundary (127 parses, 128 fails). `make tocio-bounds-diff` checks the C guard on 120 vectors (0 mismatches); existing `tocio-csp-diff`/`-lut-diff` cover the parsers. |
+| Tocio loader guards | `Tocio.LoaderBoundsCsp` proves CSP/.cube `valuesFit` soundness plus cube size/count bounds; `Tocio.YamlFuelExact` pins the YAML depth boundary (127 parses, 128 fails), and `Tocio.YamlTotalBounds.parseTotal_used_le` proves every worker's returned fuel is at most its input fuel. `make tocio-bounds-diff` checks the C guard on 120 vectors (0 mismatches); existing `tocio-csp-diff`/`-lut-diff` cover the parsers. |
 | Tocio kernel algebra | `Tocio.MatrixModel` proves identity, associativity and inverse cancellation over `ℚ`; `Tocio.LutModel` proves interpolation endpoint/bounds and LUT node exactness. The Float32 kernels are pinned by `make tocio-model-diff` (840/840). |
 | Tocio loader bounds | SPI sample-count soundness plus CLF XML cursor bounds and `xfloats` budget/value-fit guards, proved for the parser models (no C claim). |
-| Tocio (scaffolding) | Op-kind + FixedFunction-style enums with inverse-pair invariants; Matrix/Range/Exponent/Log/CDL/LUT/YAML/Config/Resolve/Lower/Processor skeletons. Float semantics and YAML totality not yet proved — see [Boundaries](#boundaries). |
+| Tocio (scaffolding) | Op-kind + FixedFunction-style enums with inverse-pair invariants; Matrix/Range/Exponent/Log/CDL/LUT/YAML/Config/Resolve/Lower/Processor skeletons. The total YAML parser's depth, height and remaining-fuel bounds are proved; the C-faithful engine's input-size work fuel remains an over-approximation without an exact call metric. Float kernels combine proved exact/dyadic laws with differential coverage; see [Boundaries](#boundaries). |
 
 ## PIZ proof chain and preconditions
 
@@ -79,7 +79,8 @@ or expanded input. Whole-block differential vectors check both interfaces.
 
 ## Verification evidence
 
-The final implementation validation on 2026-11-09 produced:
+The core implementation validation on 2026-11-09 produced the results below;
+the status/tooling and proof-hardening update was revalidated on 2026-11-25.
 
 | Gate | Result |
 | --- | --- |
@@ -104,7 +105,10 @@ The final implementation validation on 2026-11-09 produced:
 | `make tir-streaming-diff` | 6 resize geometries, 188 trace lines, C vs Lean, 0 mismatches; serial vs interleaved output byte-identical in all 6. |
 | `make jph-diff` | 4 real HTJ2K EXR fixtures (2 regression + 2 fuzz corpus), marker sequence + SIZ/COD/QCD geometry + profile verdict, C vs Lean, 0 mismatches. |
 | `make tir-diff` | 3240 C classification vectors (10 widths × 9 filters × 3 edge modes × 2 registrations × 3 scales × 2 sigmas), 0 mismatches; `make resize-c11-gate` and `make resize-test` green (777 tests). |
-| `make lean-tools lean-axiom-check` | Full build passed; 4705 first-party theorems (EXR + Texcomp + Tocio + Tir + Math), 179 with bit-vector certificate dependencies, 74 with approved native checks; no unexpected axioms. |
+| `make lean-diff-all` | All 80 discovered `*-diff` targets passed sequentially with zero mismatches. |
+| `make lean-status` | 327 Lean files, 56,887 lines and 1,539 source-level theorem/lemma declarations; axiom audit 4,815 first-party theorems; 80 differential targets discovered. |
+| `make lean-tools lean-axiom-check` | Full build passed; 4815 first-party theorems (EXR + Texcomp + Tocio + Tir + Math), 179 with bit-vector certificate dependencies, 74 with approved native checks; no unexpected axioms. |
+| Focused proof-hardening gates | BC6H kernels 4215/0, BC6H block drivers 480/0, BC7 pack candidates 640/0, ASTC HDR pack 400/0, ASTC HDR decode 256/0, float-output wrappers 293/0 and YAML documents 48/0 mismatches. These revalidate the executable definitions behind the new structural theorems. |
 | `make texcomp-lean-check tocio-lean-check` | New-module builds passed. |
 | `make texcomp-bc6h-diff` | 1028 BC6H blocks (all 14 modes, signed + unsigned), C vs Lean byte-exact. |
 | `make texcomp-bc6h-*-diff` | BC6H encoder models byte-exact against C: shared kernels (4215 values), unsigned modes 0/1/2/3/4/5/6/7/8/9/10/12/13 (400 + 520 + 1040 + 780 + 900 blocks), signed modes 0–8/12/13 (1800 blocks), and the per-block mode-selection drivers `tc_encode_bc6h_block_uf16`/`_sf16` (480 blocks, both variants). |
@@ -141,7 +145,8 @@ The final implementation validation on 2026-11-09 produced:
 | `make lean-gen-check` | Committed generated fixtures current. |
 | `ASAN_OPTIONS=detect_leaks=0 make THREADS=1 lean-validation-sanitize` | All 8192 codec comparisons and the 20-test regression suite passed, with two optional skips. ASan, UBSan and float-cast-overflow instrumentation enabled. |
 | `make lib c11-gate` | Library build and strict pure-C11 gate passed. |
-| `ASAN_OPTIONS=detect_leaks=0 make test-c fuzz-corpus-asan` | 316 unit checks and 8297 streaming/hardening checks passed; 1238 corpus files replayed without crashes or sanitizer errors. Counts reflect the local build configuration and available fixtures. |
+| `ASAN_OPTIONS=detect_leaks=0 make test-c fuzz-corpus-asan` | 316 unit checks and 9145 streaming/hardening checks passed; the local regression replay covered 83 corpus files with no crash or sanitizer error. Counts reflect the local build configuration and available fixtures. |
+| `make c11-gate test-c fuzz-corpus` | Strict pure-C11 gate passed; 316/316 unit checks, 9145/9145 streaming/hardening checks, and 83/83 corpus files replayed with no crash or ASan/UBSan/LSan error. |
 
 These results describe the tested corpus and configurations, not exhaustive
 input coverage. The sanitizer retry was necessary because the initial default
@@ -173,10 +178,13 @@ validation checks, not library proofs.
   the formal model: it is superseded by the `Tir` resampler, which is already
   byte-exactly gated (`tir-diff`, `tir-kernel-diff`, `tir-streaming-diff`).
   No duplicate model is maintained; callers should prefer `tir_resize`.
-- One proof-level gap remains an accepted boundary: an explicit `calls ≤ fuel`
-  theorem for the YAML total parser (its depth boundary, height bound and all
-  48 parser vectors are proved/gated). CDL emitted-statement equivalence is
-  now proved via `eval_compile_cdl`.
+- `YamlTotal` proves the parser's height/depth boundary and, via
+  `parseTotal_used_le`, that every returned fuel value is at most the supplied
+  fuel. That result field is remaining fuel, not a call count. The C-faithful
+  `YamlEngine.yamlParse` intentionally uses an input-size work-fuel
+  over-approximation without an exact total-call metric; all 48 YAML vectors
+  are gated. CDL emitted-statement equivalence is proved via
+  `eval_compile_cdl`.
 - DWAA/DWAB are intentionally unsupported; no DWA formalization or codec work
   is planned. HTJ2K/JPH internals are separately owned.
 - Dynamic-Huffman decode is modelled; encoder-side LZ77 choices remain a boundary. B44 table interior derivation and a proof connecting

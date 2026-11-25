@@ -158,5 +158,6 @@ output is decoded through public dispatch as an additional round-trip check.
 Packet vectors now use the shared `Frequency.countSymbols` histogram. Its
 source/marker activity and zero-prefix properties, exact emitted length-table
 Kraft mass, and table/payload size budgets are proved. The generated-table block
-round trip derives those conditions internally; checked canonical construction
-for every accepted length table is the remaining proof obligation.
+round trip derives those conditions internally, and
+`Exr.Piz.Block.decode_encode` also derives checked canonical construction for
+every accepted frequency profile via `Canonical.frequency_build_exists`.
