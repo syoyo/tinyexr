@@ -70,6 +70,22 @@ theorem bc7WeightsForBits_sym (bits s : Nat) (hb0 : 2 ≤ bits) (hb1 : bits ≤ 
       64 - (bc7WeightsForBits bits).getD s 0 := by
   interval_cases bits <;> interval_cases s <;> decide
 
+/-- One reconstructed channel from an endpoint pair, p-bits and weight. -/
+def bc7LerpChannel (lo hi p0 p1 precision hasPbit w : Nat) : Nat :=
+  let a := bc7DecodeEndpoint lo p0 precision hasPbit
+  let b := bc7DecodeEndpoint hi p1 precision hasPbit
+  (((64 - w) * a + w * b + 32) >>> 6) &&& 0xFF
+
+/-- Swapping endpoints and p-bits while complementing the weight reconstructs
+the same channel. -/
+theorem bc7LerpChannel_swap (lo hi p0 p1 precision hasPbit w : Nat)
+    (hw : w ≤ 64) :
+    bc7LerpChannel hi lo p1 p0 precision hasPbit (64 - w) =
+      bc7LerpChannel lo hi p0 p1 precision hasPbit w := by
+  simpa [bc7LerpChannel] using
+    (bc7ReconLerp_swap (bc7DecodeEndpoint lo p0 precision hasPbit)
+      (bc7DecodeEndpoint hi p1 precision hasPbit) w hw)
+
 /-- Reconstructed colour/alpha always has four channels. -/
 theorem bc7ReconColor_length (c : Bc7Candidate) (subset sel asel : Nat) :
     (bc7ReconColor c subset sel asel).length = 4 := by

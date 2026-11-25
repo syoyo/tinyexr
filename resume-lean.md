@@ -23,8 +23,8 @@ Repository: `/mnt/disk01/work/tinyexr`, branch `release`. Read `AGENTS.md`,
   the user explicitly permits a push.
 - Run `make lean-status` for current file/line/theorem counts and
   `make lean-axiom-check` for the transitive axiom census.
-- Latest close-out: 328 Lean files, 57,099 lines and 1,558 source-level
-  theorem/lemma declarations; axiom audit 4,872 first-party theorems;
+- Latest close-out: 328 Lean files, 57,115 lines and 1,559 source-level
+  theorem/lemma declarations; axiom audit 4,874 first-party theorems;
   80/80 differential targets green.
 - EXR core/codecs, DEFLATE decode, JPH wrapper, Tir, texcomp image drivers,
   Tocio engine/codegen and shared scalar math are all modelled and gated.
