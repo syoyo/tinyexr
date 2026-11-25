@@ -23,7 +23,7 @@ MINIZ_SRC = ./deps/miniz/miniz.c
 # ---- legacy v1 single-header test (unchanged) -----------------------------
 TARGET = test_tinyexr
 
-.PHONY: all test clean help lib test-c test-c-threads test-c-tsan c11-gate lean-check lean-diff lean-gen lean-gen-update lean-gen-check codec-diff jph-diff deflate-diff header-validate-diff reader-state-diff image-budget-diff tile-geometry-diff tocio-model-diff tocio-codegen-semantics-diff tocio-bounds-diff texcomp-web texcomp-bc6h-diff texcomp-bc7-diff texcomp-bc135-diff texcomp-etc2-diff texcomp-astc-diff texcomp-astc-ldr-diff texcomp-astc-uastc-diff texcomp-astc-hdrenc-diff texcomp-astc-quant-diff texcomp-astc-hdrimg-diff texcomp-astc-ldrimg-diff texcomp-astc-ldrdec-diff texcomp-uni-diff texcomp-uni-transcode-diff texcomp-etc2-enc-diff texcomp-bc-img-diff texcomp-bc5-enc-img-diff tocio-diff tocio-yaml-diff tocio-config-diff tocio-proc-diff tocio-codegen-diff tocio-glsl-diff fuzz fuzz-threads tocio-fuzz fuzz-jph fuzz-libdeflate fuzz-corpus fuzz-corpus-asan parse-test wasm freestanding-gate freestanding-zstd-gate examples-c bench bench-compare bench-htj2k arm-smoke host-smoke gpu-test vk-test jph-gpu-test bench-gpu-jph texcomp texcomp-arm texcomp-c11-gate texcomp-test texcomp-bench texcomp-astc-psnr texcomp-astc-arm-smoke texcomp-astc-arm-gate texcomp-astc-hdr-gate texcomp-uni-gate texcomp-bc6h-gate texcomp-wasm texcomp-wasm-simd wasm-texcomp wasm-texcomp-simd ptexatlas-c11-gate
+.PHONY: all test clean help lib test-c test-c-threads test-c-tsan math-test math-ulp-full math-diff libm-free-gate c11-gate lean-check lean-diff lean-gen lean-gen-update lean-gen-check codec-diff jph-diff deflate-diff header-validate-diff reader-state-diff image-budget-diff tile-geometry-diff tocio-model-diff tocio-codegen-semantics-diff tocio-bounds-diff texcomp-web texcomp-bc6h-diff texcomp-bc7-diff texcomp-bc135-diff texcomp-etc2-diff texcomp-astc-diff texcomp-astc-ldr-diff texcomp-astc-uastc-diff texcomp-astc-hdrenc-diff texcomp-astc-quant-diff texcomp-astc-hdrimg-diff texcomp-astc-ldrimg-diff texcomp-astc-ldrdec-diff texcomp-uni-diff texcomp-uni-transcode-diff texcomp-etc2-enc-diff texcomp-bc-img-diff texcomp-bc5-enc-img-diff texcomp-float-dec-diff b44-table-diff tocio-diff tocio-yaml-diff tocio-config-diff tocio-proc-diff tocio-codegen-diff tocio-glsl-diff fuzz fuzz-threads tocio-fuzz fuzz-jph fuzz-libdeflate fuzz-corpus fuzz-corpus-asan parse-test wasm freestanding-gate freestanding-zstd-gate examples-c bench bench-compare bench-htj2k arm-smoke host-smoke gpu-test vk-test jph-gpu-test bench-gpu-jph texcomp texcomp-arm texcomp-c11-gate texcomp-test texcomp-bench texcomp-astc-psnr texcomp-astc-arm-smoke texcomp-astc-arm-gate texcomp-astc-hdr-gate texcomp-uni-gate texcomp-bc6h-gate texcomp-wasm texcomp-wasm-simd wasm-texcomp wasm-texcomp-simd ptexatlas-c11-gate
 
 all: $(TARGET)
 
@@ -64,7 +64,7 @@ ptexatlas-c11-gate:
 -include tools/ptex/ptex.mk
 
 # ---- pure-C11 v3 library + tests ------------------------------------------
-V3_INC   = -Iinclude -Isrc -Ideps/zstd
+V3_INC   = -Iinclude -Isrc -Ideps/zstd -Ideps/math
 V3_CSTD  = -std=c11
 V3_WARN  = -Wall -Wextra -Werror
 # Enable the validated AVX2 four-quad HALF cleanup kernel on x86. The source
@@ -210,6 +210,11 @@ build/exr_jph.o: src/exr_jph.c src/exr_jph_avx2_inline.h include/exr.h \
                  src/exr_internal.h deps/zstd/tinyexr_zstd.h | build
 	$(CC) $(V3_CSTD) $(V3_WARN) $(V3_DEFS) $(V3_INC) $(V3_OPT) $(V3_ARCH) $(JPH_HOST_OPT) -g -c $< -o $@
 
+# The shared math TU must keep its exact f32 op sequence (Lean mirrors it).
+build/exr_math.o: src/exr_math.c deps/math/exr_math.h deps/math/exr_math_impl.h \
+                  src/exr_internal.h include/exr.h | build
+	$(CC) $(V3_CSTD) $(V3_WARN) $(V3_DEFS) $(V3_INC) $(V3_OPT) -ffp-contract=off -g -c $< -o $@
+
 build/%.o: src/%.c include/exr.h src/exr_internal.h deps/zstd/tinyexr_zstd.h | build
 	$(CC) $(V3_CSTD) $(V3_WARN) $(V3_DEFS) $(V3_INC) $(V3_OPT) $(V3_ARCH) -g -c $< -o $@
 
@@ -271,6 +276,46 @@ c11-gate: | build
 	  $(CC) $(V3_CSTD) $(V3_WARN) $(V3_INC) -O1 -fsyntax-only $$f || exit 1; \
 	done
 	@echo "pure-C11 gate: OK"
+
+# ---- libm-free math validation ---------------------------------------------
+# Hosted-only ULP harness: the implementation under test is libm-free, libm is
+# only the oracle. `make math-test` is the structured CI slice; `math-ulp-full`
+# runs the exhaustive sweeps (several minutes, opt-in).
+math-test: build/exr_math.o test/v3/math_ulp.c | build
+	$(CC) $(V3_CSTD) -Wall -Wextra $(V3_INC) -O2 -ffp-contract=off \
+	  test/v3/math_ulp.c build/exr_math.o -lm -o build/math_ulp
+	./build/math_ulp
+
+math-ulp-full: build/exr_math.o test/v3/math_ulp.c | build
+	$(CC) $(V3_CSTD) -Wall -Wextra $(V3_INC) -O2 -ffp-contract=off \
+	  test/v3/math_ulp.c build/exr_math.o -lm -o build/math_ulp
+	./build/math_ulp --full
+
+build/math_vectors: test/v3/math_vectors.c build/exr_math.o deps/math/exr_math.h | build
+	$(CC) $(V3_CSTD) -Wall -Wextra $(V3_INC) -O2 -ffp-contract=off \
+	  $< build/exr_math.o -o $@
+
+math-diff: build/math_vectors lean-tools
+	./build/math_vectors > build/math_vectors.txt
+	./lean/.lake/build/bin/mathcheck build/math_vectors.txt
+	@echo "math-diff: OK"
+
+# Every libm entry point, single and float suffixed. Hosted tools may link -lm;
+# the four shipped libraries must not reference any of these symbols.
+LIBM_FORBIDDEN = log|logf|log10|log10f|log2|log2f|exp|expf|exp2|exp2f|exp10|exp10f|pow|powf|sqrt|sqrtf|cbrt|cbrtf|sin|sinf|cos|cosf|tan|tanf|asin|asinf|acos|acosf|atan|atanf|atan2|atan2f|sinh|sinhf|cosh|coshf|tanh|tanhf|asinh|asinhf|acosh|acoshf|atanh|atanhf|floor|floorf|ceil|ceilf|trunc|truncf|round|roundf|lround|lroundf|nearbyint|nearbyintf|rint|rintf|fabs|fabsf|fmod|fmodf|hypot|hypotf|ldexp|ldexpf|frexp|frexpf|scalbn|scalbnf|modf|modff|copysign|copysignf|nextafter|nextafterf|fmax|fmaxf|fmin|fminf|fma|fmaf|isnan|isinf|isfinite|signbit
+
+libm-free-gate: lib resize-lib texcomp tocio-lib test/v3/libm_free_smoke.c | build
+	@echo "  scan: shipped libraries reference no libm symbols"
+	@for o in $(V3_OBJ) $(TIR_OBJ) $(TEXCOMP_OBJ) $(TOC_OBJ); do \
+	  hit=`nm -u $$o 2>/dev/null | awk '{print $$NF}' | grep -wE '$(LIBM_FORBIDDEN)' || true`; \
+	  if [ -n "$$hit" ]; then echo "  FAIL: $$o references:" $$hit; exit 1; fi; \
+	done
+	@echo "  link: smoke test against the four libs, no -lm"
+	$(CC) $(V3_CSTD) -Wall -Wextra -Iinclude -O2 $(SAN) test/v3/libm_free_smoke.c \
+	  build/libtinyexr3.a build/libtir.a build/libtexcomp.a build/libtocio.a \
+	  -pthread -ldl -o build/libm_free_smoke
+	ASAN_OPTIONS=detect_leaks=0 ./build/libm_free_smoke
+	@echo "libm-free gate: OK"
 
 # Lean 4 + mathlib formalization of the OpenEXR format (lean/). Fetches the
 # prebuilt mathlib olean cache on first run (needs network once).
@@ -398,6 +443,22 @@ texcomp-bc5-enc-img-diff: texcomp lean-tools
 	@echo "texcomp-bc5-enc-img-diff: OK"
 
 .PHONY: texcomp-bc-img-diff
+.PHONY: b44-table-diff
+b44-table-diff: lib lean-tools
+	$(CC) $(V3_CSTD) $(V3_WARN) -Iinclude -Isrc test/v3/b44_table_vectors.c \
+	  build/libtinyexr3.a -lm -pthread -o build/b44_table_vectors
+	./build/b44_table_vectors > build/lean-gen/b44_table_vectors.txt
+	./lean/.lake/build/bin/b44tablecheck build/lean-gen/b44_table_vectors.txt
+	@echo "b44-table-diff: OK"
+
+.PHONY: texcomp-float-dec-diff
+texcomp-float-dec-diff: $(TEXCOMP_OBJ) lean-tools
+	$(CC) $(V3_CSTD) -Wall -Wextra $(TEXCOMP_INC) -O2 -g \
+	  test/v3/tc_float_dec_vectors.c $(TEXCOMP_OBJ) -lm -pthread -o build/tc_float_dec_vectors
+	./build/tc_float_dec_vectors > build/lean-gen/tc_float_dec_vectors.txt
+	./lean/.lake/build/bin/tcfloatdeccheck build/lean-gen/tc_float_dec_vectors.txt
+	@echo "texcomp-float-dec-diff: OK"
+
 texcomp-bc-img-diff: texcomp texcomp-bc135-diff lean-tools
 	mkdir -p build/lean-gen
 	$(CC) -std=c11 -Wall -Wextra -Itools/texcomp/include -Iinclude -Isrc \
@@ -1095,6 +1156,10 @@ build/.v3-test-flags: FORCE | build
 build/test-%.o: src/%.c include/exr.h src/exr_internal.h deps/zstd/tinyexr_zstd.h build/.v3-test-flags | build
 	$(CC) $(V3_CSTD) -Wall -Wextra $(V3_DEFS) $(V3_INC) -O1 -g $(SAN) -c $< -o $@
 
+build/test-exr_math.o: src/exr_math.c deps/math/exr_math.h deps/math/exr_math_impl.h \
+                       src/exr_internal.h include/exr.h build/.v3-test-flags | build
+	$(CC) $(V3_CSTD) -Wall -Wextra $(V3_DEFS) $(V3_INC) -O1 -g $(SAN) -ffp-contract=off -c $< -o $@
+
 build/test-tinyexr_zstd.o: $(ZSTD_SRC) deps/zstd/tinyexr_zstd.h build/.v3-test-flags | build
 	$(CC) $(V3_CSTD) $(V3_INC) -O1 -g $(SAN) -w -c $< -o $@
 
@@ -1110,7 +1175,7 @@ test-c: $(V3_TEST_OBJ) build/test-tinyexr_zstd.o $(LD_TEST_OBJ) test/unit/test_e
 # ---- tools/texcomp: pure-C11 BC/ETC/ASTC texture compression --------------
 # One translation unit per codec, plus texcomp.c for the shared core
 # (backend dispatch, options, sizes, DDS/KTX/ASTC containers).
-TEXCOMP_INC = -Itools/texcomp/include -Iinclude -Isrc -Iexamples/common
+TEXCOMP_INC = -Itools/texcomp/include -Iinclude -Isrc -Iexamples/common -Ideps/math
 TEXCOMP_SRC = tools/texcomp/src/texcomp.c \
   tools/texcomp/src/texcomp_bc1.c tools/texcomp/src/texcomp_bc3.c \
   tools/texcomp/src/texcomp_bc5.c tools/texcomp/src/texcomp_bc6h.c \
@@ -1119,7 +1184,8 @@ TEXCOMP_SRC = tools/texcomp/src/texcomp.c \
   tools/texcomp/src/texcomp_astc_hdr.c tools/texcomp/src/texcomp_uni.c \
   tools/texcomp/src/texcomp_astc_decode.c \
   tools/texcomp/src/texcomp_etc2_decode.c \
-  tools/texcomp/src/texcomp_bc6h_decode.c
+  tools/texcomp/src/texcomp_bc6h_decode.c \
+  tools/texcomp/src/texcomp_math.c
 TEXCOMP_HDRS = tools/texcomp/include/texcomp.h tools/texcomp/src/texcomp_internal.h
 TEXCOMP_OBJ = $(patsubst tools/texcomp/src/%.c,build/texcomp/%.o,$(TEXCOMP_SRC))
 TEXCOMP_TEST_OBJ = $(patsubst tools/texcomp/src/%.c,build/texcomp/test-%.o,$(TEXCOMP_SRC))
@@ -1143,8 +1209,14 @@ build/texcomp/wasm build/texcomp/wasm-simd $(TEXCOMP_WASM_CACHE):
 build/texcomp/%.o: tools/texcomp/src/%.c $(TEXCOMP_HDRS) | build/texcomp
 	$(CC) $(V3_CSTD) $(V3_WARN) $(TEXCOMP_INC) $(TEXCOMP_OPT) -g -c $< -o $@
 
+build/texcomp/texcomp_math.o: tools/texcomp/src/texcomp_math.c $(TEXCOMP_HDRS) deps/math/exr_math.h deps/math/exr_math_impl.h | build/texcomp
+	$(CC) $(V3_CSTD) $(V3_WARN) $(TEXCOMP_INC) $(TEXCOMP_OPT) -g -ffp-contract=off -c $< -o $@
+
 build/texcomp/test-%.o: tools/texcomp/src/%.c $(TEXCOMP_HDRS) | build/texcomp
 	$(CC) $(V3_CSTD) -Wall -Wextra $(TEXCOMP_INC) -O1 -g $(SAN) -c $< -o $@
+
+build/texcomp/test-texcomp_math.o: tools/texcomp/src/texcomp_math.c $(TEXCOMP_HDRS) deps/math/exr_math.h deps/math/exr_math_impl.h | build/texcomp
+	$(CC) $(V3_CSTD) -Wall -Wextra $(TEXCOMP_INC) -O1 -g $(SAN) -ffp-contract=off -c $< -o $@
 
 texcomp: lib $(TEXCOMP_OBJ) tools/texcomp/src/texcomp_cli.c | build/texcomp
 	$(AR) rcs build/libtexcomp.a $(TEXCOMP_OBJ)
@@ -1740,10 +1812,14 @@ FS_FLAGS = -DEXR_FREESTANDING $(FS_ZSTD_CFG) -ffreestanding -fno-builtin \
 FS_CORE_SRC = $(filter-out $(FS_ZSTD_SKIP),$(V3_CORE_SRC))
 FS_OBJ = $(patsubst src/%.c,build/fs-%.o,$(FS_CORE_SRC)) build/fs-exr_freestanding.o \
          $(FS_ZSTD_OBJ)
-FS_FORBIDDEN = fopen|fread|fwrite|fseek|ftell|fclose|fprintf|printf|snprintf|malloc|calloc|realloc|free|abort|exit|qsort|exp|log|pow
+FS_FORBIDDEN = fopen|fread|fwrite|fseek|ftell|fclose|fprintf|printf|snprintf|malloc|calloc|realloc|free|abort|exit|qsort|$(LIBM_FORBIDDEN)
 
 build/fs-%.o: src/%.c include/exr.h src/exr_internal.h | build
 	$(CC) $(FS_FLAGS) -c $< -o $@
+
+build/fs-exr_math.o: src/exr_math.c deps/math/exr_math.h deps/math/exr_math_impl.h \
+                     src/exr_internal.h include/exr.h | build
+	$(CC) $(FS_FLAGS) -ffp-contract=off -c $< -o $@
 
 # Freestanding zstd amalgamation: no-malloc (static-DCtx) build with the libc
 # allocator entry points stubbed to NULL/no-op (the static decode path never
@@ -1797,7 +1873,7 @@ TOC_CORE_SRC = $(filter-out sandbox/tocio/src/toc_stdio.c sandbox/tocio/src/toc_
 TOC_FS_OBJ   = $(patsubst sandbox/tocio/src/%.c,build/toc-fs-%.o,$(TOC_CORE_SRC))
 TOC_FS_FORBIDDEN = $(FS_FORBIDDEN)
 
-.PHONY: tocio-lib tocio-c11-gate tocio-freestanding-gate tocio-test
+.PHONY: tocio-lib tocio-c11-gate tocio-freestanding-gate tocio-test tocio-jit-diff tocio-simd-diff
 
 build/toc-%.o: sandbox/tocio/src/%.c $(TOC_HDRS) | build
 	$(CC) $(V3_CSTD) -Wall -Wextra $(TOC_INC) -O2 -g $(SAN) -c $< -o $@
@@ -1836,6 +1912,16 @@ tocio-test: | build
 	$(CC) $(V3_CSTD) -Wall -Wextra $(TOC_INC) -O1 -g $(SAN) \
 	  sandbox/tocio/tests/toc_test.c $(TOC_SRC) -lm -ldl -o build/toc_test
 	./build/toc_test
+
+build/toc_parity: test/v3/tocio_parity_vectors.c $(TOC_SRC) $(TOC_HDRS) | build
+	$(CC) $(V3_CSTD) -Wall -Wextra $(TOC_INC) -O1 -g -ffp-contract=off \
+	  $< $(TOC_SRC) -lm -ldl -o $@
+
+tocio-jit-diff: build/toc_parity
+	./build/toc_parity
+
+tocio-simd-diff: build/toc_parity
+	./build/toc_parity
 
 # Coverage-guided fuzzer over the tocio hostile-input surface (YAML config,
 # processor build, LUT loaders via FileTransform, CPU/JIT apply, codegens).
@@ -1931,7 +2017,7 @@ wasm-tocio-demo: | build
 # ---- tools/resize (tir: standalone SIMD image resize library) --------------
 # Pure C11, no dependency on the v3 core; only the CLI/bench link
 # libtinyexr3.a (for EXR file I/O). See tools/resize/README.md.
-TIR_INC  = -Itools/resize/include -Itools/resize/src
+TIR_INC  = -Itools/resize/include -Itools/resize/src -Ideps/math
 TIR_SRC  = $(wildcard tools/resize/src/*.c)
 TIR_OBJ  = $(patsubst tools/resize/src/%.c,build/tir-%.o,$(TIR_SRC))
 TIR_HDRS = tools/resize/include/tir.h tools/resize/src/tir_internal.h
@@ -1949,6 +2035,9 @@ endif
 
 build/tir-%.o: tools/resize/src/%.c $(TIR_HDRS) | build
 	$(CC) $(V3_CSTD) $(V3_WARN) $(TIR_INC) -O2 -g -c $< -o $@
+
+build/tir-tir_math.o: tools/resize/src/tir_math.c $(TIR_HDRS) deps/math/exr_math.h deps/math/exr_math_impl.h | build
+	$(CC) $(V3_CSTD) $(V3_WARN) $(TIR_INC) -O2 -g -ffp-contract=off -c $< -o $@
 build/tir-tir_kernels_sve.o: tools/resize/src/tir_kernels_sve.c $(TIR_HDRS) | build
 	$(CC) $(V3_CSTD) $(V3_WARN) $(TIR_INC) $(TIR_SVE_FLAGS) -O2 -g -c $< -o $@
 
@@ -1968,7 +2057,7 @@ resize-c11-gate: | build
 
 resize-test: | build
 	$(CC) $(V3_CSTD) -Wall -Wextra $(TIR_INC) -O1 -g $(SAN) \
-	  tools/resize/tests/tir_test.c $(TIR_SRC) -lm -o build/tir_test
+	  tools/resize/tests/tir_test.c $(TIR_SRC) -lm -o build/tir_test -ffp-contract=off
 	ASAN_OPTIONS=detect_leaks=0 ./build/tir_test
 
 # Same unit tests, but with LeakSanitizer on (the library is single-alloc /
@@ -1977,13 +2066,13 @@ resize-test: | build
 resize-test-asan: | build
 	$(CC) $(V3_CSTD) -Wall -Wextra $(TIR_INC) -DTIR_ENABLE_THREADS -pthread \
 	  -O1 -g $(SAN) \
-	  tools/resize/tests/tir_test.c $(TIR_SRC) -lm -o build/tir_test_asan
+	  tools/resize/tests/tir_test.c $(TIR_SRC) -lm -o build/tir_test_asan -ffp-contract=off
 	ASAN_OPTIONS=detect_leaks=1 ./build/tir_test_asan
 
 resize-test-threads: | build
 	$(CC) $(V3_CSTD) -Wall -Wextra $(TIR_INC) -DTIR_ENABLE_THREADS -pthread \
 	  -O1 -g $(SAN) \
-	  tools/resize/tests/tir_test.c $(TIR_SRC) -lm -o build/tir_test_mt
+	  tools/resize/tests/tir_test.c $(TIR_SRC) -lm -o build/tir_test_mt -ffp-contract=off
 	ASAN_OPTIONS=detect_leaks=0 ./build/tir_test_mt
 
 # ThreadSanitizer build. Uses the pthread threading backend
@@ -1995,7 +2084,7 @@ resize-test-tsan: | build
 	$(CC) $(V3_CSTD) -Wall -Wextra $(TIR_INC) \
 	  -DTIR_ENABLE_THREADS -DTIR_THREADS_PTHREAD -pthread \
 	  -O1 -g -fsanitize=thread \
-	  tools/resize/tests/tir_test.c $(TIR_SRC) -lm -o build/tir_test_tsan
+	  tools/resize/tests/tir_test.c $(TIR_SRC) -lm -o build/tir_test_tsan -ffp-contract=off
 	./build/tir_test_tsan
 
 # Exhaustive f16<->f32 converter sweep (all 65536 half codes, every SIMD
@@ -2005,12 +2094,12 @@ resize-test-tsan: | build
 # toolchain (ARM_CC, default gcc-13; pass ARM_CC=... for another) is present.
 resize-test-f16: | build
 	$(CC) $(V3_CSTD) -Wall -Wextra $(TIR_INC) -O2 -g \
-	  tools/resize/tests/tir_f16_test.c $(TIR_SRC) -lm -o build/tir_f16_test
+	  tools/resize/tests/tir_f16_test.c $(TIR_SRC) -lm -o build/tir_f16_test -ffp-contract=off
 	./build/tir_f16_test
 	@if command -v $(ARM_CC) >/dev/null 2>&1; then \
 	  echo "== NEON (qemu) =="; \
 	  $(ARM_CC) -static -march=armv8-a $(V3_CSTD) -Wall -Wextra $(TIR_INC) \
-	    -O2 tools/resize/tests/tir_f16_test.c $(TIR_SRC) -lm \
+	    -O2 tools/resize/tests/tir_f16_test.c $(TIR_SRC) -lm -ffp-contract=off \
 	    -o build/tir_f16_test_arm && $(ARM_QEMU) ./build/tir_f16_test_arm; \
 	  echo "== SVE (qemu) =="; \
 	  $(ARM_CC) -static -march=armv8-a+sve $(V3_CSTD) -Wall -Wextra \
@@ -2018,7 +2107,7 @@ resize-test-f16: | build
 	    -o build/tir-sve-kernels-f16.o && \
 	  $(ARM_CC) -static -march=armv8-a $(V3_CSTD) -Wall -Wextra $(TIR_INC) \
 	    -O2 tools/resize/tests/tir_f16_test.c \
-	    $(filter-out tools/resize/src/tir_kernels_sve.c,$(TIR_SRC)) \
+	    $(filter-out tools/resize/src/tir_kernels_sve.c,$(TIR_SRC)) -ffp-contract=off \
 	    build/tir-sve-kernels-f16.o -lm -o build/tir_f16_test_sve && \
 	  $(ARM_QEMU) -cpu max,sve=on,sve256=on ./build/tir_f16_test_sve; \
 	else echo "  ($(ARM_CC) not found; skipping NEON/SVE f16 sweep)"; fi
@@ -2059,7 +2148,7 @@ tir-diff: build/tir_vectors lean-tools
 
 resize-bench: lib | build
 	$(CC) $(V3_CSTD) -Wall -Wextra $(TIR_INC) $(V3_INC) $(TIR_BENCH_DEFS) -O2 -g \
-	  tools/resize/tests/tir_bench.c $(TIR_SRC) build/libtinyexr3.a \
+	  tools/resize/tests/tir_bench.c $(TIR_SRC) build/libtinyexr3.a -ffp-contract=off \
 	  -lm -o build/tir_bench
 	./build/tir_bench
 
@@ -2073,7 +2162,7 @@ resize-cli: lib resize-lib | build
 # path, guarding the CLI's malloc checks and the single-cleanup free path.
 resize-cli-asan: lib | build
 	$(CC) $(V3_CSTD) $(V3_WARN) $(TIR_INC) -Iinclude -O1 -g $(SAN) \
-	  tools/resize/cli/tir_resize_main.c $(TIR_SRC) build/libtinyexr3.a \
+	  tools/resize/cli/tir_resize_main.c $(TIR_SRC) build/libtinyexr3.a -ffp-contract=off \
 	  -lm -o build/tir_resize_asan
 	@echo "  round-trip under ASan+LSan (must be leak-clean)"
 	ASAN_OPTIONS=detect_leaks=1 ./build/tir_resize_asan asakusa.exr \
@@ -2091,7 +2180,7 @@ resize-cli-asan: lib | build
 resize-fuzz: tools/resize/tests/tir_fuzz.c | build
 	clang $(V3_CSTD) $(TIR_INC) -DTIR_ENABLE_THREADS -pthread -O1 -g -w \
 	  -fsanitize=fuzzer,address,undefined \
-	  tools/resize/tests/tir_fuzz.c $(TIR_SRC) -lm -o build/resize_fuzz
+	  tools/resize/tests/tir_fuzz.c $(TIR_SRC) -lm -o build/resize_fuzz -ffp-contract=off
 	@echo "built build/resize_fuzz"
 	@echo "  run: mkdir -p build/corpus_resize && cp tools/resize/tests/corpus/* \\"
 	@echo "       build/corpus_resize/ && ./build/resize_fuzz -max_total_time=300 \\"
@@ -2102,7 +2191,7 @@ resize-fuzz: tools/resize/tests/tir_fuzz.c | build
 resize-fuzz-corpus: tools/resize/tests/tir_fuzz.c | build
 	$(CC) $(V3_CSTD) -Wall -Wextra $(TIR_INC) -DTIR_ENABLE_THREADS -pthread \
 	  -O1 -g $(SAN) -DTIR_FUZZ_STANDALONE \
-	  tools/resize/tests/tir_fuzz.c $(TIR_SRC) -lm -o build/resize_fuzz_replay
+	  tools/resize/tests/tir_fuzz.c $(TIR_SRC) -lm -o build/resize_fuzz_replay -ffp-contract=off
 	ASAN_OPTIONS=detect_leaks=0 ./build/resize_fuzz_replay \
 	  tools/resize/tests/corpus/*
 	ASAN_OPTIONS=detect_leaks=0 ./build/resize_fuzz_replay
@@ -2110,7 +2199,7 @@ resize-fuzz-corpus: tools/resize/tests/tir_fuzz.c | build
 # Cross-build for AArch64 (NEON kernels) and run under qemu.
 resize-arm-test: | build
 	$(ARM_CC) -static -march=armv8-a $(V3_CSTD) -Wall -Wextra $(TIR_INC) -O2 \
-	  tools/resize/tests/tir_test.c $(TIR_SRC) -lm -o build/tir_test_arm
+	  tools/resize/tests/tir_test.c $(TIR_SRC) -lm -o build/tir_test_arm -ffp-contract=off
 	$(ARM_QEMU) ./build/tir_test_arm
 
 # Same, with the SVE unit enabled and qemu exposing SVE (256-bit vectors).
@@ -2119,7 +2208,7 @@ resize-sve-test: | build
 	  -c tools/resize/src/tir_kernels_sve.c -o build/tir-sve-kernels-arm.o
 	$(ARM_CC) -static -march=armv8-a $(V3_CSTD) -Wall -Wextra $(TIR_INC) -O2 \
 	  tools/resize/tests/tir_test.c \
-	  $(filter-out tools/resize/src/tir_kernels_sve.c,$(TIR_SRC)) \
+	  $(filter-out tools/resize/src/tir_kernels_sve.c,$(TIR_SRC)) -ffp-contract=off \
 	  build/tir-sve-kernels-arm.o -lm -o build/tir_test_sve
 	$(ARM_QEMU) -cpu max,sve=on,sve256=on ./build/tir_test_sve
 

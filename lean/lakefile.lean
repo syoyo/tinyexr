@@ -20,7 +20,22 @@ require mathlib from git
 
 @[default_target]
 lean_lib ExrSpec where
-  globs := #[`ExrSpec, `Exr.+, `Texcomp.+, `Tocio.+, `Tir.+]
+  globs := #[`ExrSpec, `Exr.+, `Texcomp.+, `Tocio.+, `Tir.+, `Math.+]
+
+/-- B44 perceptual table boundary differential checker (C vs Lean). -/
+@[default_target]
+lean_exe b44tablecheck where
+  root := `B44TableCheck
+
+/-- Texcomp float-output decompress differential checker (C vs Lean). -/
+@[default_target]
+lean_exe tcfloatdeccheck where
+  root := `TexcompFloatDecCheck
+
+/-- Shared libm-free math differential checker (C vs Lean). -/
+@[default_target]
+lean_exe mathcheck where
+  root := `MathCheck
 
 /-- BC5 image-compressor differential checker (C vs Lean). -/
 @[default_target]
