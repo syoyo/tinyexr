@@ -76,6 +76,36 @@ theorem bc7ReconColor_length (c : Bc7Candidate) (subset sel asel : Nat) :
   unfold bc7ReconColor
   split <;> simp
 
+theorem bc7ByteAnd_lt (x : Nat) : x &&& 0xFF < 256 := by
+  have h := Nat.and_lt_two_pow (x := x) (y := 255) (n := 8) (by norm_num)
+  simpa using h
+
+/-- Every quantised BC7 endpoint is an 8-bit value. -/
+theorem bc7Unquant_lt (q bits : Nat) : bc7Unquant q bits < 256 := by
+  unfold bc7Unquant
+  split <;> exact bc7ByteAnd_lt _
+
+/-- Decoded endpoint (with or without a p-bit) is an 8-bit value. -/
+theorem bc7DecodeEndpoint_lt (q p precision hasPbit : Nat) :
+    bc7DecodeEndpoint q p precision hasPbit < 256 := by
+  unfold bc7DecodeEndpoint
+  split <;> exact bc7Unquant_lt _ _
+
+/-- All reconstructed colour/alpha channels are 8-bit values. -/
+theorem bc7ReconColor_lt (c : Bc7Candidate) (subset sel asel : Nat) :
+    ∀ x ∈ bc7ReconColor c subset sel asel, x < 256 := by
+  intro x hx
+  unfold bc7ReconColor at hx
+  split at hx
+  · simp only [List.mem_append, List.mem_singleton, List.mem_map] at hx
+    rcases hx with ⟨comp, _, rfl⟩ | rfl
+    · exact bc7ByteAnd_lt _
+    · norm_num
+  · simp only [List.mem_append, List.mem_singleton, List.mem_map] at hx
+    rcases hx with ⟨comp, _, rfl⟩ | rfl
+    · exact bc7ByteAnd_lt _
+    · exact bc7ByteAnd_lt _
+
 /-- The palette has one entry per subset. -/
 theorem bc7FillPalette_length (c : Bc7Candidate) :
     (bc7FillPalette c).length = bc7NumSubsets.getD c.mode 1 := by
