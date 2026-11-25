@@ -79,9 +79,10 @@ Completed initial slices:
    normals. A universal analytic arbitrary-mantissa ULP theorem remains the
    open proof boundary.
 
-Optional deeper follow-ups: endpoint-swap reconstruction invariance, LSQ and
-quantizer range algebra, a cost-returning YAML engine variant, and a universal
-analytic ULP proof for the accurate math tier.
+Optional deeper follow-ups: full BC7 candidate swap/normalisation equivalence
+(the interpolation/weight core is proved), LSQ and quantizer range algebra, a
+cost-returning YAML engine variant, and a universal analytic ULP proof for the
+accurate math tier.
 
 ### Accepted boundaries
 
