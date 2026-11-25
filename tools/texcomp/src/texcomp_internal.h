@@ -12,6 +12,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/* libm-free math (shared deps/math implementation). */
+float tc_math_sqrtf_exact(float x);
+float tc_math_sqrtf(float x);
+
 /* --- architecture / SIMD feature detection (mirrors texcomp.c) ---------- */
 #if defined(__i386__) || defined(__x86_64__) || defined(_M_IX86) || defined(_M_X64)
 #define TC_X86 1

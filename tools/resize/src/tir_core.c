@@ -65,8 +65,8 @@ void tir_options_init(tir_options *opt) {
     opt->gaussian_sigma = 0.5f;
     opt->mode = TIR_MODE_GENERAL;
     opt->antiring = -1.0f; /* auto */
-    opt->clamp_min = -INFINITY;
-    opt->clamp_max = INFINITY;
+    opt->clamp_min = -TIR_INF_F;
+    opt->clamp_max = TIR_INF_F;
     opt->nonfinite = TIR_NONFINITE_KEEP;
     opt->alpha = TIR_ALPHA_PREMULTIPLY;
     opt->normal_encoding = TIR_NORMAL_SNORM;
@@ -136,15 +136,15 @@ static tir_result validate_options(const tir_options *o) {
         return TIR_ERROR_INVALID_ARGUMENT;
     if ((int)o->registration < 0 || o->registration > TIR_REG_GRID_VERTEX)
         return TIR_ERROR_INVALID_ARGUMENT;
-    if (!(o->filter_scale > 0.0f) || !isfinite(o->filter_scale) ||
+    if (!(o->filter_scale > 0.0f) || !tir__finite32(o->filter_scale) ||
         o->filter_scale > 64.0f)
         return TIR_ERROR_INVALID_ARGUMENT;
-    if (!(o->gaussian_sigma > 0.0f) || !isfinite(o->gaussian_sigma) ||
+    if (!(o->gaussian_sigma > 0.0f) || !tir__finite32(o->gaussian_sigma) ||
         o->gaussian_sigma > 32.0f)
         return TIR_ERROR_INVALID_ARGUMENT;
-    if (isnan(o->antiring) || o->antiring > 1.0f)
+    if (tir__isnan32(o->antiring) || o->antiring > 1.0f)
         return TIR_ERROR_INVALID_ARGUMENT;
-    if (isnan(o->clamp_min) || isnan(o->clamp_max) ||
+    if (tir__isnan32(o->clamp_min) || tir__isnan32(o->clamp_max) ||
         o->clamp_min > o->clamp_max)
         return TIR_ERROR_INVALID_ARGUMENT;
     return TIR_SUCCESS;
@@ -422,7 +422,7 @@ tir_result tir_sampler_create(const tir_allocator *a, int src_w, int src_h,
      * normal-map X/Y components, where hicomp is disabled). */
     s->clamp_lo = hicomp_ch && o.clamp_min < 0.0f ? 0.0f : o.clamp_min;
         s->clamp_hi = o.clamp_max;
-        s->do_clamp = (s->clamp_lo > -INFINITY) || (s->clamp_hi < INFINITY);
+        s->do_clamp = (s->clamp_lo > -TIR_INF_F) || (s->clamp_hi < TIR_INF_F);
         s->nlen_out = o.normal_length_out;
         normal_map_coeffs(o.normal_encoding, src_type, &s->n_dec_a,
                           &s->n_dec_b);

@@ -85,12 +85,107 @@ def checkExp (f : List String) : Bool :=
   eqs out want &&
   Tocio.listPx out == Tocio.applyExponent e mirror ch p
 
+def checkExpLin (f : List String) : Bool :=
+  let inv := (f.getD 1 "0") == "1"
+  let mirror := (f.getD 2 "0") == "1"
+  let ch := (f.getD 3 "0").toNat!
+  let xs := f32s (f.drop 4)
+  let scale := xs.take 4
+  let offset := (xs.drop 4).take 4
+  let gamma := (xs.drop 8).take 4
+  let brk := (xs.drop 12).take 4
+  let slope := (xs.drop 16).take 4
+  let px := (xs.drop 20).take 4
+  let want := (xs.drop 24).take 4
+  let p : Tocio.Pixel := (px.getD 0 0, px.getD 1 0, px.getD 2 0, px.getD 3 0)
+  let out := Tocio.evalStmts
+    (Tocio.compileExpLinear (scale.map Float32.toBits) (offset.map Float32.toBits)
+      (gamma.map Float32.toBits) (brk.map Float32.toBits) (slope.map Float32.toBits)
+      inv mirror ch) (Tocio.pxList p)
+  eqs out want &&
+  Tocio.listPx out == Tocio.applyExpLinear scale offset gamma brk slope inv mirror ch p
+
+def checkLog (f : List String) : Bool :=
+  let inv := (f.getD 1 "0") == "1"
+  let ch := (f.getD 2 "0").toNat!
+  let xs := f32s (f.drop 3)
+  let ls3 := xs.take 3
+  let lo3 := (xs.drop 3).take 3
+  let ns3 := (xs.drop 6).take 3
+  let no3 := (xs.drop 9).take 3
+  let base := xs.getD 12 0
+  let px := (xs.drop 13).take 4
+  let want := (xs.drop 17).take 4
+  let p : Tocio.Pixel := (px.getD 0 0, px.getD 1 0, px.getD 2 0, px.getD 3 0)
+  let ls := ls3 ++ [0.0]
+  let lo := lo3 ++ [0.0]
+  let ns := ns3 ++ [1.0]
+  let no := no3 ++ [0.0]
+  let out := Tocio.evalStmts
+    (Tocio.compileLog (Float32.toBits base) (ls.map Float32.toBits) (lo.map Float32.toBits)
+      (ns.map Float32.toBits) (no.map Float32.toBits) inv) (Tocio.pxList p)
+  eqs out want && Tocio.listPx out == Tocio.applyLog base ls3 lo3 ns3 no3 inv ch p
+
+def checkCdl (f : List String) : Bool :=
+  let inv := (f.getD 1 "0") == "1"
+  let cl := (f.getD 2 "0") == "1"
+  let xs := f32s (f.drop 3)
+  let sl := xs.take 3
+  let of := (xs.drop 3).take 3
+  let pw := (xs.drop 6).take 3
+  let sat := xs.getD 9 0
+  let lum := (xs.drop 10).take 3
+  let px := (xs.drop 13).take 4
+  let want := (xs.drop 17).take 4
+  let p : Tocio.Pixel := (px.getD 0 0, px.getD 1 0, px.getD 2 0, px.getD 3 0)
+  let out := Tocio.evalStmts
+    (Tocio.compileCdl (sl.map Float32.toBits) (of.map Float32.toBits)
+      (pw.map Float32.toBits) (Float32.toBits sat) (lum.map Float32.toBits) cl inv)
+    (Tocio.pxList p)
+  eqs out want &&
+  Tocio.listPx out == Tocio.applyCdl sl of pw sat lum cl inv p
+
+def checkFixedFunc (f : List String) : Bool :=
+  let style := (f.getD 1 "0").toNat!
+  let xs := f32s (f.drop 3)
+  let params := xs.take 8
+  let px := (xs.drop 8).take 4
+  let want := (xs.drop 12).take 4
+  let p : Tocio.Pixel := (px.getD 0 0, px.getD 1 0, px.getD 2 0, px.getD 3 0)
+  let out := Tocio.evalStmts (Tocio.compileFixedFunc style (params.map Float32.toBits)) (Tocio.pxList p)
+  eqs out want
+
+def checkLogCam (f : List String) : Bool :=
+  let inv := (f.getD 1 "0") == "1"
+  let xs := f32s (f.drop 3)
+  let ls := xs.take 3
+  let lo := (xs.drop 3).take 3
+  let ns := (xs.drop 6).take 3
+  let no := (xs.drop 9).take 3
+  let brk := (xs.drop 12).take 3
+  let lslope := (xs.drop 15).take 3
+  let loff := (xs.drop 18).take 3
+  let base := xs.getD 21 0
+  let px := (xs.drop 22).take 4
+  let want := (xs.drop 26).take 4
+  let p : Tocio.Pixel := (px.getD 0 0, px.getD 1 0, px.getD 2 0, px.getD 3 0)
+  let out := Tocio.evalStmts
+    (Tocio.compileLogCam (Float32.toBits base) (ls.map Float32.toBits) (lo.map Float32.toBits)
+      (ns.map Float32.toBits) (no.map Float32.toBits) (brk.map Float32.toBits)
+      (lslope.map Float32.toBits) (loff.map Float32.toBits) inv) (Tocio.pxList p)
+  eqs out want
+
 def checkLine (line : String) : Bool :=
   let f := fields line
   match f with
   | "mat" :: _ => checkMat f
   | "range" :: _ => checkRange f
   | "exp" :: _ => checkExp f
+  | "exlin" :: _ => checkExpLin f
+  | "log" :: _ => checkLog f
+  | "logcam" :: _ => checkLogCam f
+  | "cdl" :: _ => checkCdl f
+  | "ff" :: _ => checkFixedFunc f
   | "lut" :: _ => checkLutAst f
   | _ => true
 

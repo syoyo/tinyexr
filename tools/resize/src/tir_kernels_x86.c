@@ -257,9 +257,9 @@ static void normalize3_sse2(float *xyz, float *len_out_or_null, size_t npix) {
         size_t off = (size_t)i * 3;
         float x = xyz[off], y = xyz[off + 1], z = xyz[off + 2];
         float l2 = x * x + y * y + z * z;
-        if (len_out_or_null) len_out_or_null[i] = sqrtf(l2);
+        if (len_out_or_null) len_out_or_null[i] = tir_math_sqrtf_exact(l2);
         if (l2 > 1e-8f) {
-            float inv = 1.0f / sqrtf(l2);
+            float inv = 1.0f / tir_math_sqrtf_exact(l2);
             xyz[off] = x * inv;
             xyz[off + 1] = y * inv;
             xyz[off + 2] = z * inv;

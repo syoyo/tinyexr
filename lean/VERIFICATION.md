@@ -20,7 +20,7 @@ implementation, its compiler, or memory safety for every possible input.
 | Sizes and deep data | Sampled-channel geometry, row/block sizes, cumulative-count/difference inverses and deep count/sample-size consistency. Compressed deep payloads remain opaque to structural validation. |
 | PXR24 | Plane packing, float truncation/reconstruction and mixed-channel block sizing. |
 | B44/B44A | Quantization, block packing and reconstruction, including flat blocks and bit-field bounds. Perceptual lookup tables are tested separately rather than re-proved. |
-| RLE and ZIP wrapper | Interleave and predictor inverses, greedy RLE round trip and raw fallback; Adler-32 and ZIP wrapper structure/checksum. DEFLATE payload coding is outside the model. |
+| RLE and ZIP wrapper | Interleave and predictor inverses, greedy RLE round trip and raw fallback; Adler-32 and ZIP wrapper structure/checksum. DEFLATE stored/fixed/dynamic payload decoding is modelled (encoder-side LZ77 choices remain outside). |
 | PIZ | Complete successful encoder/decoder round trip through bitmap framing, frequency-derived canonical Huffman coding, both wavelet modes, sampled channel/lane traversal, LUT restoration, reordering and raw fallback. |
 | Texcomp | Container headers/sizes and full DDS/KTX payload round trips; BC1/BC3/BC4/BC5 decoders and BC1/BC4/BC5 encoders; BC6H decoder modes plus every C block encoder (unsigned modes 0–13, signed modes 0–8/12/13) byte-exact against C; BC7 pack path, mode 6, seeds and the full default-option encoder; ETC2 individual/T-mode/EAC and ASTC LDR + HDR endpoint packers/colour quantizer. Each has a C-vs-Lean differential gate (`make texcomp-*-diff`) — see [Boundaries](#boundaries). |
 | tir (resize) | Axis geometry and edge-mapping invariants, in-bounds fast-run/anti-ringing footprints, window trim/normalisation laws, and a proved measure/fill classification agreement theorem; replayed against the C table builder by `make tir-diff` (3240 vectors, 0 mismatches). The scalar kernel and pixel-conversion models are bit-exact against C (`make tir-kernel-diff`, 4096 vectors, 0 mismatches). Filter coefficient values are gate-pinned, not re-derived. |
@@ -29,13 +29,13 @@ implementation, its compiler, or memory safety for every possible input.
 | Tile geometry | `Exr.TileGeom` models the 64-bit ceil-division used by tile level math (positivity and coverage proved); C vs Lean byte-exact on 104 boundary vectors including `0x7fffffff` (`tile-geometry-diff`). The C regression rejects extreme tile sizes before level math. |
 | Image budget | `Exr.ImageBudget` mirrors `exr_flat_planes_size` (pointer array + aligned per-plane slots) and the `budgetReject` guard; C vs Lean byte-exact on 240 geometries (`image-budget-diff`). The C side already implements `max_image_bytes`; a negative-control regression sets a 1-byte limit and asserts `EXR_ERROR_LIMIT_EXCEEDED`. |
 | Reader / writer invariants | `Exr.ReaderState` specifies error latching, capacity-before-append and ownership preservation; `Exr.HeaderValidate` specifies the shared accepted-header set. Both are checked against C by `reader-state-diff` (6/6) and `header-validate-diff` (240/240). The C side already implements `parts_cap` + `parse_rc` and `exr_header_validate`; the added regression test exercises the double-call and zero-channel-header paths from `task.md` S1/S5. |
-| DEFLATE subset | Stored and fixed-Huffman block decoding with LZ77 overlap copy and zlib framing/Adler checks, validated against `exr_inflate_zlib` by `make deflate-diff` (6/6). Dynamic Huffman remains a boundary. |
+| DEFLATE subset | Stored, fixed and dynamic Huffman block decoding with LZ77 overlap copy, canonical code construction and zlib framing/Adler checks, validated against `exr_inflate_zlib` by `make deflate-diff` (9/9). Encoder-side LZ77 choices remain a boundary. |
 | tir streaming | `Tir.Streaming` models ring occupancy, the push eviction guard and pull progress with proved no-deadlock/occupancy invariants; C-vs-Lean replay of 188 push/pull trace lines plus serial-vs-interleaved output parity (`tir-streaming-diff`). |
 | JPH wrapper | Marker sequence, SIZ geometry/tile count and COD/QCD profile checks for OpenEXR HTJ2K chunks, checked against four real fixtures by `make jph-diff` (4/4). HT entropy coding is out of scope. |
 | Reader state (spec) | Abstract reader-state rules from `task.md` S1: error latching, capacity-before-append and ownership preservation are proved for the model. This is a specification of the required C behaviour, **not** a proof that the current C reader satisfies it. |
 | Tocio codegen semantics | `Tocio.CodegenSemantics` links emitted matrix, range, LUT1D and exponent statements to their op kernels (proved `eval_compile_matrix`, `eval_compile_range`, `eval_compile_lut1d`, `eval_compile_exponent`), with byte-identical emitter text covered by `tocio-codegen-diff`; `make tocio-codegen-semantics-diff` checks the AST evaluator against C on 480 vectors. |
-| Tocio loader guards | `Tocio.LoaderBoundsCsp` proves CSP/.cube `valuesFit` soundness plus cube size/count bounds; `Tocio.YamlFuelExact` pins the YAML depth boundary (127/128/129). `make tocio-bounds-diff` checks the C guard on 120 vectors (0 mismatches); existing `tocio-csp-diff`/`-lut-diff` cover the parsers. |
-| Tocio kernel algebra | `Tocio.MatrixModel` proves identity, associativity and inverse cancellation over `ℚ`; `Tocio.LutModel` proves interpolation endpoint/bounds and LUT node exactness. The Float32 kernels are pinned by `make tocio-model-diff` (240/240). |
+| Tocio loader guards | `Tocio.LoaderBoundsCsp` proves CSP/.cube `valuesFit` soundness plus cube size/count bounds; `Tocio.YamlFuelExact` pins the YAML depth boundary (127 parses, 128 fails). `make tocio-bounds-diff` checks the C guard on 120 vectors (0 mismatches); existing `tocio-csp-diff`/`-lut-diff` cover the parsers. |
+| Tocio kernel algebra | `Tocio.MatrixModel` proves identity, associativity and inverse cancellation over `ℚ`; `Tocio.LutModel` proves interpolation endpoint/bounds and LUT node exactness. The Float32 kernels are pinned by `make tocio-model-diff` (840/840). |
 | Tocio loader bounds | SPI sample-count soundness plus CLF XML cursor bounds and `xfloats` budget/value-fit guards, proved for the parser models (no C claim). |
 | Tocio (scaffolding) | Op-kind + FixedFunction-style enums with inverse-pair invariants; Matrix/Range/Exponent/Log/CDL/LUT/YAML/Config/Resolve/Lower/Processor skeletons. Float semantics and YAML totality not yet proved — see [Boundaries](#boundaries). |
 
@@ -85,20 +85,26 @@ The final implementation validation on 2026-11-09 produced:
 | --- | --- |
 | `make texcomp-bc5-enc-img-diff` | 800 image-compressor vectors: BC5 rg8/rgba8 (unorm + snorm), BC3 rgba8, EAC R11/RG11, BC7 rgba8 (default options) and BC6H rgb32f (uf16/sf16), C vs Lean byte-exact, 0 mismatches. |
 | `make texcomp-astc-hdrenc-diff` / `-astc-hdrimg-diff` | 240 ASTC HDR block vectors + 24 full HDR images, C vs Lean byte-exact, 0 mismatches (already-gated coverage of `tc_astc_hdr_compress_rgbaf/rgbf`). |
+| `make b44-table-diff` | 3340 table-boundary vectors (saturation, non-finite and negative half indices), C table vs Lean closed-form boundary model, 0 mismatches; transcendental interior remains a documented boundary. |
+| `make texcomp-float-dec-diff` | 293 full-output vectors for `tc_bc6h_decompress_rgb16f/_rgbaf`, `tc_bc7_decompress_rgbaf` and `tc_astc_hdr_decompress_rgbaf` (odd dimensions, random blocks), C vs Lean byte-exact, 0 mismatches; the gate exposed and fixed the `unorm16ToSf16(0xffff)` threshold in `Texcomp.AstcHdr`. |
 | `make texcomp-bc-img-diff` | 900 full-image vectors: 400 BC4/BC5 (widths/heights 1–17 incl. partial blocks) and 500 ETC2 RGB/RGBA, EAC R11/RG11 and BC7, C vs Lean byte-exact, 0 mismatches. Also re-runs `texcomp-bc135-diff` (1536 blocks, 0 mismatches) after the BC4 rounding fix. |
-| `make tir-kernel-diff` | 4096 bit-exact scalar-kernel/conversion vectors (16 per random seed), 0 mismatches. |
-| `make tocio-codegen-semantics-diff` | 480 vectors (matrix, range, LUT1D, exponent), emitted-statement AST evaluation vs C kernel output, 0 mismatches. |
+| `make tir-kernel-diff` | 4096 bit-exact scalar-kernel/conversion vectors (16 per random seed), 0 mismatches; `rangeCompress`/`rangeExpand`/`normalize3` now mirror `ExrMath` definitions, not libm externs. |
+| `make math-test` | Structured ULP sweep against libm: exact `sqrtf` 0 ULP (16,777,228 random/edge cases); accurate `log2f` max 3 ULP (75,497,472 cases), `exp2f` 1 ULP (41,810,376), `expf` 1 ULP (31,518,925), `powf` 11 ULP (16,777,216); frozen fast tier bit-identical to `exr_util_*` (8,388,608 cases); f64 table helpers within 1e-13/2e-13 relative. `make math-ulp-full` runs the exhaustive 2^32/2^31 sweeps (opt-in). |
+| `make math-diff` | 5764 bit-exact vectors for all eight math entry points (special values, boundaries, 512 random + 512 expf-domain cases), C vs Lean, 0 mismatches. |
+| `make tocio-jit-diff` / `tocio-simd-diff` | 256 randomized pixels through matrix/exponent/range/exp-linear/log/log-camera, scalar vs SIMD tiers 1/2 and vs x64 JIT; all bit-identical (0 mismatches). |
+| `make libm-free-gate` | `nm -u` scan of all `libtinyexr3`, `libtir`, `libtexcomp`, `libtocio` objects against the full libm symbol list, plus a no-`-lm` link smoke calling one function from each library, OK. |
+| `make tocio-codegen-semantics-diff` | 1080 vectors (matrix, range, LUT1D, exponent, exp-linear, log, log-camera, CDL, fixed-function), emitted-statement AST evaluation vs C kernel output, 0 mismatches; proved equivalences cover matrix/range/LUT1D/exponent/exp-linear/log; log-camera now has a C AOT emitter with byte-identical `tocio-codegen-diff` and a differential AST gate; CDL emitted statements are proved equivalent to `applyCdl` via a helper-call AST; fixed-function styles are AST helper calls proved equal to `applyFixedFunc`, with helper bodies pinned byte-identically. |
 | `make tocio-bounds-diff` | 120 `toc_values_fit` vectors, C vs Lean, 0 mismatches. |
-| `make tocio-model-diff` | 240 matrix/LUT kernel vectors (120 matrix, 120 1D LUT incl. 1- and 3-channel tables), C vs Lean bit-exact, 0 mismatches. |
+| `make tocio-model-diff` | 840 kernel vectors (120 each matrix, range, 1D LUT, exponent, exp-linear, log, log-camera, CDL), C vs Lean bit-exact, 0 mismatches. |
 | `make tile-geometry-diff` | 104 ceil-div vectors including INT_MAX-range tiles, C vs Lean, 0 mismatches. |
 | `make image-budget-diff` | 240 channel/window geometries, C `exr_flat_planes_size` vs Lean `flatPlanesSize`, 0 mismatches. |
 | `make header-validate-diff` | 240 randomized/mutated headers, C `exr_header_validate` vs Lean `headerValid`, 0 mismatches. |
 | `make reader-state-diff` | 6 malformed-file trials (parse + retry, read_part + retry), error latch and empty part state, 0 mismatches. |
-| `make deflate-diff` | 6 stored/fixed-Huffman streams (literal-only, high-byte 9-bit codes, LZ77 match, multi-block), C decoder vs Lean, 0 mismatches. |
+| `make deflate-diff` | 9 streams: 6 stored/fixed (literal-only, 9-bit codes, LZ77 match, multi-block) plus 3 dynamic-Huffman BTYPE=2 streams from `exr_deflate_zlib`, C decoder vs Lean, 0 mismatches; encoder-side LZ77 choices remain a boundary. |
 | `make tir-streaming-diff` | 6 resize geometries, 188 trace lines, C vs Lean, 0 mismatches; serial vs interleaved output byte-identical in all 6. |
 | `make jph-diff` | 4 real HTJ2K EXR fixtures (2 regression + 2 fuzz corpus), marker sequence + SIZ/COD/QCD geometry + profile verdict, C vs Lean, 0 mismatches. |
 | `make tir-diff` | 3240 C classification vectors (10 widths × 9 filters × 3 edge modes × 2 registrations × 3 scales × 2 sigmas), 0 mismatches; `make resize-c11-gate` and `make resize-test` green (777 tests). |
-| `make lean-tools lean-axiom-check` | Full build passed; 4648 first-party theorems (EXR + Texcomp + Tocio + Tir), 179 with bit-vector certificate dependencies, 74 with approved native checks; no unexpected axioms. |
+| `make lean-tools lean-axiom-check` | Full build passed; 4705 first-party theorems (EXR + Texcomp + Tocio + Tir + Math), 179 with bit-vector certificate dependencies, 74 with approved native checks; no unexpected axioms. |
 | `make texcomp-lean-check tocio-lean-check` | New-module builds passed. |
 | `make texcomp-bc6h-diff` | 1028 BC6H blocks (all 14 modes, signed + unsigned), C vs Lean byte-exact. |
 | `make texcomp-bc6h-*-diff` | BC6H encoder models byte-exact against C: shared kernels (4215 values), unsigned modes 0/1/2/3/4/5/6/7/8/9/10/12/13 (400 + 520 + 1040 + 780 + 900 blocks), signed modes 0–8/12/13 (1800 blocks), and the per-block mode-selection drivers `tc_encode_bc6h_block_uf16`/`_sf16` (480 blocks, both variants). |
@@ -127,7 +133,7 @@ The final implementation validation on 2026-11-09 produced:
 | `make tocio-config-diff` | 16 OCIO configs re-parsed by `Tocio.ConfigQuery`: colorspace enumeration, name/alias lookup order (scene then display section), family/encoding/isdata, display-section membership through role resolution, transform-attribute priority + invert flags (`to/from_reference`, `to/from_scene_reference`, `to/from_display_reference`), display/view/look/view-transform enumeration, `toc_cfg_view_looks` comma/space tokenization (trailing spaces preserved), default-view-transform fallback, and active displays/views; 0 mismatches. |
 | `make tocio-glsl-diff` | 8 GLSL shaders across ES3.0/330/Vulkan450 (version headers, Vulkan sampler bindings, matrix/range/exponent/log/exp-linear/CDL, 1D/3D LUT texture sampling, HSV/XYZ/PQ/HLG/REC2100/RedMod/GamutComp13 helpers) plus 8 MSL sources: generated text and LUT texture descriptors identical to the C. |
 | `make tocio-codegen-diff` | 12 op lists through the AOT-C emitter (matrix/ranges/exponents/exp-linear/log/CDL forward+inverse, 1D and 3D LUTs with embedded arrays, fixed-function styles including the ACES/HSV/XYZ/PQ/HLG helpers incl. GamutComp13's codegen-time pow scale, REC2100, log-camera, empty lists, hex-float edges -0.0/subnormal/inf/nan, custom and invalid function names); generated sources byte-identical to the C. |
-| `make tocio-proc-diff` | 163 processor-build pipeline queries over 15 configs (scene and display colorspace pairs, aliases/roles, simple/VT/look/shared views, `<USE_DISPLAY_NAME>`, forward and inverted groups and CDL, fixed-function styles forward/inverted, transform-parameter errors, cyclic colorspace references hitting the 64-level walk cap, a 30-level nested group chain, the numeric lowering paths, FileTransform via an embedded reader: `.spi1d`, `.spi3d`, `.clf`, content-sniffed `SPILUT`, inverted (NONINVERTIBLE) and missing-file (IO) cases, and 68 BuiltinTransform styles forward plus 18 inverted with an unknown style); op-kind sequences, error codes and 434 op parameter recipes (matrix inversion, Range scale/offset plus its inverse, MonCurve parameters, Log/LogCamera fields, the CDL inverse decomposition, fixed-function params, the embedded LUT tables, the derived builtin matrices/log curves, and the ACES 2.0 init scalars) identical to the C, bit-for-bit. |
+| `make tocio-proc-diff` | 165 processor-build pipeline queries over 15 configs (scene and display colorspace pairs, aliases/roles, simple/VT/look/shared views, `<USE_DISPLAY_NAME>`, forward and inverted groups and CDL, fixed-function styles forward/inverted, transform-parameter errors, cyclic colorspace references hitting the 64-level walk cap, a 30-level nested group chain, the numeric lowering paths, FileTransform via an embedded reader: `.spi1d`, `.spi3d`, `.clf`, `.cube`, `.csp`, content-sniffed `SPILUT`/`CSPLUT`, inverted (NONINVERTIBLE) and missing-file (IO) cases, and 68 BuiltinTransform styles forward plus 18 inverted with an unknown style); op-kind sequences, error codes and 434 op parameter recipes (matrix inversion, Range scale/offset plus its inverse, MonCurve parameters, Log/LogCamera fields, the CDL inverse decomposition, fixed-function params, the embedded LUT tables, the derived builtin matrices/log curves, and the ACES 2.0 init scalars) identical to the C, bit-for-bit. |
 | `make tocio-yaml-diff` | 48 YAML documents (quote-aware comments, quoted/escaped scalars, flow seqs/maps, block scalars `\|`/`>`, `---`/`...`, tab-indent/anchor/alias/trailing-content errors, 30-level nesting, 200-level depth-cap failure, and `!<Tag>` handling: block/value tags, tag-only lines, tag+inline-flow line consumption, unterminated tags, nested-tag overwrite, tag-text dump escaping, double tags, tabs after a tag, tags inside flow text) re-parsed by `Tocio/YamlEngine`; canonical tree dumps (including `<tag>` prefixes) byte-identical to the C. |
 | `make codec-diff` | 8192 comparisons across seven seeds and both libdeflate/in-tree backends; zero failures. Includes PIZ primitives, frequency tables, malformed/lenient packets and whole blocks. |
 | `make lean-validation-test` | 20 tests, two optional skips; all executed tests passed. Includes gate negative controls and axiom-audit rejection tests. |
@@ -163,9 +169,17 @@ validation checks, not library proofs.
 
 ## Boundaries
 
+- `src/exr_resize.c` (`exr_resize_float`) is legacy and intentionally outside
+  the formal model: it is superseded by the `Tir` resampler, which is already
+  byte-exactly gated (`tir-diff`, `tir-kernel-diff`, `tir-streaming-diff`).
+  No duplicate model is maintained; callers should prefer `tir_resize`.
+- One proof-level gap remains an accepted boundary: an explicit `calls ≤ fuel`
+  theorem for the YAML total parser (its depth boundary, height bound and all
+  48 parser vectors are proved/gated). CDL emitted-statement equivalence is
+  now proved via `eval_compile_cdl`.
 - DWAA/DWAB are intentionally unsupported; no DWA formalization or codec work
   is planned. HTJ2K/JPH internals are separately owned.
-- DEFLATE payload coding, B44 perceptual table derivation and a proof connecting
+- Dynamic-Huffman decode is modelled; encoder-side LZ77 choices remain a boundary. B44 table interior derivation and a proof connecting
   C execution semantics to Lean remain outside the proved model.
 - Structural acceptance does not imply every compressed payload is valid.
   Differential/sanitizer gates supply independent implementation evidence.
@@ -206,11 +220,16 @@ validation checks, not library proofs.
   proves a **quantitative bound**: for the 400-point structured slice
   "mantissa 1.25 or 1.5, exponent in [-99, 100]" (which contains the `3`
   counterexample) `powf x 1` is within **16 ULP** of `x` (measured max
-  13). A bound uniform over *arbitrary* mantissas is an accepted scope
-  boundary, not a pending task: the numeric analysis of the
-  `log2f`/`exp2f` polynomial approximations over all 2^23 mantissas is
-  out of scope, and those inputs are covered by the differential corpus
-  and the tolerance fixtures instead. Texcomp is
+  13). A proved bound uniform over *arbitrary* mantissas is still an accepted
+  scope boundary, but empirical coverage is now much stronger: the
+  frozen fast tier is measured at ≤16 ULP (observed max 13 for `powf x 1`)
+  and the new accurate tier is swept over all 2^23 mantissas at seven
+  representative exponents plus 2^24 random inputs (`make math-test`;
+  full 2^31 sweep via `make math-ulp-full`), with observed maxima 3 ULP
+  (`log2f`), 1 ULP (`exp2f`, `expf`) and 11 ULP (`powf`). The exact square
+  root is 0 ULP over the tested domain. `make math-diff` pins the Lean
+  definitions bit-for-bit; a universal analytic proof over all mantissas
+  remains out of scope. Texcomp is
   covered by implementation-level differential gates rather than an
   engine-level one. Plan for completion is in
   `~/.opencode/plan/lean-remaining-tasks.md` (outside repo).
@@ -229,8 +248,8 @@ validation checks, not library proofs.
   extension dispatch plus content sniffing route `.spi1d`/`.spi3d`/`.clf`
   to `Tocio.SpiFile`/`Tocio.Clf` and the results are converted into the
   processor's LUT ops (inverted requests are NONINVERTIBLE, missing files
-  IO). `.cube` files, CSP payloads and the C's cube fallback stay outside
-  the model by design. BuiltinTransform is modelled
+  IO). `.cube` and CSP payloads are modelled; the C's unrecognized-text cube
+  fallback stays outside the model. BuiltinTransform is modelled
   (`Tocio/Builtins.lean`): the ACES AP0/AP1 matrices and ACEScc/ACEScct
   log curves, the derived linear-RGB<->CIE-XYZ colorimetry (normalized
   primary matrices, Bradford/von-Kries adaptation), the composed display
@@ -327,16 +346,17 @@ validation checks, not library proofs.
   levels × 256 values plus the clamp edges) and exercised end to end
   through the 2-subset CEM 11 encoder in `make texcomp-astc-hdrenc-diff`
   (240 blocks, four HDR CEM kinds).
-  Remaining Texcomp work is still tracked at the image-driver layer: the
-  per-block models are byte-exact, but `bc7DecodeImage2`, `etc2DecodeImage`, `eacDecodeImage` and
-  `astcDecodeImage` are still length-check placeholders, and several public
-  image encode/decompress drivers (`tc_bc3_compress_rgba8`,
-  `tc_bc5_compress_rg8/rgba8`, `tc_eac_compress_rgba8`,
-  `tc_bc6h_compress_rgb32f`, `tc_bc7_compress_rgba8/rgbaf`,
-  `tc_astc_hdr_compress_rgbaf/rgbf`, and the matching `*_decompress_*`
-  wrappers), plus full BC6H decode (documented boundary). The payload-parity
-  extension of the container gate (ASTC `.astc`, KTX ETC2 RGBA, writer
-  verdicts) is complete.
+  The Texcomp image-driver layer is covered: the former length-only
+  placeholders (`bc7DecodeImage2`, `etc2DecodeImage`, `eacDecodeImage`,
+  `astcDecodeImage`) are real per-block image loops and full BC6H image
+  decode is modelled; `make texcomp-bc-img-diff` (900 image vectors),
+  `make texcomp-bc5-enc-img-diff` (800 compressor vectors) and
+  `make texcomp-float-dec-diff` (293 full-output vectors for BC6H
+  rgb16f/rgbaf, BC7 rgbaf and ASTC-HDR rgbaf) pin the public drivers
+  byte-exactly. The payload-parity extension of the container gate
+  (ASTC `.astc`, KTX ETC2 RGBA, writer verdicts) is complete. Remaining
+  Texcomp work is proof-level (algebraic laws for the float kernels), not
+  byte-exactness of image paths.
 - Tocio: Float64-vs-f32 note aside, the seven op kernels (matrix, range,
   exponent, exp-linear, log, log-camera, CDL) are bit-exact `Float32` ports
   with a C differential gate (3072 seeded groups). FixedFunction helpers

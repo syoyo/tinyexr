@@ -24,7 +24,7 @@ float tir__rangecompress(float x) {
     float ax = x < 0.0f ? -x : x;
     float y;
     if (ax <= TIR__HC_X1) return x;
-    y = TIR__HC_A + TIR__HC_B * logf(TIR__HC_C * ax + 1.0f);
+    y = TIR__HC_A + TIR__HC_B * tir_math_logf(TIR__HC_C * ax + 1.0f);
     return x < 0.0f ? -y : y;
 }
 
@@ -32,7 +32,7 @@ float tir__rangeexpand(float y) {
     float ay = y < 0.0f ? -y : y;
     float x;
     if (ay <= TIR__HC_X1) return y;
-    x = (expf((ay - TIR__HC_A) / TIR__HC_B) - 1.0f) / TIR__HC_C;
+    x = (tir_math_expf((ay - TIR__HC_A) / TIR__HC_B) - 1.0f) / TIR__HC_C;
     return y < 0.0f ? -x : x;
 }
 
@@ -57,14 +57,14 @@ void tir__rangeexpand_row(float *px, size_t npix, int wc, int nch) {
 int tir__row_has_nonfinite(const float *row, size_t n) {
     size_t i;
     for (i = 0; i < n; ++i)
-        if (!isfinite(row[i])) return 1;
+        if (!tir__finite32(row[i])) return 1;
     return 0;
 }
 
 void tir__nonfinite_zero(float *row, size_t n) {
     size_t i;
     for (i = 0; i < n; ++i)
-        if (!isfinite(row[i])) row[i] = 0.0f;
+        if (!tir__finite32(row[i])) row[i] = 0.0f;
 }
 
 /* Replace each nonfinite sample with the average of the finite samples in
@@ -80,7 +80,7 @@ void tir__nonfinite_repair(float *dst, const float *prev, const float *cur,
     for (x = 0; x < w; ++x) {
         for (c = 0; c < ch; ++c) {
             float v = cur[(size_t)x * (size_t)ch + c];
-            if (isfinite(v)) {
+            if (tir__finite32(v)) {
                 dst[(size_t)x * (size_t)ch + c] = v;
             } else {
                 float sum = 0.0f;
@@ -92,7 +92,7 @@ void tir__nonfinite_repair(float *dst, const float *prev, const float *cur,
                         if (xx < 0) xx = 0;
                         if (xx >= w) xx = w - 1;
                         nv = rows[r][(size_t)xx * (size_t)ch + c];
-                        if (isfinite(nv)) {
+                        if (tir__finite32(nv)) {
                             sum += nv;
                             cnt++;
                         }
@@ -120,7 +120,7 @@ void tir__normal_decode_row(tir_sampler *s, float *row) {
             float t = 1.0f - nx * nx - ny * ny;
             row[x * 3 + 0] = nx;
             row[x * 3 + 1] = ny;
-            row[x * 3 + 2] = t > 0.0f ? sqrtf(t) : 0.0f;
+            row[x * 3 + 2] = t > 0.0f ? tir_math_sqrtf_exact(t) : 0.0f;
         }
     } else if (a != 1.0f || b != 0.0f) {
         size_t n = w * (size_t)s->wc, i;

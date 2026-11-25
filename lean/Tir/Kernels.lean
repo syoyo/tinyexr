@@ -13,6 +13,7 @@
 
 import Mathlib.Tactic
 import Tir.Table
+import Math.F32
 
 namespace Tir
 
@@ -138,7 +139,7 @@ theorem clamp_nonneg (v hi : ℚ) (h : 0 ≤ hi) : 0 ≤ clampQ v 0 hi := by
 def normalize3 (x y z : Float32) : Float32 × Float32 × Float32 :=
   let l2 := x * x + y * y + z * z
   if h : l2 > 1e-8 then
-    let inv := 1 / Float32.sqrt l2
+    let inv := 1 / ExrMath.sqrtfExact l2
     (x * inv, y * inv, z * inv)
   else (0, 0, 1)
 
@@ -161,14 +162,14 @@ def rangeCompress (x : Float32) : Float32 :=
   if ax <= (0.18 : Float32) then x else
     let y : Float32 := (-0.54576885700225830078 : Float32) +
       (0.18351669609546661377 : Float32) *
-        Float32.log ((284.3577880859375 : Float32) * ax + 1)
+        ExrMath.logf ((284.3577880859375 : Float32) * ax + 1)
     if x < 0 then -y else y
 
 def rangeExpand (y : Float32) : Float32 :=
   let ay := if y < 0 then -y else y
   if ay <= (0.18 : Float32) then y else
     let x : Float32 :=
-      (Float32.exp ((ay - (-0.54576885700225830078 : Float32)) /
+      (ExrMath.expf ((ay - (-0.54576885700225830078 : Float32)) /
         (0.18351669609546661377 : Float32)) - 1) /
         (284.3577880859375 : Float32)
     if y < 0 then -x else x

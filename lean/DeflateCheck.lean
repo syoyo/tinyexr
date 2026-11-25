@@ -4,7 +4,7 @@
   Copyright (c) 2026 Syoyo Fujita and TinyEXR authors
   SPDX-License-Identifier: BSD-3-Clause
 -/
-import Exr.Deflate
+import Exr.DeflateDynamic
 
 def fields (s : String) : List String := (s.splitOn " ").filter (fun f => f != "")
 
@@ -23,7 +23,7 @@ def parseBytes (s : String) : List UInt8 :=
 def checkLine (line : String) : Bool :=
   let f := fields line
   if f.length < 2 then true else
-  match Exr.decodeZlib (parseBytes (f.getD 0 "")) with
+  match Exr.decodeZlibDynamic (parseBytes (f.getD 0 "")) with
   | some out => out == parseBytes (f.getD 1 "")
   | none => false
 

@@ -132,9 +132,9 @@ void tir__normalize3_sc(float *xyz, float *len_out_or_null, size_t npix) {
     for (i = 0; i < npix; ++i) {
         float x = xyz[i * 3 + 0], y = xyz[i * 3 + 1], z = xyz[i * 3 + 2];
         float l2 = x * x + y * y + z * z;
-        if (len_out_or_null) len_out_or_null[i] = sqrtf(l2);
+        if (len_out_or_null) len_out_or_null[i] = tir_math_sqrtf_exact(l2);
         if (l2 > 1e-8f) {
-            float inv = 1.0f / sqrtf(l2);
+            float inv = 1.0f / tir_math_sqrtf_exact(l2);
             xyz[i * 3 + 0] = x * inv;
             xyz[i * 3 + 1] = y * inv;
             xyz[i * 3 + 2] = z * inv;

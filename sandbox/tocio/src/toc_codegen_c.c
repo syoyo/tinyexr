@@ -160,6 +160,72 @@ static void op_log(toc_sb *sb, const toc_op *op) {
     }
 }
 
+static void op_logcam(toc_sb *sb, const toc_op *op) {
+    static const char *cn[3] = {"r", "g", "b"};
+    int c;
+    int inv = op->u.logcam.inverse;
+    float tiny = 1.1754944e-38f;
+    for (c = 0; c < 3; ++c) {
+        const char *v = cn[c];
+        toc_sb_puts(sb, "  ");
+        toc_sb_puts(sb, v);
+        toc_sb_puts(sb, " = ");
+        if (!inv) {
+            toc_sb_puts(sb, "(");
+            emit_hf(sb, op->u.logcam.lin_slope[c]);
+            toc_sb_puts(sb, "*"); toc_sb_puts(sb, v); toc_sb_puts(sb, "+");
+            emit_hf(sb, op->u.logcam.lin_offset[c]);
+            toc_sb_puts(sb, " <= ");
+            emit_hf(sb, op->u.logcam.lin_break[c]);
+            toc_sb_puts(sb, " ? (");
+            emit_hf(sb, op->u.logcam.lin_slope[c]);
+            toc_sb_puts(sb, "*"); toc_sb_puts(sb, v); toc_sb_puts(sb, "+");
+            emit_hf(sb, op->u.logcam.lin_offset[c]);
+            toc_sb_puts(sb, ") : (");
+            emit_hf(sb, op->u.logcam.log_slope[c]);
+            toc_sb_puts(sb, "*tc_log2f((");
+            emit_hf(sb, op->u.logcam.lin_slope[c]);
+            toc_sb_puts(sb, "*"); toc_sb_puts(sb, v); toc_sb_puts(sb, "+");
+            emit_hf(sb, op->u.logcam.lin_offset[c]);
+            toc_sb_puts(sb, " > 0.0f ? (");
+            emit_hf(sb, op->u.logcam.lin_slope[c]);
+            toc_sb_puts(sb, "*"); toc_sb_puts(sb, v); toc_sb_puts(sb, "+");
+            emit_hf(sb, op->u.logcam.lin_offset[c]);
+            toc_sb_puts(sb, ") : ");
+            emit_hf(sb, tiny);
+            toc_sb_puts(sb, "))/tc_log2f(");
+            emit_hf(sb, op->u.logcam.base);
+            toc_sb_puts(sb, ")+");
+            emit_hf(sb, op->u.logcam.log_offset[c]);
+            toc_sb_puts(sb, "))");
+        } else {
+            toc_sb_puts(sb, "(");
+            emit_hf(sb, op->u.logcam.lin_slope[c]);
+            toc_sb_puts(sb, "*"); toc_sb_puts(sb, v); toc_sb_puts(sb, "+");
+            emit_hf(sb, op->u.logcam.lin_offset[c]);
+            toc_sb_puts(sb, " <= ");
+            emit_hf(sb, op->u.logcam.linear_slope[c]);
+            toc_sb_puts(sb, "*");
+            emit_hf(sb, op->u.logcam.lin_break[c]);
+            toc_sb_puts(sb, "+");
+            emit_hf(sb, op->u.logcam.linear_offset[c]);
+            toc_sb_puts(sb, " ? (("); toc_sb_puts(sb, v); toc_sb_puts(sb, "-");
+            emit_hf(sb, op->u.logcam.linear_offset[c]);
+            toc_sb_puts(sb, ")/");
+            emit_hf(sb, op->u.logcam.linear_slope[c]);
+            toc_sb_puts(sb, ") : ((tc_raisef(");
+            emit_hf(sb, op->u.logcam.base);
+            toc_sb_puts(sb, ", ("); toc_sb_puts(sb, v); toc_sb_puts(sb, "-");
+            emit_hf(sb, op->u.logcam.log_offset[c]);
+            toc_sb_puts(sb, ")/"); emit_hf(sb, op->u.logcam.log_slope[c]);
+            toc_sb_puts(sb, ")-"); emit_hf(sb, op->u.logcam.lin_offset[c]);
+            toc_sb_puts(sb, ")/"); emit_hf(sb, op->u.logcam.lin_slope[c]);
+            toc_sb_puts(sb, "))");
+        }
+        toc_sb_puts(sb, ";\n");
+    }
+}
+
 static void op_cdl(toc_sb *sb, const toc_op *op) {
     const float *L = op->u.cdl.luma;
     float lr = L[0], lg = L[1], lb = L[2];
@@ -470,7 +536,7 @@ toc_result toc_emit_c(const toc_op_list *ops, const toc_codegen_c_opts *opts,
     for (k = 0; k < ops->count; ++k) {
         switch (ops->ops[k].kind) {
             case TOC_OP_EXPONENT: case TOC_OP_EXP_LINEAR: case TOC_OP_LOG:
-            case TOC_OP_CDL: need_math = 1; break;
+            case TOC_OP_LOG_CAMERA: case TOC_OP_CDL: need_math = 1; break;
             case TOC_OP_LUT1D: need_lut1d = 1; break;
             case TOC_OP_LUT3D: need_lut3d = 1; break;
             case TOC_OP_FIXEDFUNC: {
@@ -538,6 +604,7 @@ toc_result toc_emit_c(const toc_op_list *ops, const toc_codegen_c_opts *opts,
             case TOC_OP_EXPONENT: op_exponent(&sb, op); break;
             case TOC_OP_EXP_LINEAR: op_exp_linear(&sb, op); break;
             case TOC_OP_LOG: op_log(&sb, op); break;
+            case TOC_OP_LOG_CAMERA: op_logcam(&sb, op); break;
             case TOC_OP_CDL: op_cdl(&sb, op); break;
             case TOC_OP_LUT1D:
                 toc_sb_puts(&sb, "  { float c[3]={r,g,b}; tc_lut1d(tc_lut");

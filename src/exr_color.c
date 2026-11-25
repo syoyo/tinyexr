@@ -14,73 +14,10 @@
 #include "exr_internal.h"
 
 /* ============================================================================
- * Bit-pattern constants (avoid libm / division-by-zero literals)
+ * Hand-rolled transcendentals live in src/exr_math.c now (frozen fast tier,
+ * shared deps/math/exr_math_impl.h). The helpers below keep the historical
+ * names used by the transfer functions; their op order is unchanged.
  * ========================================================================== */
-static float bits_to_f(uint32_t u) {
-    float f;
-    memcpy(&f, &u, sizeof(f));
-    return f;
-}
-#define EXR_INF_POS bits_to_f(0x7f800000u)
-#define EXR_INF_NEG bits_to_f(0xff800000u)
-#define EXR_NANF bits_to_f(0x7fc00000u)
-
-/* ============================================================================
- * Hand-rolled transcendentals (~1e-6 rel; verified vs libm in tests)
- * ========================================================================== */
-float exr_util_log2f(float x) {
-    union { float f; uint32_t u; } v;
-    int e;
-    float m, t, t2, ln;
-    if (!(x > 0.0f)) return x < 0.0f ? EXR_NANF : EXR_INF_NEG;
-    v.f = x;
-    e = (int)((v.u >> 23) & 0xffu) - 127;
-    v.u = (v.u & 0x007fffffu) | 0x3f800000u; /* mantissa in [1,2) */
-    m = v.f;
-    /* ln(m) via atanh series: ln(m) = 2*(t + t^3/3 + t^5/5 + ...), t<=1/3. */
-    t = (m - 1.0f) / (m + 1.0f);
-    t2 = t * t;
-    ln = 2.0f * t *
-         (1.0f + t2 * (1.0f / 3.0f +
-                       t2 * (1.0f / 5.0f +
-                             t2 * (1.0f / 7.0f + t2 * (1.0f / 9.0f)))));
-    return (float)e + ln * 1.4426950408889634f;
-}
-
-float exr_util_exp2f(float x) {
-    union { uint32_t u; float f; } v;
-    float k, f, g, p;
-    int ki;
-    if (x > 127.0f) return EXR_INF_POS;
-    if (x < -126.0f) return 0.0f;
-    k = (x >= 0.0f) ? (float)(int)(x + 0.5f) : (float)(int)(x - 0.5f);
-    f = x - k; /* [-0.5, 0.5] */
-    g = f * 0.6931471805599453f;
-    /* 2^f = e^(f ln2) = sum g^n/n! */
-    p = 1.0f +
-        g * (1.0f +
-             g * (0.5f +
-                  g * (1.0f / 6.0f +
-                       g * (1.0f / 24.0f +
-                            g * (1.0f / 120.0f + g * (1.0f / 720.0f))))));
-    ki = (int)k;
-    v.u = (uint32_t)((ki + 127) << 23);
-    return p * v.f;
-}
-
-float exr_util_powf(float x, float y) {
-    if (!(x > 0.0f)) {
-        if (x == 0.0f) return (y > 0.0f) ? 0.0f : (y == 0.0f ? 1.0f : EXR_INF_POS);
-        return EXR_NANF;
-    }
-    return exr_util_exp2f(y * exr_util_log2f(x));
-}
-
-float exr_util_sqrtf(float x) {
-    if (!(x > 0.0f)) return 0.0f;
-    return exr_util_exp2f(0.5f * exr_util_log2f(x));
-}
-
 static float util_lnf(float x) { return exr_util_log2f(x) * 0.6931471805599453f; }
 static float util_expf(float x) { return exr_util_exp2f(x * 1.4426950408889634f); }
 

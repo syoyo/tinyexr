@@ -215,7 +215,7 @@ static void lengths_only(const float *xyz, float *len, size_t npix) {
     size_t i;
     for (i = 0; i < npix; ++i) {
         float x = xyz[i * 3 + 0], y = xyz[i * 3 + 1], z = xyz[i * 3 + 2];
-        len[i] = sqrtf(x * x + y * y + z * z);
+        len[i] = tir_math_sqrtf_exact(x * x + y * y + z * z);
     }
 }
 

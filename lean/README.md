@@ -21,19 +21,26 @@ make codec-diff     # Lean codec vectors vs tinyexr v3 codecs
 make lean-validation-test # gate failure, metadata, seeded and strict-mode regressions
 make lean-axiom-check # transitive first-party theorem axiom audit
 make jph-diff        # HTJ2K wrapper markers/geometry: C vs Lean (4 fixtures)
-make deflate-diff    # DEFLATE stored + fixed-Huffman payloads: C vs Lean (6 vectors)
+make deflate-diff    # DEFLATE stored/fixed/dynamic-Huffman payloads: C vs Lean (9 vectors)
 make header-validate-diff # shared reader/writer header validation: C vs Lean (240 vectors)
 make reader-state-diff # reader error latch / part ownership: C vs Lean (6 vectors)
 make image-budget-diff # flat-plane byte budget: C vs Lean (240 vectors)
 make tile-geometry-diff # 64-bit tile ceil-div (task.md S4): C vs Lean (104 vectors)
-make tocio-model-diff # tocio matrix/LUT algebraic models: C vs Lean (240 vectors)
+make tocio-model-diff # tocio matrix/LUT/exponential models: C vs Lean (600 vectors)
 make tocio-bounds-diff # tocio values-fit loader guards: C vs Lean (120 vectors)
-make tocio-codegen-semantics-diff # emitted statement AST eval vs C kernels (480 vectors)
+make tocio-codegen-semantics-diff # emitted statement AST eval vs C kernels (1080 vectors, incl. exp-linear, log, log-camera, CDL, fixed-function)
+make tocio-jit-diff      # JIT vs scalar interpreter parity (256 pixels, 6 op kinds)
+make tocio-simd-diff     # SSE2/AVX2/NEON tiers vs scalar interpreter parity
 make tir-diff       # tir axis-measure classification: C vs Lean (3240 vectors)
 make tir-kernel-diff # tir scalar kernels + conversions: C vs Lean (4096 vectors)
 make tir-streaming-diff # tir ring push/pull trace + serial/band parity: C vs Lean (188 trace lines)
+make math-test         # structured libm ULP sweep of both math tiers (fast frozen, accurate/exact)
+make math-diff         # shared math model: C vs Lean (5764 bit-exact vectors)
+make libm-free-gate    # nm-scan + no--lm link smoke for the four shipped libraries
 make texcomp-bc-img-diff # BC4/BC5/ETC2/EAC/BC7 image decoders: C vs Lean (900 vectors)
 make texcomp-bc5-enc-img-diff # BC3/BC5/EAC/BC7/BC6H public compressors: C vs Lean (800 vectors)
+make texcomp-float-dec-diff # BC6H rgb16f/rgbaf, BC7 rgbaf, ASTC-HDR rgbaf: C vs Lean (293 vectors)
+make b44-table-diff  # B44 perceptual table boundary entries: C vs Lean (3340 vectors)
 make texcomp-astc-hdrenc-diff # ASTC HDR block + full-image compressors (already gated)
 make lean-validation-sanitize # sanitized codec vectors and malformed-vector regressions
 ```
@@ -105,12 +112,26 @@ make lean-validation-sanitize # sanitized codec vectors and malformed-vector reg
 | `Exr/Zip.lean` | ZIP predictor/interleave composition with inverse, validated reconstruction after external inflate, bad header/checksum rejection; container layer: ADLER32 checksum (pure fold, with the block-boundary deferred-mod equivalence), zlib header validation (CM/CINFO/FDICT/check digits), the big-endian trailer, block validation, 16-line ZIP geometry. |
 | `CodecGen.lean` | `codecgen <out.bin> <seed>`: PXR24 (uint/half/float, mixed sampled blocks), B44/B44A, RLE, ZIP, ADLER32 and PIZ kernel/Huffman vectors for `test/v3/codec_diff.c`. |
 | `Texcomp/*` | `Container` (DDS/KTX/ASTC-file headers + payloads + writer verdicts), BC1/BC3/BC4/BC5 decoders and BC1/BC4/BC5 encoders, BC6H block decoders and every BC6H block encoder (unsigned 0–13, signed 0–8/12/13), BC7 pack path/mode 6/seeds/full default-option encoder/decoder-driven RDO pass, ETC2 individual/T-mode/EAC, the ASTC LDR top-level block encoder (`AstcLdr`), ASTC LDR + HDR endpoint packers, colour quantizer, weight decimation, weight infill, the encoder block-mode filter, the partition cache, the block-mode candidate ranking, the endpoint/colour-quant plumbing and the projection/least-squares/SSE fit kernels, the partition search, the partition-RGB and dual-RGBA encoders, and the ISE bit packer. Every model has a C-vs-Lean differential gate (`make texcomp-*-diff`). |
-| `Tocio/*` | OCIO scaffolding: `Op` (op kinds + FixedFunction styles), Matrix/Range/Exponent/Log/CDL/LUT/YAML/Config/Resolve/Lower/Processor. `YamlTotal.lean`: fuel-bounded total YAML parser with the general inductive height-bound theorem (`parseTotal_height_bound` / `parseYamlTotalV_height_bound`: any accepted document has height ≤ the fuel budget) plus concrete depth-cap theorems (100/127 parse, 129 fails; boundary documented, see below). `FloatSemantics.lean`: identity/sign/round-trip laws for the exponent kernels, CDL round-trip within the C's 2e-3 tolerance on the non-negative grid, and Range clamp boundary semantics. `YamlEngine.lean`: C-faithful block+flow+tag parser model (`yamlParse` / `dumpTree`) pinned byte-for-byte against `toc_yaml_parse` by `make tocio-yaml-diff` (48 documents, `<tag>` prefixes included). `ConfigQuery.lean`: the `toc_config.c` query layer over the parsed tree (name/alias matching, role resolution, display-section membership, transform-attribute priority, view-looks tokenization) pinned by `make tocio-config-diff` (16 configs, query transcripts byte-identical). `ProcessorModel.lean` (+ `ProcessorParams.lean`): the `toc_processor.c` pipeline build (transform walk order, inversions, colorspace references, fixed-function styles, reference-domain bridging, looks, view transforms) and its numeric lowering (matrix inversion, Range scale/offset and inverse, MonCurve, Log/LogCamera, CDL inverse decomposition, fixed-function params), pinned by `make tocio-proc-diff` (163 queries, 434 op parameter recipes bit-exact, including FileTransform via an embedded reader for `.spi1d`/`.spi3d`/`.clf` and content sniffing, and `Builtins.lean`: the `toc_builtin_expand` model for all 68 vectorized styles — ACES AP matrices and log curves, derived colorimetry, display/camera builtins, generic conversions and the 31 ACES 2.0 chains). `CodegenC.lean` (+ `CodegenSnippets.lean`): the AOT-C emitter (scalar path) down to the hex-float literal writer, pinned by `make tocio-codegen-diff` (12 op lists, sources byte-identical). `CodegenGLSL.lean` / `CodegenMetal.lean`: the GPU emitters (all GLSL targets, MSL, decimal-float writer, LUT texture descriptors), pinned by `make tocio-glsl-diff` (16 shaders byte-identical). |
+| `Tocio/*` | OCIO scaffolding: `Op` (op kinds + FixedFunction styles), Matrix/Range/Exponent/Log/CDL/LUT/YAML/Config/Resolve/Lower/Processor. `YamlTotal.lean`: fuel-bounded total YAML parser with the general inductive height-bound theorem (`parseTotal_height_bound` / `parseYamlTotalV_height_bound`: any accepted document has height ≤ the fuel budget) plus concrete depth-cap theorems (127 parses, 128 fails; boundary documented, see below). `FloatSemantics.lean`: identity/sign/round-trip laws for the exponent kernels, CDL round-trip within the C's 2e-3 tolerance on the non-negative grid, and Range clamp boundary semantics. `YamlEngine.lean`: C-faithful block+flow+tag parser model (`yamlParse` / `dumpTree`) pinned byte-for-byte against `toc_yaml_parse` by `make tocio-yaml-diff` (48 documents, `<tag>` prefixes included). `ConfigQuery.lean`: the `toc_config.c` query layer over the parsed tree (name/alias matching, role resolution, display-section membership, transform-attribute priority, view-looks tokenization) pinned by `make tocio-config-diff` (16 configs, query transcripts byte-identical). `ProcessorModel.lean` (+ `ProcessorParams.lean`): the `toc_processor.c` pipeline build (transform walk order, inversions, colorspace references, fixed-function styles, reference-domain bridging, looks, view transforms) and its numeric lowering (matrix inversion, Range scale/offset and inverse, MonCurve, Log/LogCamera, CDL inverse decomposition, fixed-function params), pinned by `make tocio-proc-diff` (165 queries, 434 op parameter recipes bit-exact, including FileTransform via an embedded reader for `.spi1d`/`.spi3d`/`.clf`/`.cube`/`.csp` and content sniffing, and `Builtins.lean`: the `toc_builtin_expand` model for all 68 vectorized styles — ACES AP matrices and log curves, derived colorimetry, display/camera builtins, generic conversions and the 31 ACES 2.0 chains). `CodegenC.lean` (+ `CodegenSnippets.lean`): the AOT-C emitter (scalar path) down to the hex-float literal writer, pinned by `make tocio-codegen-diff` (12 op lists, sources byte-identical). `CodegenGLSL.lean` / `CodegenMetal.lean`: the GPU emitters (all GLSL targets, MSL, decimal-float writer, LUT texture descriptors), pinned by `make tocio-glsl-diff` (16 shaders byte-identical). |
 
+| `Tocio/CubeFile.lean` | Total, fuel-bounded Iridas `.cube` parser (1D/3D size, DOMAIN_MIN/MAX, INPUT_RANGE, RGB triples) reusing the SPI float/int readers and the `toc_values_fit` allocation guard; routed into `ProcessorModel` alongside CSP payloads. |
 | `Tir/Geometry.lean` | tir filter/edge/registration enums and `axis_geom_init` / `axis_center` geometry, with the grid-vertex precondition and scale-floor lemmas. |
 | `Tir/Edge.lean` | `edge_map` (clamp/reflect/wrap, including C period identities), floor division, `window_fold` fast-run bounds, mapped min/max scans and anti-ringing footprint bounds. |
-| `Tir/Kernels.lean` | Bit-exact Float32 models of the scalar horizontal/vertical kernels, anti-ring/clamp/normal/premult/range-compress kernels and all pixel-type converters; rational idealisations prove weight normalisation, clamp/anti-ring bounds. Checked by `make tir-kernel-diff`. |
+| `Tir/Kernels.lean` | Bit-exact Float32 models of the scalar horizontal/vertical kernels, anti-ring/clamp/normal/premult/range-compress kernels and all pixel-type converters; rational idealisations prove weight normalisation, clamp/anti-ring bounds. Range compression/expansion and normalisation now use the closed `ExrMath` definitions (no `Float32.log`/`exp`/`sqrt` externs). Checked by `make tir-kernel-diff`. |
+| `Math/F32.lean` | First-party, libm-free scalar math: frozen `exr_util_*` fast tier (bit-compatible), accurate f32-only `log2f`/`exp2f`/`powf`/`sqrtf`, `Float`-mirrored `expf` (double range reduction), integer-exact `sqrtfExact`, with dyadic-exactness theorems and `Tocio.FloatBridge` transfer. Checked by `make math-diff`; accuracy measured by `make math-test`. |
 | `Tir/Table.lean` | Window truncation length bounds, zero-tap trim/normalisation laws (`ℚ` sum = 1, zero-sum fallback) and the `tir__axis_measure` scan with the proved measure/fill agreement theorem (`measureScan_spec`): a successful measure records exactly the classification the fill pass consumes. |
+
+## Accepted proof boundaries
+
+The YAML parser's explicit `calls ≤ fuel` measure is not proved; its depth
+boundary, height bound and all 48 parser vectors are gated by `tocio-yaml-diff`.
+CDL emitted-statement equivalence is proved (`eval_compile_cdl`).
+
+## Legacy APIs
+
+`exr_resize_float` (`src/exr_resize.c`) is kept for compatibility but is not
+formally modelled; use `tir_resize` (`tools/resize`) for new code — it has the
+full Lean model and differential gates. No duplicate resizer model is planned.
 
 ## Conformance matrix
 
@@ -739,7 +760,7 @@ superseded by `Bc7Mode0Full` / `Etc2TModeDecode` and redefine the same names.
   transforms, the 64-level walk cap) and `ProcessorParams.lean` its
   numeric lowering (matrix inversion, Range scale/offset and inverse,
   MonCurve, Log/LogCamera fields, CDL inverse decomposition,
-  fixed-function params), pinned by `make tocio-proc-diff` (163 queries,
+  fixed-function params), pinned by `make tocio-proc-diff` (165 queries,
   434 op parameter recipes bit-exact, singular matrices included as
   NONINVERTIBLE, and FileTransform through a file-reader map dispatching
   `.spi1d`/`.spi3d`/`.clf` plus content sniffing to the SPI/CLF loaders).

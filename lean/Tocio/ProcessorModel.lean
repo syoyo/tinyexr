@@ -17,8 +17,8 @@
   LUT ops). BuiltinTransform styles expand through
   `Tocio.Builtins.builtinExpand` (matrices, log curves, derived
   colorimetry, display/camera builtins, ACES 2.0 output chains).
-  `.cube`/CSP payloads and the C cube fallback are outside the model
-  (UNSUPPORTED, never vectorized).
+  `.cube` and CSP payloads route through `Tocio.CubeFile` / `Tocio.Csp`;
+  the C's unrecognized-text cube fallback stays outside the model.
 
   Copyright (c) 2026 Syoyo Fujita and TinyEXR authors
   SPDX-License-Identifier: BSD-3-Clause
@@ -27,6 +27,8 @@
 import Tocio.Builtins
 import Tocio.SpiFile
 import Tocio.Clf
+import Tocio.CubeFile
+import Tocio.Csp
 
 namespace Tocio
 
@@ -324,9 +326,17 @@ def clfToCOp : ClfOp → COp
     .lut3d size (zeros 3) [fbits (1.0 : Float32), fbits (1.0 : Float32),
       fbits (1.0 : Float32)] tet (d.map fbits)
 
-/-- `.spi1d` / `.spi3d` / `.clf` dispatch (the `startsWith` sniffs mirror
-the C's word checks). Inversion, `.cube`/`.csp` files and the cube
-fallback are outside the model. -/
+/-- `.cube` content -> processor ops (1D RGB or 3D trilinear). -/
+def cubeToCOps (c : CubeContent) : List COp :=
+  if c.dim == 1 then
+    [.lut1d c.size 3 (fbits (c.domainMin.getD 0 0)) (fbits (c.domainMax.getD 0 1))
+      (c.data.map fbits)]
+  else
+    [.lut3d c.size (c.domainMin.map fbits) (c.domainMax.map fbits) false
+      (c.data.map fbits)]
+
+/-- `.spi1d` / `.spi3d` / `.clf` / `.cube` / `.csp` dispatch (the sniffs
+mirror the C's word checks). Inverted file transforms stay NONINVERTIBLE. -/
 def loadLutFile (name data : String) (invert : Bool) : Except String (List COp) :=
   let spi1 : Except String (List COp) :=
     match loadSpi1d data with
@@ -344,17 +354,25 @@ def loadLutFile (name data : String) (invert : Bool) : Except String (List COp) 
     | .ok ops => .ok (ops.map clfToCOp)
     | .error .parse => .error "PARSE"
     | .error .unsupported => .error "UNSUPPORTED"
+  let cube : Except String (List COp) :=
+    match loadCube data with
+    | some c => .ok (cubeToCOps c)
+    | none => .error "PARSE"
+  let csp : Except String (List COp) :=
+    match loadCsp data with
+    | .ok ops => .ok (ops.map clfToCOp)
+    | .error _ => .error "PARSE"
   if invert then .error "NONINVERTIBLE"
   else if endsWithS name ".spi1d" then spi1
   else if endsWithS name ".spi3d" then spi3
   else if endsWithS name ".clf" || endsWithS name ".CLF" then clf
-  else if endsWithS name ".cube" || endsWithS name ".CUBE" then .error "UNSUPPORTED"
-  else if endsWithS name ".csp" || endsWithS name ".CSP" then .error "UNSUPPORTED"
+  else if endsWithS name ".cube" || endsWithS name ".CUBE" then cube
+  else if endsWithS name ".csp" || endsWithS name ".CSP" then csp
   else
     let hd := dropLow data.toList
     if startsWithS hd "SPILUT" then spi3
     else if startsWithS hd "Version" then spi1
-    else if startsWithS hd "CSPLUT" then .error "UNSUPPORTED"
+    else if startsWithS hd "CSPLUT" then csp
     else if startsWithS hd "<?xml" || startsWithS hd "<ProcessList" then clf
     else .error "UNSUPPORTED"
 

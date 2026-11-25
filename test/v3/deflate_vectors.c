@@ -8,6 +8,8 @@
  */
 #include <stdio.h>
 #include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "exr_internal.h"
 
@@ -141,6 +143,28 @@ int main(void) {
         putcode(fixed_code(256), fixed_len(256));
         align();
         emit(out, raw, sizeof(raw));
+    }
+    /* dynamic-Huffman blocks produced by the real in-tree encoder */
+    {
+        static const char *texts[] = {
+            "The quick brown fox jumps over the lazy dog, again and again",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabcdefghijk",
+            "0123456789012345678901234567890123456789abcdefghijklmnopqrstuvwxyz"
+        };
+        const exr_allocator *a = exr_default_allocator();
+        for (int k = 0; k < 3; ++k) {
+            const uint8_t *raw = (const uint8_t *)texts[k];
+            size_t n = strlen(texts[k]);
+            uint8_t *comp = NULL;
+            size_t cs = 0;
+            if (exr_deflate_zlib(a, raw, n, &comp, &cs) != EXR_SUCCESS || cs < 3) continue;
+            if (((comp[2] >> 1) & 3) != 2) { free(comp); continue; } /* need BTYPE=2 */
+            for (size_t i = 0; i < cs; ++i) printf("%02x", comp[i]);
+            putchar(' ');
+            for (size_t i = 0; i < n; ++i) printf("%02x", raw[i]);
+            putchar('\n');
+            free(comp);
+        }
     }
     return 0;
 }

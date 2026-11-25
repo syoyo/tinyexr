@@ -331,9 +331,9 @@ static void normalize3_neon(float *xyz, float *len_out_or_null, size_t npix) {
         float32x4_t v = vld1q_f32(xyz + off);
         float32x4_t sq = vmulq_f32(v, v);
         float l2 = vgetq_lane_f32(sq, 0) + vgetq_lane_f32(sq, 1) + vgetq_lane_f32(sq, 2);
-        if (len_out_or_null) len_out_or_null[i] = sqrtf(l2);
+        if (len_out_or_null) len_out_or_null[i] = tir_math_sqrtf_exact(l2);
         if (l2 > 1e-8f) {
-            float inv = 1.0f / sqrtf(l2);
+            float inv = 1.0f / tir_math_sqrtf_exact(l2);
             xyz[off] = vgetq_lane_f32(v, 0) * inv;
             xyz[off + 1] = vgetq_lane_f32(v, 1) * inv;
             xyz[off + 2] = vgetq_lane_f32(v, 2) * inv;

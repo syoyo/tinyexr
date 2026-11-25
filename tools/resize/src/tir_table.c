@@ -35,7 +35,7 @@ static double kd_cubic(double a, double B, double C) {
 static double kd_sinc(double x) {
     if (x == 0.0) return 1.0;
     x *= TIR_PI;
-    return sin(x) / x;
+    return tir_math_sin(x) / x;
 }
 
 static double kd_lanczos(double a, double lobes) {
@@ -60,7 +60,7 @@ static double kd_kaiser(double a, double radius, double beta) {
     double t;
     if (a >= radius) return 0.0;
     t = a / radius;
-    return kd_sinc(a) * kd_bessel_i0(beta * sqrt(1.0 - t * t)) /
+    return kd_sinc(a) * kd_bessel_i0(beta * tir_math_sqrt64(1.0 - t * t)) /
            kd_bessel_i0(beta);
 }
 
@@ -72,7 +72,7 @@ static double kd_weight(tir_filter f, double t, double sigma) {
         case TIR_FILTER_BSPLINE:
             return kd_cubic(a, 1.0, 0.0);
         case TIR_FILTER_GAUSSIAN:
-            return exp(-(a * a) / (2.0 * sigma * sigma));
+            return tir_math_exp64(-(a * a) / (2.0 * sigma * sigma));
         case TIR_FILTER_MITCHELL:
             return kd_cubic(a, 1.0 / 3.0, 1.0 / 3.0);
         case TIR_FILTER_CATMULL_ROM:
@@ -171,8 +171,8 @@ static int window_weights(const tir__axis_params *p, const axis_geom *g,
     int lo, hi, n, t;
     if (p->filter == TIR_FILTER_BOX) {
         double a = center - g->box_sb, b = center + g->box_sb;
-        lo = (int)ceil(a - 0.5);
-        hi = (int)floor(b + 0.5);
+        lo = (int)tir_math_ceil64(a - 0.5);
+        hi = (int)tir_math_floor64(b + 0.5);
         if (hi < lo) hi = lo;
         if (hi - lo + 1 > win_max) hi = lo + win_max - 1;
         for (t = lo; t <= hi; ++t) {
@@ -181,8 +181,8 @@ static int window_weights(const tir__axis_params *p, const axis_geom *g,
             w[t - lo] = ov > 0.0 ? ov : 0.0;
         }
     } else {
-        lo = (int)ceil(center - g->support);
-        hi = (int)floor(center + g->support);
+        lo = (int)tir_math_ceil64(center - g->support);
+        hi = (int)tir_math_floor64(center + g->support);
         if (hi < lo) hi = lo;
         if (hi - lo + 1 > win_max) hi = lo + win_max - 1;
         for (t = lo; t <= hi; ++t)
@@ -191,18 +191,18 @@ static int window_weights(const tir__axis_params *p, const axis_geom *g,
     }
     n = hi - lo + 1;
     /* trim zero-weight taps at both ends */
-    while (n > 1 && fabs(w[0]) <= 1e-10) {
+    while (n > 1 && tir_math_fabs64(w[0]) <= 1e-10) {
         memmove(w, w + 1, (size_t)(n - 1) * sizeof(double));
         lo++;
         n--;
     }
-    while (n > 1 && fabs(w[n - 1]) <= 1e-10) n--;
+    while (n > 1 && tir_math_fabs64(w[n - 1]) <= 1e-10) n--;
     /* normalize (double) */
     {
         double sum = 0.0;
         for (t = 0; t < n; ++t) sum += w[t];
         if (sum == 0.0) {
-            int c = (int)floor(center + 0.5);
+            int c = (int)tir_math_floor64(center + 0.5);
             lo = c;
             n = 1;
             w[0] = 1.0;
@@ -258,7 +258,7 @@ static void ar_window(const tir__axis_params *p, const axis_geom *g, int i,
                       int *out_lo, int *out_hi) {
     double center = axis_center(g, p, i);
     int k = g->is_down ? (int)g->ratio + 1 : 2;
-    int lo = (int)floor(center - 0.5 * (double)(k - 1));
+    int lo = (int)tir_math_floor64(center - 0.5 * (double)(k - 1));
     int hi = lo + k - 1;
     int mn = p->s, mx = -1, t;
     for (t = lo; t <= hi; ++t) {

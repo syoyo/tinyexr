@@ -3,7 +3,7 @@
 
   The C caps nesting at `TOC_YAML_MAX_DEPTH = 128` and charges two fuel
   units per level; the Lean model uses `yamlEntryFuel = 2 * 128`. These
-  facts pin the boundary exactly (127/128 parse, 129 fails).
+  facts pin the boundary exactly (127 parses, 128 fails).
 
   Copyright (c) 2026 Syoyo Fujita and TinyEXR authors
   SPDX-License-Identifier: BSD-3-Clause

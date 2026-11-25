@@ -20,11 +20,13 @@ run_cmd do
         name.toString.startsWith "Texcomp." ||
         name.toString.startsWith "Tocio." ||
         name.toString.startsWith "Tir." ||
+        name.toString.startsWith "Math." ||
         name.toString.startsWith "_private.Exr." ||
         name.toString.startsWith "_private.ExrGen." ||
         name.toString.startsWith "_private.Texcomp." ||
         name.toString.startsWith "_private.Tocio." ||
-        name.toString.startsWith "_private.Tir.") then
+        name.toString.startsWith "_private.Tir." ||
+        name.toString.startsWith "_private.Math.") then
       count := count + 1
       let axioms ← collectAxioms name
       if axioms.any (fun ax => ax.toString.contains "._native.bv_decide.ax_") then
@@ -37,7 +39,8 @@ run_cmd do
         let certificate := (s.startsWith "Exr." || s.startsWith "_private.Exr." ||
           s.startsWith "Texcomp." || s.startsWith "_private.Texcomp." ||
           s.startsWith "Tocio." || s.startsWith "_private.Tocio." ||
-          s.startsWith "Tir." || s.startsWith "_private.Tir.") && s.contains "._native.bv_decide.ax_"
+          s.startsWith "Tir." || s.startsWith "_private.Tir." ||
+          s.startsWith "Math." || s.startsWith "_private.Math.") && s.contains "._native.bv_decide.ax_"
         let approvedFixtures : List String := [
           "ExrGen.generate_scanline_parses", "ExrGen.generate_tiled_parses",
           "ExrGen.generate_mipmap_parses", "ExrGen.generate_ripmap_parses",
@@ -50,7 +53,8 @@ run_cmd do
         let fixture := (approvedFixtures.contains name.toString &&
           s.startsWith (name.toString ++ "._native.native_decide.ax_")) ||
           ((name.toString.startsWith "Tocio." ||
-        name.toString.startsWith "Tir." || name.toString.startsWith "Texcomp.") &&
+        name.toString.startsWith "Tir." || name.toString.startsWith "Texcomp." ||
+        name.toString.startsWith "Math.") &&
             s.startsWith (name.toString ++ "._native.native_decide.ax_"))
         unless standard || certificate || fixture do
           throwError "unexpected axiom {ax} in {name}"

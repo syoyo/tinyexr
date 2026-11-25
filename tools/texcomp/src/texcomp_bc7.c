@@ -9,7 +9,6 @@
 #include "texcomp_internal.h"
 
 #include <limits.h>
-#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -376,7 +375,7 @@ static void tc_bc7_pca_extremes(const uint8_t pix[16][4], const uint8_t *part,
     uint32_t i, cnt = 0u, mn_i = 0u, mx_i = 0u;
     int c, d, it;
 
-    for (c = 0; c < 4; ++c) w[c] = sqrtf((float)tc_bc7_cw[c]);
+    for (c = 0; c < 4; ++c) w[c] = tc_math_sqrtf_exact((float)tc_bc7_cw[c]);
     for (i = 0; i < 16u; ++i)
         if (part[i] == subset) {
             for (c = 0; c < nch; ++c) mean[c] += (float)pix[i][c];
@@ -402,7 +401,7 @@ static void tc_bc7_pca_extremes(const uint8_t pix[16][4], const uint8_t *part,
             for (d = 0; d < nch; ++d) na[c] += cov[c][d] * axis[d];
         for (c = 0; c < nch; ++c) len += na[c] * na[c];
         if (len < 1e-12f) break;
-        len = 1.f / sqrtf(len);
+        len = 1.f / tc_math_sqrtf_exact(len);
         for (c = 0; c < nch; ++c) axis[c] = na[c] * len;
     }
 

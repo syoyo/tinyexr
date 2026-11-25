@@ -282,6 +282,24 @@ static const char *FILE_CLF =
     "</LUT1D>\n"
     "</ProcessList>\n";
 
+static const char *FILE_CUBE =
+    "TITLE \"test cube\"\n"
+    "LUT_1D_SIZE 4\n"
+    "DOMAIN_MIN 0.0 0.0 0.0\n"
+    "DOMAIN_MAX 1.0 1.0 1.0\n"
+    "0.0 0.0 0.0\n"
+    "0.25 0.3 0.35\n"
+    "0.5 0.6 0.65\n"
+    "1.0 1.0 1.0\n";
+
+static const char *FILE_CSP =
+    "CSPLUTV100\n"
+    "1D\n"
+    "0\n0\n0\n"
+    "2\n"
+    "0 0 0\n"
+    "1 1 1\n";
+
 static toc_result file_reader(void *user, const char *name,
                               const toc_allocator *a, char **out, size_t *len) {
     const char *d = NULL;
@@ -291,6 +309,8 @@ static toc_result file_reader(void *user, const char *name,
     if (!strcmp(name, "ramp.spi1d")) d = FILE_SPI1D;
     else if (!strcmp(name, "cube.spi3d")) d = FILE_SPI3D;
     else if (!strcmp(name, "ramp.clf")) d = FILE_CLF;
+    else if (!strcmp(name, "ramp.cube")) d = FILE_CUBE;
+    else if (!strcmp(name, "ramp.csp")) d = FILE_CSP;
     else if (!strcmp(name, "blobs/lut.txt")) d = FILE_SPI3D; /* sniffed */
     if (!d) return TOC_ERROR_IO;
     n = strlen(d);
@@ -305,10 +325,11 @@ static toc_result file_reader(void *user, const char *name,
 static void emit_file_records(FILE *out) {
     static const struct { const char *name; const char *data; } files[] = {
         {"ramp.spi1d", NULL}, {"cube.spi3d", NULL}, {"ramp.clf", NULL},
-        {"blobs/lut.txt", NULL},
+        {"ramp.cube", NULL}, {"ramp.csp", NULL}, {"blobs/lut.txt", NULL},
     };
-    const char *data[4] = {FILE_SPI1D, FILE_SPI3D, FILE_CLF, FILE_SPI3D};
-    for (int i = 0; i < 4; i++) {
+    const char *data[6] = {FILE_SPI1D, FILE_SPI3D, FILE_CLF,
+                           FILE_CUBE, FILE_CSP, FILE_SPI3D};
+    for (int i = 0; i < 6; i++) {
         fprintf(out, "pfile ");
         print_hex(out, files[i].name, strlen(files[i].name));
         fputc(' ', out);
@@ -878,6 +899,8 @@ int main(int argc, char **argv) {
         {0, "filespi3", "plain", NULL},
         {0, "fileclf", "plain", NULL},
         {0, "filesniff", "plain", NULL},
+        {0, "filecube", "plain", NULL},
+        {0, "filecsp", "plain", NULL},
         {0, "fileinv", "plain", NULL},
         {0, "filemissing", "plain", NULL},
         {0, "plain", "filespi1", NULL},

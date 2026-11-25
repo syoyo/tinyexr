@@ -158,7 +158,17 @@ static toc_op_list *build_list(const cop *ops, size_t n) {
             op->u.log.inverse = c->i[0];
             break;
         case TOC_OP_LOG_CAMERA:
-            /* emits nothing in AOT-C; fields left zero */
+            for (int j = 0; j < 3; j++) {
+                op->u.logcam.log_slope[j] = c->f[j];
+                op->u.logcam.log_offset[j] = c->f[3 + j];
+                op->u.logcam.lin_slope[j] = c->f[6 + j];
+                op->u.logcam.lin_offset[j] = c->f[9 + j];
+                op->u.logcam.lin_break[j] = c->f[12 + j];
+                op->u.logcam.linear_slope[j] = c->f[15 + j];
+                op->u.logcam.linear_offset[j] = c->f[18 + j];
+            }
+            op->u.logcam.base = c->f[21];
+            op->u.logcam.inverse = c->i[0];
             break;
         case TOC_OP_CDL:
             for (int j = 0; j < 3; j++) {
@@ -436,7 +446,13 @@ int main(int argc, char **argv) {
     /* 6: log-camera (emits nothing) + matrix + exponent */
     {
         cop *c = add(6, TOC_OP_LOG_CAMERA);
-        (void)c;
+        {
+            float v[22] = {1.1f, 1.2f, 1.3f, 0.05f, 0.06f, 0.07f,
+                           0.9f, 0.8f, 0.7f, 0.02f, 0.03f, 0.04f,
+                           0.18f, 0.2f, 0.22f, 1.2f, 1.1f, 1.0f,
+                           -0.01f, -0.02f, -0.03f, 10.0f};
+            setf(c->f, 22, v);
+        }
         c = add(6, TOC_OP_MATRIX);
         {
             float m[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};

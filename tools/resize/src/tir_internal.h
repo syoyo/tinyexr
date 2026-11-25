@@ -9,10 +9,39 @@
 #ifndef TIR_INTERNAL_H_
 #define TIR_INTERNAL_H_
 
-#include <math.h>
+#include <stdint.h>
 #include <string.h>
 
 #include "tir.h"
+
+/* ---- libm-free math (see deps/math/exr_math_impl.h) ----------------------- */
+float tir_math_logf(float x);
+float tir_math_expf(float x);
+float tir_math_sqrtf_exact(float x);
+double tir_math_sin(double x);
+double tir_math_cos(double x);
+double tir_math_exp64(double x);
+double tir_math_sqrt64(double x);
+double tir_math_floor64(double x);
+double tir_math_ceil64(double x);
+double tir_math_fabs64(double x);
+
+static inline int tir__finite32(float x) {
+    union { float f; uint32_t u; } v;
+    v.f = x;
+    return (v.u & 0x7f800000u) != 0x7f800000u;
+}
+static inline int tir__isnan32(float x) {
+    union { float f; uint32_t u; } v;
+    v.f = x;
+    return ((v.u & 0x7f800000u) == 0x7f800000u) && ((v.u & 0x007fffffu) != 0u);
+}
+static inline float tir__inf32(void) {
+    union { uint32_t u; float f; } v;
+    v.u = 0x7f800000u;
+    return v.f;
+}
+#define TIR_INF_F tir__inf32()
 
 /* ===========================================================================
  * Architecture gates

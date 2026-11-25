@@ -9,7 +9,7 @@
   (`Tocio/CodegenSnippets.lean`).
 
   Scope: the scalar path (`toc_codegen_c_opts.simd = 0`). The
-  `LOG_CAMERA` op has no AOT-C case in the C either (it emits nothing).
+  `LOG_CAMERA` is emitted as affine/log branches with a linear breakpoint.
   `ACES_GAMUTCOMP13` uses the bit-exact `Tocio.Math.powf` port for its
   codegen-time scale.
 
@@ -170,6 +170,30 @@ def emitLog (logSlope logOffset linSlope linOffset : List FB) (base : FB)
           hexFloat (fget logOffset c) ++ ")/" ++ hexFloat (fget logSlope c) ++
           ")-" ++ hexFloat (fget linOffset c) ++ ")/" ++
           hexFloat (fget linSlope c)) ++ ";\n"
+  String.join ((List.range 3).map one)
+
+def emitLogCam (ls lo ns no brk lslope loff : List FB) (base : FB)
+    (inverse : Bool) : String :=
+  let tiny : FB := fbits (1.1754944e-38 : Float32)
+  let one (c : Nat) : String :=
+    let v := chanName c
+    "  " ++ v ++ " = " ++
+    (if !inverse then
+      "(" ++ hexFloat (fget ns c) ++ "*" ++ v ++ "+" ++ hexFloat (fget no c) ++
+      " <= " ++ hexFloat (fget brk c) ++ " ? (" ++
+      hexFloat (fget ns c) ++ "*" ++ v ++ "+" ++ hexFloat (fget no c) ++
+      ") : (" ++ hexFloat (fget ls c) ++ "*tc_log2f((" ++
+      hexFloat (fget ns c) ++ "*" ++ v ++ "+" ++ hexFloat (fget no c) ++
+      " > 0.0f ? (" ++ hexFloat (fget ns c) ++ "*" ++ v ++ "+" ++
+      hexFloat (fget no c) ++ ") : " ++ hexFloat tiny ++
+      "))/tc_log2f(" ++ hexFloat base ++ ")+" ++ hexFloat (fget lo c) ++ "))"
+     else
+      "(" ++ hexFloat (fget ns c) ++ "*" ++ v ++ "+" ++ hexFloat (fget no c) ++
+      " <= " ++ hexFloat (fget lslope c) ++ "*" ++ hexFloat (fget brk c) ++ "+" ++
+      hexFloat (fget loff c) ++ " ? ((" ++ v ++ "-" ++ hexFloat (fget loff c) ++
+      ")/" ++ hexFloat (fget lslope c) ++ ") : ((tc_raisef(" ++ hexFloat base ++
+      ", (" ++ v ++ "-" ++ hexFloat (fget lo c) ++ ")/" ++ hexFloat (fget ls c) ++
+      ")-" ++ hexFloat (fget no c) ++ ")/" ++ hexFloat (fget ns c) ++ "))") ++ ";\n"
   String.join ((List.range 3).map one)
 
 def isZero (b : FB) : Bool := f32of b == 0.0
@@ -369,7 +393,8 @@ def emitOp (k : Nat) (op : COp) : Except String String :=
   | .expLinear scale offset gamma brk slope inv mirror =>
     .ok (emitExpLinear scale offset gamma brk slope inv mirror)
   | .log ls lo ns no base inv => .ok (emitLog ls lo ns no base inv)
-  | .logCamera .. => .ok ""
+  | .logCamera ls lo ns no brk lslope loff base inv =>
+    .ok (emitLogCam ls lo ns no brk lslope loff base inv)
   | .aces2 .. => .ok "" -- the C AOT-C emitter has no ACES_OUTPUT case
   | .cdl slope off power sat luma clamp inv =>
     .ok (emitCdl slope off power sat luma clamp inv)

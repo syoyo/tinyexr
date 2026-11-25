@@ -43,7 +43,7 @@ def halfToFloat (h : Nat) : Float32 :=
 
 /-- UNORM16 → FP16 (astcenc `unorm16_to_sf16` / spec C.2.19). -/
 def unorm16ToSf16 (p : Nat) : Nat :=
-  if p == 0xFFFFFFFF then 0x3C00
+  if p == 0xFFFF then 0x3C00
   else if p < 4 then p <<< 8
   else
     let rec lz : Nat → Nat → Nat → Nat

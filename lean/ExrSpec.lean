@@ -9,6 +9,9 @@
   SPDX-License-Identifier: BSD-3-Clause
 -/
 
+import Math.F32
+import Exr.DeflateDynamic
+import Exr.B44Tables
 import Exr.Bytes
 import Texcomp.Container
 import Texcomp.Bc1Encode
@@ -80,6 +83,7 @@ import Tocio.Ops
 import Tocio.FixedFunc
 import Tocio.LutFile
 import Tocio.SpiFile
+import Tocio.CubeFile
 import Tocio.ClfXml
 import Tocio.Clf
 import Tocio.Csp

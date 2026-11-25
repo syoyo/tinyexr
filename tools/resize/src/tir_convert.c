@@ -38,7 +38,11 @@ void tir__u16_to_f32_sc(float *dst, const uint16_t *src, size_t n) {
 }
 
 /* Round-to-nearest-even to match SIMD cvtps behavior. */
-static float rne(float x) { return nearbyintf(x); }
+static float rne(float x) {
+    /* 2^23 add/sub magic: exact round-to-nearest-even for 0 <= x < 2^23. */
+    const float magic = 8388608.0f;
+    return (x + magic) - magic;
+}
 
 void tir__f32_to_u8_sc(uint8_t *dst, const float *src, size_t n) {
     size_t i;
