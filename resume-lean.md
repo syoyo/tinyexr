@@ -19,8 +19,8 @@ Repository: `/mnt/disk01/work/tinyexr`, branch `release`. Read `AGENTS.md`,
 
 ## Current state
 
-- `release` is pushed through `971bdc0`; newer status/proof work is local until
-  the user explicitly permits a push.
+- `release` is pushed through `5e27c7a` (all proof-hardening work to date);
+  future status/proof work stays local until the user explicitly permits a push.
 - Run `make lean-status` for current file/line/theorem counts and
   `make lean-axiom-check` for the transitive axiom census.
 - Latest close-out: 330 Lean files, 57,456 lines and 1,596 source-level
