@@ -61,8 +61,10 @@
 Completed initial slices:
 
 1. **Texcomp wire/output contracts:** BC6H writer, tail budget, byte layout,
-   signed fields and candidate monotonicity; BC7 writer/packing/weight symmetry;
-   ASTC HDR void extents; float-output image lengths.
+   signed fields, candidate monotonicity and unconditional per-block/image
+   16-byte output for all 25 modes; BC7 writer/packing/weight symmetry;
+   ASTC HDR void extents and projection-weight bounds; float-output image
+   lengths.
 2. **Tocio YAML fuel semantics:** `parseTotal_used_le` proves the returned value
    is remaining fuel bounded by the input fuel. A literal total-calls ≤
    branch-local-fuel theorem is not the current semantics; the C-faithful

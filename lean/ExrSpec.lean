@@ -35,6 +35,7 @@ import Texcomp.Bc6hEncSf16
 import Texcomp.Bc6hEncodeBlock
 import Texcomp.Bc6hEncodeImage
 import Texcomp.Bc6hEncodeProps
+import Texcomp.Bc6hBlockProps
 import Texcomp.Bc7Rdo
 import Texcomp.AstcDecim
 import Texcomp.AstcWeightInfill
